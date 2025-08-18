@@ -2934,9 +2934,10 @@ function scheduleNextPoll() {
   const timeString = nextPollTime.toLocaleTimeString('en-US', { 
     hour: 'numeric', 
     minute: '2-digit', 
-    hour12: true 
+    hour12: true,
+    timeZone: 'America/New_York'
   });
-  console.log(`⏰ Next poll scheduled in ${finalMinutes} minutes (smart: ${baseMinutes} ± ${Math.abs(variation)}) for @${TARGET_USERNAME} at ${timeString}`);
+  console.log(`⏰ Next poll scheduled in ${finalMinutes} minutes (smart: ${baseMinutes} ± ${Math.abs(variation)}) for @${TARGET_USERNAME} at ${timeString} EDT`);
   
   currentPollingTimeout = setTimeout(async () => {
     if (POLLING_ENABLED) {

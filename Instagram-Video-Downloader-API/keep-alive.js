@@ -50,7 +50,7 @@ function scheduleNextPing() {
   const now = new Date();
   const nextPing = new Date(now.getTime() + PING_INTERVAL);
   
-  console.log(`${LOG_PREFIX} ⏰ Next ping scheduled for: ${nextPing.toLocaleTimeString()}`);
+  console.log(`${LOG_PREFIX} ⏰ Next ping scheduled for: ${nextPing.toLocaleTimeString('en-US', { timeZone: 'America/New_York' })} EDT`);
   
   setTimeout(async () => {
     await pingHealthEndpoint();

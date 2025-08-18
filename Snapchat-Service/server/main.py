@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -67,7 +67,7 @@ class ActivityTracker:
     def __init__(self):
         self.recent_stories = 0
         self.last_activity = None
-        self.last_reset = datetime.now()
+        self.last_reset = datetime.now(timezone(timedelta(hours=-4)))  # EDT timezone
         self.is_first_run = True
     
     def update_activity(self, new_stories_count):
@@ -78,12 +78,12 @@ class ActivityTracker:
             return
         
         self.recent_stories += new_stories_count
-        self.last_activity = datetime.now()
+        self.last_activity = datetime.now(timezone(timedelta(hours=-4)))  # EDT timezone
         logger.info(f"Activity updated: +{new_stories_count} stories (total: {self.recent_stories} in 24h)")
     
     def get_activity_level(self):
         # Reset daily counter
-        now = datetime.now()
+        now = datetime.now(timezone(timedelta(hours=-4)))  # EDT timezone
         hours_since_reset = (now - self.last_reset).total_seconds() / 3600
         if hours_since_reset >= 24:
             self.recent_stories = 0
@@ -1824,9 +1824,9 @@ async def schedule_next_poll():
     
     next_poll_seconds = final_minutes * 60
     
-    next_poll_time = datetime.now() + timedelta(minutes=final_minutes)
+    next_poll_time = datetime.now(timezone(timedelta(hours=-4))) + timedelta(minutes=final_minutes)  # EDT timezone
     time_string = next_poll_time.strftime('%I:%M %p')
-    logger.info(f"Next poll scheduled in {final_minutes} minutes (smart: {base_minutes} ± {abs(variation)}) for @{TARGET_USERNAME} at {time_string}")
+    logger.info(f"Next poll scheduled in {final_minutes} minutes (smart: {base_minutes} ± {abs(variation)}) for @{TARGET_USERNAME} at {time_string} EDT")
     
     # Schedule next poll using asyncio
     current_polling_timeout = asyncio.create_task(asyncio.sleep(next_poll_seconds))
@@ -1844,7 +1844,7 @@ async def execute_poll_cycle():
             # Log error but don't stop polling
             error_log_path = os.path.join(os.path.dirname(__file__), 'error-logs.txt')
             with open(error_log_path, 'a', encoding='utf-8') as f:
-                f.write(f"[{datetime.now().isoformat()}] Polling error: {error}\n")
+                f.write(f"[{datetime.now(timezone(timedelta(hours=-4))).isoformat()}] Polling error: {error}\n")
             
             # Retry after 5 minutes instead of the full interval
             await asyncio.sleep(5 * 60)
