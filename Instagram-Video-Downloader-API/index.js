@@ -405,24 +405,11 @@ const port = process.env.PORT || 3000;
 // Middleware to parse JSON bodies
 app.use(express.json());
 
-// CORS configuration for both development and production
+// CORS configuration - allow all origins for now
 app.use((req, res, next) => {
-  const allowedOrigins = [
-    'http://localhost:5173',  // Vite dev server
-    'http://localhost:3000',  // Local frontend
-    'https://tyla-social.vercel.app',  // Custom Vercel domain
-    'https://tyla-social-git-master-dawans-projects.vercel.app',  // Vercel production domain
-    'https://tyla-social-ca357diqz-dawans-projects.vercel.app'   // Vercel preview domain
-  ];
-  
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
-  }
-  
+  res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.header('Access-Control-Allow-Credentials', 'true');
   
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
