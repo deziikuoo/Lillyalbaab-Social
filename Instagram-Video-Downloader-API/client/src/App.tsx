@@ -2,8 +2,10 @@ import React, { useMemo, useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
 import SnapchatPage from './snapchat/SnapchatPage'
 
-// API base URL - prefer env variables for flexibility
-const API_BASE_URL = (import.meta as any).env?.VITE_IG_API_URL || (import.meta as any).env?.VITE_IG_URL || 'http://localhost:3000'
+// API base URL - use Render backend in production, localhost in development
+const API_BASE_URL = import.meta.env.PROD 
+  ? 'https://tyla-social-api.onrender.com'  // Your Render backend URL
+  : 'http://localhost:3000'
 
 type DownloadItem = {
   quality?: string
