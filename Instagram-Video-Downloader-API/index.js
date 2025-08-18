@@ -2285,7 +2285,7 @@ function updateLastCleanupDate(postsRemoved = 0, username = null) {
   });
 }
 
-// Check cache on app boot
+// Check cache on app boot (disabled - only tracks 7 days)
 async function checkCacheOnBoot() {
   try {
     const lastCleanup = await getLastCleanupDate();
@@ -2293,12 +2293,12 @@ async function checkCacheOnBoot() {
     weekAgo.setDate(weekAgo.getDate() - 7);
     
     if (lastCleanup < weekAgo) {
-      console.log('🧹 Cache cleanup overdue, cleaning now...');
-      const removed = await cleanExpiredCache();
-      await updateLastCleanupDate(removed, 'system');
-      console.log(`✅ Cache cleanup completed, removed ${removed} entries`);
+      console.log('📊 Cache cleanup would be due (7+ days since last cleanup)');
+      console.log(`   Last cleanup: ${lastCleanup.toLocaleDateString()}`);
+      console.log(`   Days since: ${Math.floor((new Date() - lastCleanup) / (1000 * 60 * 60 * 24))}`);
     } else {
       console.log('✅ Cache is up to date');
+      console.log(`   Last cleanup: ${lastCleanup.toLocaleDateString()}`);
     }
   } catch (error) {
     console.log(`⚠️ Cache cleanup check failed: ${error.message}`);
