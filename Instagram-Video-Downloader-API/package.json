@@ -1,0 +1,47 @@
+{
+  "name": "instagram-video-downloader-api",
+  "version": "1.0.2",
+  "description": "A simple Node.js API to download Instagram videos using Express and Cheerio.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "start:ig": "node index.js",
+    "start:snap": "cd ..\\Snapchat-Service && venv\\Scripts\\python.exe -m uvicorn server.main:app --reload --port 8000",
+    "start:both": "concurrently -k -n \"Instagram,Snapchat\" -c \"cyan,magenta\" \"npm run start:ig --silent\" \"npm run start:snap --silent\"",
+    "start:frontend": "cd client && npm run dev",
+    "start:all": "concurrently -k -n \"Instagram,Snapchat,Frontend\" -c \"cyan,magenta,green\" \"npm run start:ig --silent\" \"npm run start:snap --silent\" \"npm run start:frontend --silent\"",
+    "monitor": "node ../monitor-services.js",
+    "start:monitored": "concurrently -k -n \"Instagram,Snapchat,Monitor\" -c \"cyan,magenta,yellow\" \"npm run start:ig --silent\" \"npm run start:snap --silent\" \"npm run monitor\"",
+    "pm2:start": "pm2 start ../ecosystem.config.js",
+    "pm2:stop": "pm2 stop ecosystem",
+    "pm2:restart": "pm2 restart ecosystem",
+    "pm2:logs": "pm2 logs",
+    "pm2:status": "pm2 status",
+    "keep-alive": "node keep-alive.js",
+    "keep-alive:render": "HEALTH_URL=https://your-app-name.onrender.com/health node keep-alive.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "instagram",
+    "video",
+    "downloader",
+    "api",
+    "express",
+    "cheerio"
+  ],
+  "author": "Milan Bhandari",
+  "dependencies": {
+    "axios": "^1.6.7",
+    "cheerio": "^1.1.2",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "form-data": "^4.0.4",
+    "node-cron": "^4.2.1",
+    "node-fetch": "^3.2.6",
+    "puppeteer": "^24.16.1",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

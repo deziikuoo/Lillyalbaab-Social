@@ -1,0 +1,204 @@
+/* Snapchat-specific styles */
+.snap-page {
+  padding: 20px 0;
+}
+
+.snap-page h1 {
+  text-align: center;
+  margin-bottom: 30px;
+  color: #fffc00;
+  font-size: 28px;
+  font-weight: bold;
+}
+
+.snap-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30px;
+  margin-top: 20px;
+}
+
+@media (max-width: 768px) {
+  .snap-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+/* Snapchat-themed color overrides */
+.downloader-container,
+.gallery-container {
+  background: rgba(255, 252, 0, 0.05);
+  border: 1px solid rgba(255, 252, 0, 0.2);
+}
+
+.downloader-header h2,
+.gallery-header h2 {
+  color: #fffc00;
+}
+
+.download-button {
+  background: linear-gradient(135deg, #fffc00 0%, #ff6b35 100%);
+  color: #1a1a1a;
+  font-weight: bold;
+}
+
+.download-button:hover:enabled {
+  background: linear-gradient(135deg, #ff6b35 0%, #fffc00 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 252, 0, 0.3);
+}
+
+.username-input:focus,
+.download-type-select:focus {
+  border-color: #fffc00;
+  box-shadow: 0 0 0 2px rgba(255, 252, 0, 0.2);
+}
+
+.telegram-toggle input:checked + .toggle-slider {
+  background: #fffc00;
+}
+
+.telegram-toggle input:checked + .toggle-slider:before {
+  background: #1a1a1a;
+}
+
+.progress-fill {
+  background: linear-gradient(90deg, #fffc00, #ff6b35);
+}
+
+.file-progress-fill {
+  background: linear-gradient(90deg, #fffc00, #ff6b35);
+}
+
+.gallery-item {
+  border: 1px solid rgba(255, 252, 0, 0.2);
+  transition: all 0.3s ease;
+}
+
+.gallery-item:hover {
+  border-color: #fffc00;
+  box-shadow: 0 8px 25px rgba(255, 252, 0, 0.15);
+}
+
+.item-type {
+  background: #fffc00;
+  color: #1a1a1a;
+}
+
+.download-link {
+  background: #fffc00;
+  color: #1a1a1a;
+}
+
+.download-link:hover {
+  background: #ff6b35;
+  color: white;
+}
+
+.telegram-send-btn {
+  background: #0088cc;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.telegram-send-btn:hover:enabled {
+  background: #006699;
+  transform: translateY(-1px);
+}
+
+.telegram-send-btn.success {
+  background: #28a745;
+}
+
+.telegram-send-btn.error {
+  background: #dc3545;
+}
+
+.telegram-send-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.telegram-error {
+  color: #dc3545;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.success-message {
+  background: rgba(40, 167, 69, 0.1);
+  border: 1px solid rgba(40, 167, 69, 0.3);
+  color: #28a745;
+  padding: 12px;
+  border-radius: 8px;
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.clear-progress-btn {
+  background: #6c757d;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.clear-progress-btn:hover {
+  background: #5a6268;
+}
+
+.file-progress {
+  margin-top: 16px;
+}
+
+.file-progress-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+
+.filename {
+  font-size: 12px;
+  color: #ccc;
+  min-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 252, 0, 0.2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.file-progress-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.file-progress-text {
+  font-size: 11px;
+  color: #999;
+  min-width: 40px;
+  text-align: right;
+}
