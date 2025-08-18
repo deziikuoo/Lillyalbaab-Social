@@ -2603,7 +2603,12 @@ function getLastCleanupDate() {
     `,
       (err, row) => {
         if (err) reject(err);
-        else resolve(row ? new Date(row.cleaned_at) : new Date(0));
+        else {
+          // If no cleanup record exists, return current date (no cleanup needed yet)
+          const defaultDate = new Date();
+          defaultDate.setDate(defaultDate.getDate() - 1); // Set to yesterday as default
+          resolve(row ? new Date(row.cleaned_at) : defaultDate);
+        }
       }
     );
   });
@@ -2647,6 +2652,7 @@ async function checkCacheOnBoot() {
     }
   } catch (error) {
     console.log(`⚠️ Cache cleanup check failed: ${error.message}`);
+    console.log("✅ Cache system initialized (first run)");
   }
 }
 
