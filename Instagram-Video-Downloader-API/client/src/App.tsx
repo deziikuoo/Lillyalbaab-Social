@@ -4,7 +4,7 @@ import SnapchatPage from './snapchat/SnapchatPage'
 
 // API base URL - use Render backend in production, localhost in development
 const API_BASE_URL = import.meta.env.PROD 
-  ? 'https://tyla-social-api.onrender.com'  // Render backend for production
+  ? 'https://tyla-social.onrender.com'  // Render backend for production
   : 'http://localhost:3000'  // Local backend for development
 
 // Debug: Log the API URL being used
