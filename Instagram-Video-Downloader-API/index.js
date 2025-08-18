@@ -3792,16 +3792,75 @@ app.post("/clear-stories-cache", async (req, res) => {
       clearStoriesCache,
     ]);
 
+    const totalDeleted = processedStoriesDeleted + storiesCacheDeleted;
     res.json({
       success: true,
       username: username,
       processed_stories_deleted: processedStoriesDeleted,
       stories_cache_deleted: storiesCacheDeleted,
-      message: `Cleared stories data for @${username}`,
+      total_deleted: totalDeleted,
+      message: `Cleared ${totalDeleted} stories data entries for @${username}`,
     });
   } catch (error) {
     console.error("Error clearing stories data:", error);
     res.status(500).json({ error: "Failed to clear stories data" });
+  }
+});
+
+// Debug endpoint to check story tables
+app.get("/debug-stories", async (req, res) => {
+  try {
+    const username = req.query.username || TARGET_USERNAME;
+    if (!username)
+      return res.status(400).json({ error: "No username provided" });
+
+    // Check processed_stories table
+    const processedStories = new Promise((resolve) => {
+      db.all(
+        "SELECT COUNT(*) as count FROM processed_stories WHERE username = ?",
+        [username],
+        (err, rows) => {
+          if (err) {
+            console.error("Database error checking processed stories:", err);
+            resolve(0);
+          } else {
+            resolve(rows[0]?.count || 0);
+          }
+        }
+      );
+    });
+
+    // Check recent_stories_cache table
+    const storiesCache = new Promise((resolve) => {
+      db.all(
+        "SELECT COUNT(*) as count FROM recent_stories_cache WHERE username = ?",
+        [username],
+        (err, rows) => {
+          if (err) {
+            console.error("Database error checking stories cache:", err);
+            resolve(0);
+          } else {
+            resolve(rows[0]?.count || 0);
+          }
+        }
+      );
+    });
+
+    const [processedCount, cacheCount] = await Promise.all([
+      processedStories,
+      storiesCache,
+    ]);
+
+    res.json({
+      username: username,
+      processed_stories_count: processedCount,
+      stories_cache_count: cacheCount,
+      total_stories: processedCount + cacheCount,
+      message: `Database status for @${username}`,
+    });
+  } catch (error) {
+    console.error("Error checking story tables:", error);
+    res.status(500).json({ error: "Failed to check story tables" });
   }
 });
 
@@ -4039,13 +4098,37 @@ async function processInstagramStories(username, userAgent = null) {
           `📱 Processing story ${i + 1}/${downloadedStories.data.length}...`
         );
 
-        // Generate a unique story ID from the URL or timestamp
-        const storyId = story.url
-          ? Buffer.from(story.url).toString("base64").substring(0, 20)
-          : `story_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        // Generate unique story ID from Snapsave URL (since we don't have Instagram URLs)
+        let storyId;
+        if (story.url) {
+          // Use the full URL to generate a unique hash-based ID
+          const storyIdHash = require("crypto")
+            .createHash("md5")
+            .update(story.url)
+            .digest("hex")
+            .substring(0, 16);
+          storyId = `snapsave_${storyIdHash}`;
+        } else {
+          // Fallback for stories without URLs
+          storyId = `story_${story.storyId || story.id || Date.now()}`;
+        }
+
+        console.log(
+          `🔍 Story ID extracted: ${storyId} (from URL: ${
+            story.url ? story.url : "no URL"
+          })`
+        );
 
         // Check if story was already processed
         const isProcessed = await checkStoryProcessed(username, storyId);
+        console.log(`🔍 Story ${storyId} already processed: ${isProcessed}`);
+
+        // Debug: Log the story details
+        console.log(
+          `🔍 Story details: URL=${
+            story.url ? story.url.substring(0, 50) + "..." : "no URL"
+          }, Type=${story.storyType}, isVideo=${story.isVideo}`
+        );
 
         if (!isProcessed) {
           // Unified story type detection - trust enhanced downloader data
@@ -4081,8 +4164,8 @@ async function processInstagramStories(username, userAgent = null) {
 
           storyIds.push(storyId);
 
-          // Track in database
-          await markStoryProcessed(username, storyUrl, storyType, storyId);
+          // Track in database (fix: use story.url instead of undefined storyUrl)
+          await markStoryProcessed(username, story.url, storyType, storyId);
 
           // Send to Telegram if configured
           if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHANNEL_ID) {
@@ -4733,12 +4816,17 @@ async function getInstagramStoriesViaWeb(username, userAgent = null) {
               `  - contentType: ${confirmedVideo ? "video" : "image"}`
             );
 
+            // Create consistent story ID from Snapsave URL (hash-based)
+            const storyIdHash = require("crypto")
+              .createHash("md5")
+              .update(url)
+              .digest("hex")
+              .substring(0, 16);
+
             stories.push({
               thumbnail: item.thumbnail || url,
               url: actualVideoUrl,
-              storyId: `analyzed_${Date.now()}_${Math.random()
-                .toString(36)
-                .substr(2, 9)}`,
+              storyId: `snapsave_${storyIdHash}`,
               storyType: confirmedVideo ? "video" : "photo",
               quality: item.quality || "HD",
               isVideo: confirmedVideo,
@@ -4920,6 +5008,7 @@ function parseStoriesFromJson(jsonData, username) {
 // Check if a story was already processed
 function checkStoryProcessed(username, storyId) {
   return new Promise((resolve, reject) => {
+    console.log(`🔍 [DB] Checking if story ${storyId} exists for @${username}`);
     db.get(
       "SELECT id FROM processed_stories WHERE username = ? AND story_id = ?",
       [username, storyId],
@@ -4928,7 +5017,13 @@ function checkStoryProcessed(username, storyId) {
           console.error("Database error checking story:", err);
           reject(err);
         } else {
-          resolve(!!row);
+          const exists = !!row;
+          console.log(
+            `🔍 [DB] Story ${storyId} exists: ${exists} (row: ${JSON.stringify(
+              row
+            )})`
+          );
+          resolve(exists);
         }
       }
     );
@@ -4971,17 +5066,20 @@ function updateStoriesCache(username, stories) {
           return;
         }
 
-        // Insert new cache entries
+        // Insert new cache entries (ignore duplicates)
         const stmt = db.prepare(
-          "INSERT INTO recent_stories_cache (username, story_url, story_id, story_type) VALUES (?, ?, ?, ?)"
+          "INSERT OR IGNORE INTO recent_stories_cache (username, story_url, story_id, story_type) VALUES (?, ?, ?, ?)"
         );
 
+        let insertedCount = 0;
         stories.forEach((story, index) => {
           stmt.run(
             [username, story.url, story.storyId, story.storyType],
             function (err) {
               if (err) {
                 console.error("Database error inserting story cache:", err);
+              } else if (this.changes > 0) {
+                insertedCount++;
               }
             }
           );
@@ -4992,7 +5090,9 @@ function updateStoriesCache(username, stories) {
             console.error("Database error finalizing story cache:", err);
             reject(err);
           } else {
-            console.log(`✅ Stories cache updated for @${username}`);
+            console.log(
+              `✅ Stories cache updated for @${username} (${insertedCount} new entries inserted)`
+            );
             resolve();
           }
         });
