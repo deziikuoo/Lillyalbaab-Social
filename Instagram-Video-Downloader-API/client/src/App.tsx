@@ -56,9 +56,9 @@ const App: React.FC = () => {
   }>({ enabled: false, active: false, started: false })
 
   // Statistics state
-  const [showStats, setShowStats] = useState(false)
-  const [stats, setStats] = useState<any>(null)
-  const [statsLoading, setStatsLoading] = useState(false)
+  const [_showStats, _setShowStats] = useState(false)
+  const [_stats, _setStats] = useState<any>(null)
+  const [_statsLoading, _setStatsLoading] = useState(false)
 
   // Function to clean Instagram URLs by removing img_index parameters
   const cleanInstagramUrl = (inputUrl: string): string => {
