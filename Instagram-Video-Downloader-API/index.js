@@ -694,7 +694,22 @@ let currentPollingTimeout = null; // Track current polling timeout for restart
 let pollingStarted = false; // Track if polling has been started
 
 // Database setup for tracking posts
-const db = new sqlite3.Database("./instagram_tracker.db");
+const dbPath = process.env.NODE_ENV === 'production' 
+  ? '/opt/render/project/src/data/instagram_tracker.db'  // Render persistent storage
+  : './instagram_tracker.db';  // Local development
+
+const db = new sqlite3.Database(dbPath);
+
+// Downloads directory configuration for Render
+const DOWNLOADS_DIR = process.env.NODE_ENV === 'production'
+  ? '/opt/render/project/src/data/downloads'  // Render persistent storage
+  : './downloads';  // Local development
+
+// Ensure downloads directory exists
+if (!fs.existsSync(DOWNLOADS_DIR)) {
+  fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
+  console.log(`📁 Created downloads directory: ${DOWNLOADS_DIR}`);
+}
 
 // Initialize database
 db.serialize(() => {
@@ -4445,6 +4460,36 @@ app.post("/clear-all", async (req, res) => {
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// Storage status monitoring endpoint
+app.get("/storage-status", (req, res) => {
+  const fs = require('fs');
+  const path = require('path');
+  
+  try {
+    const dbStats = fs.statSync(dbPath);
+    const downloadsExists = fs.existsSync(DOWNLOADS_DIR);
+    const downloadsFiles = downloadsExists ? fs.readdirSync(DOWNLOADS_DIR).length : 0;
+    
+    res.json({
+      database: {
+        path: dbPath,
+        size: dbStats.size,
+        exists: true,
+        environment: process.env.NODE_ENV
+      },
+      downloads: {
+        path: DOWNLOADS_DIR,
+        exists: downloadsExists,
+        files: downloadsFiles
+      },
+      environment: process.env.NODE_ENV,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 

@@ -3,27 +3,32 @@
 ## 🚀 Quick Start
 
 ### Option 1: Start All Services (Recommended)
+
 ```bash
 cd "C:\Users\dawan\OneDrive\Documents\Coding Files\Tyla IG Kapturez\Instagram-Video-Downloader-API"
 npm run start:all
 ```
 
 This will start:
+
 - **Instagram Backend** (Port 3000) - Cyan color
-- **Snapchat Backend** (Port 8000) - Magenta color  
+- **Snapchat Backend** (Port 8000) - Magenta color
 - **Frontend Dev Server** (Port 5173) - Green color
 
 ### Option 2: Start Backend Services Only
+
 ```bash
 cd "C:\Users\dawan\OneDrive\Documents\Coding Files\Tyla IG Kapturez\Instagram-Video-Downloader-API"
 npm run start:both
 ```
 
 This will start:
+
 - **Instagram Backend** (Port 3000)
 - **Snapchat Backend** (Port 8000)
 
 Then manually start the frontend in a separate terminal:
+
 ```bash
 cd "C:\Users\dawan\OneDrive\Documents\Coding Files\Tyla IG Kapturez\Instagram-Video-Downloader-API\client"
 npm run dev
@@ -43,11 +48,13 @@ Once all services are running:
 ### If you get 404 errors for Snapchat endpoints:
 
 1. **Check if Snapchat backend is running:**
+
    ```bash
    curl http://localhost:8000/health
    ```
 
 2. **Check if frontend dev server is running:**
+
    ```bash
    curl http://localhost:5173
    ```
@@ -55,7 +62,7 @@ Once all services are running:
 3. **Verify proxy configuration in `client/vite.config.ts`:**
    ```javascript
    proxy: {
-     '/snapchat-api': { 
+     '/snapchat-api': {
        target: 'http://localhost:8000',
        rewrite: (p) => p.replace(/^\/snapchat-api/, ''),
        ws: true
@@ -66,6 +73,7 @@ Once all services are running:
 ### If Snapchat backend fails to start:
 
 1. **Check if virtual environment exists:**
+
    ```bash
    dir "C:\Users\dawan\OneDrive\Documents\Coding Files\Tyla IG Kapturez\Snapchat-Service\venv\Scripts\python.exe"
    ```
@@ -90,6 +98,7 @@ You can verify all services are running by checking these endpoints:
 ## 🎯 Expected Behavior
 
 When you navigate to http://localhost:5173 and click on the Snapchat tab, you should see:
+
 - No 404 errors in the browser console
 - The Snapchat interface loads properly
 - Target management, polling controls, and statistics work
