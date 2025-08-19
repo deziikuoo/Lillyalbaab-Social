@@ -1,7 +1,9 @@
 # Render Persistent Storage Configuration
 
 ## Problem
+
 Render's ephemeral filesystem means that:
+
 - ✅ **SQLite Database**: Already persists (good!)
 - ❌ **Local Downloads**: Lost on container restart
 - ❌ **Memory Cache**: Lost on container restart
@@ -35,19 +37,23 @@ In your Render dashboard:
 ### 3. Code Changes Made
 
 #### Database Path Configuration
+
 ```javascript
-const dbPath = process.env.NODE_ENV === 'production' 
-  ? '/opt/render/project/src/data/instagram_tracker.db'  // Render persistent storage
-  : './instagram_tracker.db';  // Local development
+const dbPath =
+  process.env.NODE_ENV === "production"
+    ? "/opt/render/project/src/data/instagram_tracker.db" // Render persistent storage
+    : "./instagram_tracker.db"; // Local development
 
 const db = new sqlite3.Database(dbPath);
 ```
 
 #### Downloads Directory Configuration
+
 ```javascript
-const DOWNLOADS_DIR = process.env.NODE_ENV === 'production'
-  ? '/opt/render/project/src/data/downloads'  // Render persistent storage
-  : './downloads';  // Local development
+const DOWNLOADS_DIR =
+  process.env.NODE_ENV === "production"
+    ? "/opt/render/project/src/data/downloads" // Render persistent storage
+    : "./downloads"; // Local development
 
 // Ensure downloads directory exists
 if (!fs.existsSync(DOWNLOADS_DIR)) {
@@ -59,6 +65,7 @@ if (!fs.existsSync(DOWNLOADS_DIR)) {
 ### 4. Current Caching System Status
 
 #### ✅ **Persistent (Survives Restarts)**
+
 - **SQLite Database**: `instagram_tracker.db`
   - `processed_posts` table
   - `processed_stories` table
@@ -67,6 +74,7 @@ if (!fs.existsSync(DOWNLOADS_DIR)) {
   - `cache_cleanup_log` table
 
 #### ❌ **Ephemeral (Lost on Restarts)**
+
 - **Memory Cache**: Recent posts/stories in memory
 - **Local Downloads**: Any downloaded files (if implemented)
 
@@ -81,6 +89,7 @@ The current implementation is actually **Render-friendly** because:
 ### 6. Memory Cache Recovery
 
 When the service restarts, the memory cache is rebuilt from:
+
 - Recent posts fetched from Instagram
 - Database records of processed content
 - This happens automatically during the first polling cycle
@@ -98,26 +107,26 @@ When the service restarts, the memory cache is rebuilt from:
 Add this endpoint to monitor storage usage:
 
 ```javascript
-app.get('/storage-status', (req, res) => {
-  const fs = require('fs');
-  const path = require('path');
-  
+app.get("/storage-status", (req, res) => {
+  const fs = require("fs");
+  const path = require("path");
+
   try {
     const dbStats = fs.statSync(dbPath);
     const downloadsStats = fs.statSync(DOWNLOADS_DIR);
-    
+
     res.json({
       database: {
         path: dbPath,
         size: dbStats.size,
-        exists: true
+        exists: true,
       },
       downloads: {
         path: DOWNLOADS_DIR,
         exists: fs.existsSync(DOWNLOADS_DIR),
-        files: fs.readdirSync(DOWNLOADS_DIR).length
+        files: fs.readdirSync(DOWNLOADS_DIR).length,
       },
-      environment: process.env.NODE_ENV
+      environment: process.env.NODE_ENV,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -128,6 +137,7 @@ app.get('/storage-status', (req, res) => {
 ## Summary
 
 Your current caching system is already well-designed for Render:
+
 - **Database persistence** ✅ (handles duplicate detection)
 - **URL-based processing** ✅ (no large file storage needed)
 - **Memory cache recovery** ✅ (rebuilds on restart)

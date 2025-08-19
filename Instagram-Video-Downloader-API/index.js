@@ -694,16 +694,26 @@ let currentPollingTimeout = null; // Track current polling timeout for restart
 let pollingStarted = false; // Track if polling has been started
 
 // Database setup for tracking posts
-const dbPath = process.env.NODE_ENV === 'production' 
-  ? '/opt/render/project/src/data/instagram_tracker.db'  // Render persistent storage
-  : './instagram_tracker.db';  // Local development
-
-const db = new sqlite3.Database(dbPath);
+const dbPath =
+  process.env.NODE_ENV === "production"
+    ? "/opt/render/project/src/data/instagram_tracker.db" // Render persistent storage
+    : "./instagram_tracker.db"; // Local development
 
 // Downloads directory configuration for Render
-const DOWNLOADS_DIR = process.env.NODE_ENV === 'production'
-  ? '/opt/render/project/src/data/downloads'  // Render persistent storage
-  : './downloads';  // Local development
+const DOWNLOADS_DIR =
+  process.env.NODE_ENV === "production"
+    ? "/opt/render/project/src/data/downloads" // Render persistent storage
+    : "./downloads"; // Local development
+
+// Ensure directories exist for persistent storage
+// Create data directory if it doesn't exist (for production)
+if (process.env.NODE_ENV === "production") {
+  const dataDir = "/opt/render/project/src/data";
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+    console.log(`📁 Created persistent data directory: ${dataDir}`);
+  }
+}
 
 // Ensure downloads directory exists
 if (!fs.existsSync(DOWNLOADS_DIR)) {
@@ -711,8 +721,36 @@ if (!fs.existsSync(DOWNLOADS_DIR)) {
   console.log(`📁 Created downloads directory: ${DOWNLOADS_DIR}`);
 }
 
+// Initialize database with error handling
+let db;
+try {
+  db = new sqlite3.Database(dbPath);
+  console.log(`✅ Database initialized at: ${dbPath}`);
+} catch (error) {
+  console.error(`❌ Database initialization failed: ${error.message}`);
+  console.log(`🔧 Attempting to create database directory...`);
+  
+  // Try to create the database directory
+  const dbDir = path.dirname(dbPath);
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+    console.log(`📁 Created database directory: ${dbDir}`);
+  }
+  
+  // Try again
+  try {
+    db = new sqlite3.Database(dbPath);
+    console.log(`✅ Database initialized successfully after directory creation`);
+  } catch (retryError) {
+    console.error(`❌ Database initialization still failed: ${retryError.message}`);
+    console.log(`🔄 Falling back to local database...`);
+    db = new sqlite3.Database("./instagram_tracker.db");
+  }
+}
+
 // Initialize database
-db.serialize(() => {
+if (db) {
+  db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS processed_posts (
     id TEXT PRIMARY KEY,
     username TEXT,
@@ -778,7 +816,8 @@ db.serialize(() => {
     cached_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (username, story_id)
   )`);
-});
+  });
+}
 
 // User-Agent rotation for bot evasion
 const userAgents = [
@@ -4465,28 +4504,30 @@ app.post("/clear-all", async (req, res) => {
 
 // Storage status monitoring endpoint
 app.get("/storage-status", (req, res) => {
-  const fs = require('fs');
-  const path = require('path');
-  
+  const fs = require("fs");
+  const path = require("path");
+
   try {
     const dbStats = fs.statSync(dbPath);
     const downloadsExists = fs.existsSync(DOWNLOADS_DIR);
-    const downloadsFiles = downloadsExists ? fs.readdirSync(DOWNLOADS_DIR).length : 0;
-    
+    const downloadsFiles = downloadsExists
+      ? fs.readdirSync(DOWNLOADS_DIR).length
+      : 0;
+
     res.json({
       database: {
         path: dbPath,
         size: dbStats.size,
         exists: true,
-        environment: process.env.NODE_ENV
+        environment: process.env.NODE_ENV,
       },
       downloads: {
         path: DOWNLOADS_DIR,
         exists: downloadsExists,
-        files: downloadsFiles
+        files: downloadsFiles,
       },
       environment: process.env.NODE_ENV,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
