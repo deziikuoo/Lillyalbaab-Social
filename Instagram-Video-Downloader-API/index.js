@@ -13,6 +13,240 @@ const InstagramCarouselDownloader = require("./instagram-carousel-downloader");
 // Add fetch for internal API calls
 const fetch = require("node-fetch");
 
+// ===== INSTAGRAM SESSION MANAGEMENT =====
+class InstagramSession {
+  constructor(username) {
+    this.username = username;
+    this.userAgent = getRandomUserAgent();
+    this.browser = null;
+    this.page = null;
+    this.cookies = [];
+    this.headers = {
+      "Accept-Language": "en-US,en;q=0.9",
+      "Accept-Encoding": "gzip, deflate, br",
+      DNT: "1",
+      Connection: "keep-alive",
+      "Upgrade-Insecure-Requests": "1",
+    };
+    this.delays = {
+      human: () => Math.floor(Math.random() * (2000 - 500 + 1)) + 500,
+      smart: () => Math.floor(Math.random() * (3000 - 1000 + 1)) + 1000,
+      rateLimit: () => Math.floor(Math.random() * (45000 - 30000 + 1)) + 30000,
+      storyTransition: () => Math.floor(Math.random() * (1500 - 800 + 1)) + 800,
+    };
+    this.rateLimitState = {
+      consecutiveFailures: 0,
+      lastRequestTime: 0,
+      errorMultiplier: 1,
+    };
+    this.sessionId = `session_${Date.now()}_${Math.random()
+      .toString(36)
+      .substr(2, 9)}`;
+  }
+
+  async initialize() {
+    console.log(`🎬 Creating Instagram session for @${this.username}`);
+    console.log(`🌐 Using user agent: ${this.userAgent}`);
+
+    try {
+      this.browser = await puppeteer.launch({
+        headless: true,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-accelerated-2d-canvas",
+          "--no-first-run",
+          "--no-zygote",
+          "--disable-gpu",
+        ],
+      });
+
+      this.page = await this.browser.newPage();
+      await this.page.setUserAgent(this.userAgent);
+      await this.page.setExtraHTTPHeaders(this.headers);
+
+      console.log(`✅ [SESSION] Browser initialized successfully`);
+      return true;
+    } catch (error) {
+      console.log(
+        `❌ [SESSION] Browser initialization failed: ${error.message}`
+      );
+      return false;
+    }
+  }
+
+  async cleanup() {
+    if (this.browser) {
+      try {
+        await this.browser.close();
+        console.log(`✅ [SESSION] Browser closed successfully`);
+      } catch (error) {
+        console.log(`⚠️ [SESSION] Error closing browser: ${error.message}`);
+      }
+    }
+  }
+
+  async applyDelay(type = "human") {
+    const delay = this.delays[type]();
+    console.log(`⏳ [SESSION] Applying ${type} delay: ${delay}ms`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+
+  async handleRateLimit() {
+    this.rateLimitState.consecutiveFailures++;
+    this.rateLimitState.errorMultiplier = Math.min(
+      this.rateLimitState.errorMultiplier * 1.5,
+      5
+    );
+    const backoffTime = 5000 * this.rateLimitState.errorMultiplier;
+
+    console.log(`🚫 [SESSION] Rate limited, backing off for ${backoffTime}ms`);
+    console.log(`⚠️ [SESSION] Rate limit exceeded, increasing delays`);
+
+    await new Promise((resolve) => setTimeout(resolve, backoffTime));
+  }
+
+  resetRateLimit() {
+    this.rateLimitState.consecutiveFailures = 0;
+    this.rateLimitState.errorMultiplier = 1;
+    console.log(`✅ [SESSION] Rate limit reset after successful operation`);
+  }
+}
+
+// ===== FASTDL SESSION MANAGEMENT =====
+class FastDlSession {
+  constructor(username) {
+    this.username = username;
+    this.userAgent = getRandomUserAgent();
+    this.browser = null;
+    this.page = null;
+    this.cookies = [];
+    this.headers = {
+      "Accept-Language": "en-US,en;q=0.9",
+      "Accept-Encoding": "gzip, deflate, br",
+      DNT: "1",
+      Connection: "keep-alive",
+      "Upgrade-Insecure-Requests": "1",
+    };
+    this.delays = {
+      human: () => Math.floor(Math.random() * (2000 - 500 + 1)) + 500,
+      smart: () => Math.floor(Math.random() * (3000 - 1000 + 1)) + 1000,
+      rateLimit: () => Math.floor(Math.random() * (45000 - 30000 + 1)) + 30000,
+      storyTransition: () => Math.floor(Math.random() * (1500 - 800 + 1)) + 800,
+      typing: () => Math.floor(Math.random() * (200 - 50 + 1)) + 50,
+      navigation: () => Math.floor(Math.random() * (4000 - 2000 + 1)) + 2000,
+    };
+    this.rateLimitState = {
+      consecutiveFailures: 0,
+      lastRequestTime: 0,
+      errorMultiplier: 1,
+    };
+    this.sessionId = `fastdl_session_${Date.now()}_${Math.random()
+      .toString(36)
+      .substr(2, 9)}`;
+  }
+
+  async initialize() {
+    console.log(`🎬 Creating FastDl session for @${this.username}`);
+    console.log(`🌐 Using user agent: ${this.userAgent}`);
+
+    try {
+      this.browser = await puppeteer.launch({
+        headless: true,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-accelerated-2d-canvas",
+          "--no-first-run",
+          "--no-zygote",
+          "--disable-gpu",
+        ],
+      });
+
+      this.page = await this.browser.newPage();
+      await this.page.setUserAgent(this.userAgent);
+      await this.page.setExtraHTTPHeaders(this.headers);
+
+      console.log(`✅ [FASTDL SESSION] Browser initialized successfully`);
+      return true;
+    } catch (error) {
+      console.log(
+        `❌ [FASTDL SESSION] Browser initialization failed: ${error.message}`
+      );
+      return false;
+    }
+  }
+
+  async cleanup() {
+    if (this.browser) {
+      try {
+        await this.browser.close();
+        console.log(`✅ [FASTDL SESSION] Browser closed successfully`);
+      } catch (error) {
+        console.log(
+          `⚠️ [FASTDL SESSION] Error closing browser: ${error.message}`
+        );
+      }
+    }
+  }
+
+  async applyDelay(type = "human") {
+    const delay = this.delays[type]();
+    console.log(`⏳ [FASTDL SESSION] Applying ${type} delay: ${delay}ms`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+
+  async handleRateLimit() {
+    this.rateLimitState.consecutiveFailures++;
+    this.rateLimitState.errorMultiplier = Math.min(
+      this.rateLimitState.errorMultiplier * 1.5,
+      5
+    );
+    const backoffTime = 5000 * this.rateLimitState.errorMultiplier;
+
+    console.log(
+      `🚫 [FASTDL SESSION] Rate limited, backing off for ${backoffTime}ms`
+    );
+    console.log(`⚠️ [FASTDL SESSION] Rate limit exceeded, increasing delays`);
+
+    await new Promise((resolve) => setTimeout(resolve, backoffTime));
+  }
+
+  resetRateLimit() {
+    this.rateLimitState.consecutiveFailures = 0;
+    this.rateLimitState.errorMultiplier = 1;
+    console.log(
+      `✅ [FASTDL SESSION] Rate limit reset after successful operation`
+    );
+  }
+
+  async humanType(element, text) {
+    console.log(`⌨️ [FASTDL SESSION] Typing: ${text.substring(0, 30)}...`);
+
+    let totalDelay = 0;
+    for (let i = 0; i < text.length; i++) {
+      await element.type(text[i]);
+      const delay = this.delays.typing();
+      totalDelay += delay;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+    console.log(`⏳ [FASTDL SESSION] Total typing delay: ${totalDelay}ms`);
+  }
+
+  async humanClick(element) {
+    console.log(`🖱️ [FASTDL SESSION] Human-like click`);
+
+    // Hover first
+    await element.hover();
+    await this.applyDelay("human");
+
+    // Click with delay
+    await element.click({ delay: Math.random() * 100 + 50 });
+  }
+}
+
 // ===== GLOBAL ERROR HANDLING =====
 process.on("uncaughtException", (error) => {
   console.error("🚨 UNCAUGHT EXCEPTION:", error);
@@ -2720,6 +2954,477 @@ function clearUserData(username) {
   });
 }
 
+// Scrape Instagram stories using FastDl.app (Grok-optimized implementation)
+async function scrapeInstagramStoriesWithFastDl(session) {
+  try {
+    console.log(
+      `🎬 Processing stories for @${session.username} with FastDl.app (Grok method)...`
+    );
+
+    if (!session.page) {
+      console.log(`❌ [FASTDL] No active page in session`);
+      return [];
+    }
+
+    const stories = [];
+    const storyUrl = `https://www.instagram.com/stories/${session.username}/`;
+    const fastDlUrl = `https://fastdl.app/en`;
+
+    console.log(`🔍 Navigating to FastDl.app: ${fastDlUrl}`);
+
+    try {
+      // Step 1: Navigate to FastDl.app
+      await session.page.goto(fastDlUrl, {
+        waitUntil: "networkidle2",
+        timeout: 30000,
+      });
+
+      await session.applyDelay("navigation");
+
+      // Step 2: Ensure "Stories" tab is selected
+      console.log(`🔍 [FASTDL] Looking for Stories tab...`);
+      const storiesButton = await session.page.waitForSelector(
+        "button.tabs-component_button",
+        {
+          timeout: 10000,
+        }
+      );
+
+      const isActive = await session.page.evaluate(
+        (el) => el.classList.contains("tabs-component_button--active"),
+        storiesButton
+      );
+
+      if (!isActive) {
+        console.log(`🖱️ [FASTDL] Clicking Stories tab...`);
+        await storiesButton.click();
+        await session.page.waitForTimeout(1000); // Brief wait for tab switch
+      } else {
+        console.log(`✅ [FASTDL] Stories tab already active`);
+      }
+
+      // Step 3: Enter the story URL
+      console.log(`🔍 [FASTDL] Looking for search input field...`);
+      await session.page.waitForSelector("#search-form-input", {
+        timeout: 10000,
+      });
+
+      console.log(`📝 [FASTDL] Typing story URL: ${storyUrl}`);
+      await session.page.type("#search-form-input", storyUrl);
+
+      console.log(`🖱️ [FASTDL] Clicking Download button...`);
+      await session.page.click('button:has-text("Download")'); // Submit the form
+
+      // Step 4: Wait for results
+      console.log(`⏳ [FASTDL] Waiting for results to load...`);
+      await session.page.waitForSelector("ul.profile-media-list", {
+        timeout: 30000,
+      });
+
+      // Step 5: Extract download URLs
+      console.log(`🔍 [FASTDL] Extracting download URLs...`);
+      const downloadUrls = await session.page.$$eval(
+        "a.button.button--filled.button_download",
+        (anchors) => anchors.map((a) => a.href)
+      );
+
+      console.log(`📱 [FASTDL] Found ${downloadUrls.length} download URLs`);
+
+      if (downloadUrls.length === 0) {
+        console.log(`⚠️ [FASTDL] No download links found`);
+        return [];
+      }
+
+      // Step 6: Process each download URL
+      for (let i = 0; i < downloadUrls.length; i++) {
+        const url = downloadUrls[i];
+        console.log(
+          `📥 [FASTDL] Processing download ${i + 1}/${
+            downloadUrls.length
+          }: ${url}`
+        );
+
+        // Generate unique story ID from URL
+        const storyId = require("crypto")
+          .createHash("md5")
+          .update(url)
+          .digest("hex")
+          .substring(0, 16);
+
+        // Determine file type from URL
+        const isVideo = url.includes(".mp4") || url.includes("video");
+        const storyType = isVideo ? "video" : "image";
+
+        // Create story object
+        const story = {
+          url: url,
+          storyId: storyId,
+          storyType: storyType,
+          isVideo: isVideo,
+          index: i + 1,
+          method: "fastdl-grok",
+        };
+
+        stories.push(story);
+        console.log(
+          `✅ [FASTDL] Added story ${i + 1}: ${storyType} (ID: ${storyId})`
+        );
+      }
+
+      console.log(
+        `🎉 [FASTDL] Successfully processed ${stories.length} stories`
+      );
+      return stories;
+    } catch (error) {
+      console.error(
+        `❌ [FASTDL] Error during FastDl processing: ${error.message}`
+      );
+      throw error;
+    }
+  } catch (error) {
+    console.error(`❌ [FASTDL] Session error: ${error.message}`);
+    return [];
+  }
+}
+
+// Scrape Instagram stories using Puppeteer
+async function scrapeInstagramStoriesWithPuppeteer(session) {
+  try {
+    console.log(
+      `🎬 Processing stories for @${session.username} with Puppeteer...`
+    );
+
+    if (!session.page) {
+      console.log(`❌ [PUPPETEER] No active page in session`);
+      return [];
+    }
+
+    const stories = [];
+    const storyUrl = `https://www.instagram.com/stories/${session.username}/`;
+
+    console.log(`🔍 Navigating to stories page: ${storyUrl}`);
+
+    try {
+      // Navigate with more robust loading strategy
+      await session.page.goto(storyUrl, {
+        waitUntil: "networkidle2",
+        timeout: 30000,
+      });
+
+      await session.applyDelay("human");
+
+      // Wait for page to load and check for stories - longer wait for JavaScript
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
+      // Try to trigger any lazy-loaded content
+      await session.page.evaluate(() => {
+        // Scroll and interact to trigger content loading
+        window.scrollTo(0, document.body.scrollHeight);
+        window.scrollTo(0, 0);
+
+        // Trigger any mouse events that might load content
+        const event = new Event("mouseover", { bubbles: true });
+        document.body.dispatchEvent(event);
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Check if stories are available - try multiple approaches
+      const hasStories = await session.page.evaluate(() => {
+        // Method 1: Look for story viewer elements
+        const storyViewer = document.querySelector('[role="dialog"]');
+        const storyItems = document.querySelectorAll(
+          'img[src*="instagram"], video[src*="instagram"]'
+        );
+
+        // Method 2: Look for story-specific elements
+        const storyCircles = document.querySelectorAll(
+          '[data-testid="story-circle"]'
+        );
+        const storyButtons = document.querySelectorAll(
+          'button[aria-label*="story"], button[aria-label*="Story"]'
+        );
+
+        // Method 3: Look for any media elements that might be stories
+        const mediaElements = document.querySelectorAll(
+          'img[src*="scontent"], video[src*="scontent"]'
+        );
+
+        console.log("Story detection debug:", {
+          storyViewer: !!storyViewer,
+          storyItems: storyItems.length,
+          storyCircles: storyCircles.length,
+          storyButtons: storyButtons.length,
+          mediaElements: mediaElements.length,
+        });
+
+        return (
+          storyViewer ||
+          storyItems.length > 0 ||
+          storyCircles.length > 0 ||
+          storyButtons.length > 0 ||
+          mediaElements.length > 0
+        );
+      });
+
+      if (!hasStories) {
+        console.log(
+          `⚠️ [PUPPETEER] No stories found initially, trying to click story elements...`
+        );
+
+        // Try to click on story elements to make them visible
+        try {
+          // Look for and click on story circles or buttons
+          const storyClickResult = await session.page.evaluate(() => {
+            const storyCircles = document.querySelectorAll(
+              '[data-testid="story-circle"], [aria-label*="story"], [aria-label*="Story"]'
+            );
+            const storyButtons = document.querySelectorAll(
+              'button[aria-label*="story"], button[aria-label*="Story"]'
+            );
+
+            console.log("Attempting to click story elements:", {
+              storyCircles: storyCircles.length,
+              storyButtons: storyButtons.length,
+            });
+
+            // Try clicking the first story circle or button
+            const clickableElement = storyCircles[0] || storyButtons[0];
+            if (clickableElement) {
+              clickableElement.click();
+              return true;
+            }
+            return false;
+          });
+
+          if (storyClickResult) {
+            console.log(
+              `✅ [PUPPETEER] Clicked on story element, waiting for content to load...`
+            );
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+
+            // Check again for stories after clicking
+            const hasStoriesAfterClick = await session.page.evaluate(() => {
+              const mediaElements = document.querySelectorAll(
+                'img[src*="scontent"], video[src*="scontent"]'
+              );
+              return mediaElements.length > 0;
+            });
+
+            if (!hasStoriesAfterClick) {
+              console.log(
+                `⚠️ [PUPPETEER] Still no stories found after clicking`
+              );
+
+              // Try to get page content for debugging
+              const pageContent = await session.page.content();
+              console.log(
+                `🔍 [PUPPETEER] Page content preview: ${pageContent.substring(
+                  0,
+                  500
+                )}...`
+              );
+
+              return [];
+            }
+          } else {
+            console.log(`⚠️ [PUPPETEER] No clickable story elements found`);
+
+            // Try to get page content for debugging
+            const pageContent = await session.page.content();
+            console.log(
+              `🔍 [PUPPETEER] Page content preview: ${pageContent.substring(
+                0,
+                500
+              )}...`
+            );
+
+            return [];
+          }
+        } catch (clickError) {
+          console.log(
+            `⚠️ [PUPPETEER] Error clicking story elements: ${clickError.message}`
+          );
+
+          // Try to get page content for debugging
+          const pageContent = await session.page.content();
+          console.log(
+            `🔍 [PUPPETEER] Page content preview: ${pageContent.substring(
+              0,
+              500
+            )}...`
+          );
+
+          return [];
+        }
+      }
+
+      console.log(`✅ [PUPPETEER] Stories viewer detected`);
+
+      // Extract story URLs with improved detection
+      const storyData = await session.page.evaluate(() => {
+        const stories = [];
+
+        // Method 1: Look for direct media elements
+        const mediaElements = document.querySelectorAll(
+          'img[src*="scontent"], video[src*="scontent"]'
+        );
+
+        mediaElements.forEach((element, index) => {
+          const url = element.src || element.currentSrc;
+          const isVideo = element.tagName.toLowerCase() === "video";
+          const type = isVideo ? "video" : "photo";
+
+          if (url && url.includes("scontent")) {
+            stories.push({
+              url: url,
+              type: type,
+              index: index + 1,
+              isVideo: isVideo,
+              storyType: type,
+              contentType: isVideo ? "video" : "image",
+            });
+          }
+        });
+
+        // Method 2: Look for story-specific data attributes
+        const storyElements = document.querySelectorAll(
+          '[data-testid*="story"], [aria-label*="story"]'
+        );
+
+        storyElements.forEach((element, index) => {
+          const img = element.querySelector('img[src*="scontent"]');
+          const video = element.querySelector('video[src*="scontent"]');
+
+          if (img || video) {
+            const mediaElement = img || video;
+            const url = mediaElement.src || mediaElement.currentSrc;
+            const isVideo = mediaElement.tagName.toLowerCase() === "video";
+            const type = isVideo ? "video" : "photo";
+
+            if (url && url.includes("scontent")) {
+              stories.push({
+                url: url,
+                type: type,
+                index: stories.length + 1,
+                isVideo: isVideo,
+                storyType: type,
+                contentType: isVideo ? "video" : "image",
+              });
+            }
+          }
+        });
+
+        // Method 3: Look for any Instagram CDN URLs in the page
+        const allImages = document.querySelectorAll("img");
+        const allVideos = document.querySelectorAll("video");
+
+        [...allImages, ...allVideos].forEach((element, index) => {
+          const url = element.src || element.currentSrc;
+          const isVideo = element.tagName.toLowerCase() === "video";
+
+          if (
+            url &&
+            (url.includes("scontent.cdninstagram.com") ||
+              url.includes("cdninstagram.com"))
+          ) {
+            // Check if this URL is already in our stories array
+            const alreadyExists = stories.some((story) => story.url === url);
+
+            if (!alreadyExists) {
+              stories.push({
+                url: url,
+                type: isVideo ? "video" : "photo",
+                index: stories.length + 1,
+                isVideo: isVideo,
+                storyType: isVideo ? "video" : "photo",
+                contentType: isVideo ? "video" : "image",
+              });
+            }
+          }
+        });
+
+        console.log("Story extraction debug:", {
+          totalStories: stories.length,
+          stories: stories.map((s) => ({
+            url: s.url.substring(0, 50) + "...",
+            type: s.type,
+          })),
+        });
+
+        return stories;
+      });
+
+      console.log(`📱 Found ${storyData.length} stories via Puppeteer`);
+
+      // Process each story
+      for (let i = 0; i < storyData.length; i++) {
+        const story = storyData[i];
+
+        console.log(
+          `  🔍 [PUPPETEER] Analyzing story ${i + 1}/${storyData.length}...`
+        );
+        console.log(
+          `  📄 Story type: ${story.type}, URL: ${story.url.substring(
+            0,
+            50
+          )}...`
+        );
+
+        // Generate unique story ID
+        const storyId = require("crypto")
+          .createHash("md5")
+          .update(story.url)
+          .digest("hex")
+          .substring(0, 16);
+
+        const processedStory = {
+          url: story.url,
+          storyId: `puppeteer_${storyId}`,
+          storyType: story.type,
+          isVideo: story.isVideo,
+          contentType: story.contentType,
+          method: "puppeteer",
+          index: story.index,
+        };
+
+        stories.push(processedStory);
+        console.log(`  ✅ Story ${i + 1} extracted successfully`);
+
+        // Apply delay between story processing
+        if (i < storyData.length - 1) {
+          await session.applyDelay("storyTransition");
+        }
+      }
+
+      console.log(`📊 [PUPPETEER] Stories processing complete!`);
+      console.log(`  📊 Summary:`);
+      console.log(`    - Stories found: ${stories.length}`);
+      console.log(`    - Videos: ${stories.filter((s) => s.isVideo).length}`);
+      console.log(`    - Images: ${stories.filter((s) => !s.isVideo).length}`);
+
+      return stories;
+    } catch (navigationError) {
+      console.log(
+        `❌ [PUPPETEER] Failed to navigate to stories page: ${navigationError.message}`
+      );
+
+      // Check for rate limiting
+      if (
+        navigationError.message.includes("429") ||
+        navigationError.message.includes("rate limit")
+      ) {
+        await session.handleRateLimit();
+      }
+
+      return [];
+    }
+  } catch (error) {
+    console.log(`❌ [PUPPETEER] Stories scraping failed: ${error.message}`);
+    return [];
+  }
+}
+
 // Fallback to individual processing if batch fails
 async function processIndividualPost(post, userAgent) {
   try {
@@ -4013,60 +4718,33 @@ let activityTracker = {
 
 // ===== INSTAGRAM STORIES IMPLEMENTATION =====
 
-// Process Instagram stories using the same multi-layered approach as posts
+// Process Instagram stories using FastDl.app approach
 async function processInstagramStories(username, userAgent = null) {
+  let session = null;
+
   try {
     if (!username) {
       return { success: false, error: "Username parameter is missing" };
     }
 
-    console.log(`📱 Processing Instagram stories for: @${username}`);
+    console.log(
+      `📱 Processing Instagram stories for: @${username} with FastDl.app`
+    );
 
-    // Construct story URL
-    const storyUrl = `https://www.instagram.com/stories/${username}/`;
+    // Initialize FastDl session with consistent bot detection
+    session = new FastDlSession(username);
+    const sessionInitialized = await session.initialize();
 
-    // Try Instagram GraphQL/Web API first for better story detection
-    console.log(`Trying Instagram GraphQL/Web API for stories: ${storyUrl}`);
-
-    let downloadedStories = null;
-    let method = "snapsave";
-
-    try {
-      // Try to get stories using Instagram's web API (similar to posts)
-      const webStories = await getInstagramStoriesViaWeb(username, userAgent);
-      if (webStories && webStories.length > 0) {
-        console.log(`✅ Instagram Web API found ${webStories.length} stories`);
-        downloadedStories = {
-          status: true,
-          data: webStories,
-          method: "web_api",
-        };
-        method = "web_api";
-      }
-    } catch (webError) {
-      console.log(`❌ Web API method error: ${webError.message}`);
+    if (!sessionInitialized) {
+      console.log(`❌ Failed to initialize FastDl session for @${username}`);
+      return { success: false, error: "Session initialization failed" };
     }
 
-    // Use integrated enhanced logic (no more fallbacks needed)
-    if (
-      !downloadedStories ||
-      !downloadedStories.data ||
-      downloadedStories.data.length === 0
-    ) {
-      console.log(`⚠️ Web API failed, using integrated enhanced logic...`);
+    // Use FastDl.app to scrape stories
+    const stories = await scrapeInstagramStoriesWithFastDl(session);
 
-      // The integrated logic is already in getInstagramStoriesViaWeb
-      // No additional fallbacks needed
-      method = "integrated_enhanced";
-    }
-
-    if (
-      !downloadedStories ||
-      !downloadedStories.status ||
-      !downloadedStories.data ||
-      downloadedStories.data.length === 0
-    ) {
-      console.log(`⚠️ No stories found for @${username}`);
+    if (!stories || stories.length === 0) {
+      console.log(`⚠️ No stories found for @${username} via FastDl.app`);
       return {
         success: true,
         data: {
@@ -4083,89 +4761,42 @@ async function processInstagramStories(username, userAgent = null) {
     }
 
     console.log(
-      `✅ Found ${downloadedStories.data.length} stories for @${username} using ${method}`
+      `✅ Found ${stories.length} stories for @${username} via FastDl.app`
     );
 
     // Process each story and track in database
     const processedStories = [];
     const storyIds = [];
 
-    for (let i = 0; i < downloadedStories.data.length; i++) {
-      const story = downloadedStories.data[i];
+    for (let i = 0; i < stories.length; i++) {
+      const story = stories[i];
 
       try {
-        console.log(
-          `📱 Processing story ${i + 1}/${downloadedStories.data.length}...`
-        );
-
-        // Generate unique story ID from Snapsave URL (since we don't have Instagram URLs)
-        let storyId;
-        if (story.url) {
-          // Use the full URL to generate a unique hash-based ID
-          const storyIdHash = require("crypto")
-            .createHash("md5")
-            .update(story.url)
-            .digest("hex")
-            .substring(0, 16);
-          storyId = `snapsave_${storyIdHash}`;
-        } else {
-          // Fallback for stories without URLs
-          storyId = `story_${story.storyId || story.id || Date.now()}`;
-        }
-
-        console.log(
-          `🔍 Story ID extracted: ${storyId} (from URL: ${
-            story.url ? story.url : "no URL"
-          })`
-        );
+        console.log(`📱 Processing story ${i + 1}/${stories.length}...`);
 
         // Check if story was already processed
-        const isProcessed = await checkStoryProcessed(username, storyId);
-        console.log(`🔍 Story ${storyId} already processed: ${isProcessed}`);
-
-        // Debug: Log the story details
+        const isProcessed = await checkStoryProcessed(username, story.storyId);
         console.log(
-          `🔍 Story details: URL=${
-            story.url ? story.url.substring(0, 50) + "..." : "no URL"
-          }, Type=${story.storyType}, isVideo=${story.isVideo}`
+          `🔍 Story ${story.storyId} already processed: ${isProcessed}`
         );
 
         if (!isProcessed) {
-          // Unified story type detection - trust enhanced downloader data
-          let storyType = story.storyType || "photo"; // Use enhanced downloader's storyType
-          let isVideo =
-            story.isVideo !== undefined
-              ? story.isVideo
-              : story.storyType === "video";
-
-          // Log the unified detection result
-          console.log(`🎯 Unified detection result:`);
-          console.log(`  - Enhanced storyType: ${story.storyType}`);
-          console.log(`  - Enhanced isVideo: ${story.isVideo}`);
-          console.log(`  - Enhanced contentType: ${story.contentType}`);
-          console.log(`  - Final storyType: ${storyType}`);
-          console.log(`  - Final isVideo: ${isVideo}`);
-
           // Add to processed stories
-          console.log(`🎯 Final story data before processing:`);
-          console.log(`  - storyType: ${storyType}`);
-          console.log(`  - isVideo: ${isVideo}`);
-          console.log(`  - story.isVideo: ${story.isVideo}`);
-          console.log(`  - story.contentType: ${story.contentType}`);
-
           processedStories.push({
             ...story,
-            storyId,
-            storyType,
-            isVideo: isVideo, // Ensure isVideo is preserved
             isNew: true,
-            method: method,
+            method: "fastdl",
           });
 
-          storyIds.push(storyId);
+          storyIds.push(story.storyId);
 
-          // Track in database (fix: use story.url instead of undefined storyUrl)
-          await markStoryProcessed(username, story.url, storyType, storyId);
+          // Track in database
+          await markStoryProcessed(
+            username,
+            story.url,
+            story.storyType,
+            story.storyId
+          );
 
           // Send to Telegram if configured
           if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHANNEL_ID) {
@@ -4175,34 +4806,36 @@ async function processInstagramStories(username, userAgent = null) {
               const storyCaption = `💫 View Story: <a href="https://www.instagram.com/${username}/">@${username}</a>`;
 
               console.log(`📤 [STORY] Telegram sending decision:`);
-              console.log(`  - storyType: ${storyType}`);
-              console.log(`  - story.isVideo: ${story.isVideo}`);
-              console.log(`  - story.contentType: ${story.contentType}`);
+              console.log(`  - storyType: ${story.storyType}`);
+              console.log(`  - isVideo: ${story.isVideo}`);
+              console.log(`  - filePath: ${story.filePath || story.url}`);
               console.log(
-                `  - Will send as: ${storyType === "video" ? "VIDEO" : "PHOTO"}`
+                `  - Will send as: ${story.isVideo ? "VIDEO" : "PHOTO"}`
               );
 
-              // Use enhanced detection data for Telegram sending decision
-              const shouldSendAsVideo =
-                story.isVideo === true ||
-                story.contentType === "video" ||
-                storyType === "video";
+              // Use file path if available (downloaded file), otherwise use URL
+              const mediaPath = story.filePath || story.url;
 
-              console.log(`📤 [STORY] Final Telegram sending decision:`);
-              console.log(`  - storyType: ${storyType}`);
-              console.log(`  - story.isVideo: ${story.isVideo}`);
-              console.log(`  - story.contentType: ${story.contentType}`);
-              console.log(`  - shouldSendAsVideo: ${shouldSendAsVideo}`);
-              console.log(
-                `  - Will send as: ${shouldSendAsVideo ? "VIDEO" : "PHOTO"}`
-              );
-
-              if (shouldSendAsVideo) {
-                await sendVideoToTelegram(story.url, storyCaption);
+              if (story.isVideo) {
+                await sendVideoToTelegram(mediaPath, storyCaption);
               } else {
-                await sendPhotoToTelegram(story.url, storyCaption);
+                await sendPhotoToTelegram(mediaPath, storyCaption);
               }
               console.log(`✅ [STORY] Story sent to Telegram successfully`);
+
+              // Clean up downloaded file after sending
+              if (story.filePath && fs.existsSync(story.filePath)) {
+                try {
+                  fs.unlinkSync(story.filePath);
+                  console.log(
+                    `🗑️ [STORY] Cleaned up downloaded file: ${story.fileName}`
+                  );
+                } catch (cleanupError) {
+                  console.log(
+                    `⚠️ [STORY] Failed to cleanup file: ${cleanupError.message}`
+                  );
+                }
+              }
 
               // Add delay after Telegram send to prevent overwhelming the API
               console.log(
@@ -4217,19 +4850,10 @@ async function processInstagramStories(username, userAgent = null) {
           }
         } else {
           // Story already processed, add without Telegram sending
-          // Use unified detection logic for consistency
-          let storyType = story.storyType || "photo"; // Use enhanced downloader's storyType
-          let isVideo =
-            story.isVideo !== undefined
-              ? story.isVideo
-              : story.storyType === "video";
-
           processedStories.push({
             ...story,
-            storyId,
-            storyType,
             isNew: false,
-            method: method,
+            method: "fastdl",
           });
         }
       } catch (storyError) {
@@ -4238,11 +4862,7 @@ async function processInstagramStories(username, userAgent = null) {
         );
       }
 
-      console.log(
-        `✅ Story ${i + 1}/${
-          downloadedStories.data.length
-        } processing completed`
-      );
+      console.log(`✅ Story ${i + 1}/${stories.length} processing completed`);
     }
 
     // Update cache
@@ -4259,7 +4879,7 @@ async function processInstagramStories(username, userAgent = null) {
       data: {
         status: true,
         data: processedStories,
-        method: method,
+        method: "fastdl",
         summary: {
           total: processedStories.length,
           new: processedStories.filter((s) => s.isNew).length,
@@ -4268,604 +4888,65 @@ async function processInstagramStories(username, userAgent = null) {
       },
     };
   } catch (err) {
-    console.error("Error processing stories:", err.message);
-    return { success: false, error: err.message };
+    console.log(
+      `❌ [FASTDL] Error processing Instagram stories for @${username}: ${err.message}`
+    );
+
+    // Provide clear error message and exit gracefully
+    if (err.message.includes("FastDl.app service unavailable")) {
+      console.log(`🚫 [FASTDL] FastDl.app service is currently unavailable`);
+      console.log(
+        `💡 [FASTDL] This could be due to rate limiting, service maintenance, or access restrictions`
+      );
+    } else if (err.message.includes("Could not find input field")) {
+      console.log(
+        `🚫 [FASTDL] FastDl.app interface has changed - input field not found`
+      );
+    } else if (err.message.includes("Could not find download button")) {
+      console.log(
+        `🚫 [FASTDL] FastDl.app interface has changed - download button not found`
+      );
+    } else if (err.message.includes("Failed to load FastDl.app page")) {
+      console.log(
+        `🚫 [FASTDL] Unable to access FastDl.app - service may be down`
+      );
+    } else {
+      console.log(
+        `🚫 [FASTDL] Unexpected error occurred during story processing`
+      );
+    }
+
+    console.log(`✅ [FASTDL] Exiting gracefully without fallback methods`);
+
+    return {
+      success: false,
+      error: `FastDl.app service unavailable: ${err.message}`,
+      data: {
+        status: false,
+        data: [],
+        message: "Story download service temporarily unavailable",
+        summary: {
+          total: 0,
+          new: 0,
+          existing: 0,
+        },
+      },
+    };
+  } finally {
+    // Always cleanup the session
+    if (session) {
+      await session.cleanup();
+    }
   }
 }
 
-// Get Instagram stories using web API (similar to posts approach)
+// Get Instagram stories using web API (similar to posts approach) - COMMENTED OUT
 async function getInstagramStoriesViaWeb(username, userAgent = null) {
-  try {
-    console.log(
-      `🎬 Processing stories for @${username} with integrated enhanced logic...`
-    );
-
-    const headers = {
-      "User-Agent": userAgent || getRandomUserAgent(),
-      Accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.5",
-      "Accept-Encoding": "gzip, deflate, br",
-      DNT: "1",
-      Connection: "keep-alive",
-      "Upgrade-Insecure-Requests": "1",
-    };
-
-    const stories = [];
-    const storyUrl = `https://www.instagram.com/stories/${username}/`;
-
-    // Integrated Method: Analyze current Snapsave results to detect videos
-    console.log("🔍 Analyzing Snapsave results for video detection...");
-    try {
-      // Use the original snapsave to get results, then analyze them
-      const originalSnapsave = require("./snapsave-downloader/src/index");
-      const snapsaveResult = await originalSnapsave(storyUrl);
-
-      if (
-        snapsaveResult &&
-        snapsaveResult.data &&
-        snapsaveResult.data.length > 0
-      ) {
-        for (let i = 0; i < snapsaveResult.data.length; i++) {
-          const item = snapsaveResult.data[i];
-
-          console.log(
-            `  🔍 Analyzing item ${i + 1}/${snapsaveResult.data.length}...`
-          );
-
-          // Analyze the URL to determine if it's actually a video
-          const url = item.url; // Only analyze the main URL, not thumbnails
-
-          if (url) {
-            console.log(
-              `  🔍 Analyzing Snapsave URL: ${url.substring(0, 100)}...`
-            );
-
-            // Check if the URL contains video indicators - COMPREHENSIVE CHECK
-            const videoUrlPatterns = [
-              ".mp4",
-              ".m4v",
-              ".mov",
-              ".avi",
-              ".webm",
-              ".mkv",
-              ".flv",
-              ".wmv",
-              ".asf",
-              ".3gp",
-              ".3g2",
-              ".ogv",
-              ".ts",
-              ".mts",
-              ".m2ts",
-              ".vob",
-              ".ogm",
-              ".rm",
-              ".rmvb",
-              ".divx",
-              ".xvid",
-              ".h264",
-              ".h265",
-              ".hevc",
-              ".vp8",
-              ".vp9",
-              "video",
-              "v2",
-              "v3",
-              "stream",
-              "media",
-              "content",
-              "download",
-              "file",
-              "asset",
-              "resource",
-              "cdn",
-              "cache",
-              "proxy",
-              "mirror",
-              "backup",
-            ];
-            const isVideo =
-              videoUrlPatterns.some((pattern) =>
-                url.toLowerCase().includes(pattern.toLowerCase())
-              ) ||
-              (item.quality && item.quality.toLowerCase().includes("video"));
-
-            // Additional check: try to detect video by checking content type
-            let confirmedVideo = isVideo;
-            let actualVideoUrl = url;
-
-            if (url.startsWith("http")) {
-              try {
-                // Follow redirects to get the actual content
-                const response = await axios.get(url, {
-                  headers,
-                  timeout: 10000,
-                  maxRedirects: 5,
-                  validateStatus: function (status) {
-                    return status >= 200 && status < 400; // Accept redirects
-                  },
-                });
-
-                // Check if we got redirected to a different URL
-                if (
-                  response.request &&
-                  response.request.res &&
-                  response.request.res.responseUrl
-                ) {
-                  actualVideoUrl = response.request.res.responseUrl;
-                  console.log(
-                    `  🔄 Followed redirect to: ${actualVideoUrl.substring(
-                      0,
-                      100
-                    )}...`
-                  );
-                }
-
-                // Enhanced content type and response header analysis
-                const contentType = response.headers["content-type"] || "";
-                const contentLength = response.headers["content-length"] || "0";
-                const contentRange = response.headers["content-range"] || "";
-                const acceptRanges = response.headers["accept-ranges"] || "";
-                const contentDisposition =
-                  response.headers["content-disposition"] || "";
-
-                console.log(
-                  `  📊 Content-Type: ${contentType}, Size: ${contentLength} bytes`
-                );
-                console.log(
-                  `  📊 Content-Range: ${contentRange}, Accept-Ranges: ${acceptRanges}`
-                );
-
-                // Enhanced video detection with multiple criteria - COMPREHENSIVE LIST
-                const videoMimeTypes = [
-                  "video/mp4",
-                  "video/mpeg",
-                  "video/quicktime",
-                  "video/x-msvideo",
-                  "video/x-ms-wmv",
-                  "video/avi",
-                  "video/webm",
-                  "video/ogg",
-                  "video/x-matroska",
-                  "video/x-flv",
-                  "video/3gpp",
-                  "video/3gpp2",
-                  "video/x-ms-asf",
-                  "video/x-m4v",
-                  "video/mp2t",
-                  "video/x-ms-wmx",
-                  "video/x-ms-wvx",
-                  "video/x-ms-wm",
-                  "video/x-ms-wma",
-                  "application/x-mpegURL",
-                  "application/vnd.apple.mpegurl",
-                ];
-                const videoExtensions = [
-                  ".mp4",
-                  ".m4v",
-                  ".mov",
-                  ".avi",
-                  ".webm",
-                  ".mkv",
-                  ".flv",
-                  ".wmv",
-                  ".asf",
-                  ".3gp",
-                  ".3g2",
-                  ".ogv",
-                  ".ts",
-                  ".mts",
-                  ".m2ts",
-                  ".vob",
-                  ".ogm",
-                  ".rm",
-                  ".rmvb",
-                  ".divx",
-                  ".xvid",
-                  ".h264",
-                  ".h265",
-                  ".hevc",
-                  ".vp8",
-                  ".vp9",
-                ];
-                const videoUrlPatterns = [
-                  "video",
-                  "v2",
-                  "v3",
-                  "mp4",
-                  "mov",
-                  "avi",
-                  "webm",
-                  "mkv",
-                  "flv",
-                  "wmv",
-                  "stream",
-                  "media",
-                  "content",
-                  "download",
-                  "file",
-                  "asset",
-                  "resource",
-                  "cdn",
-                  "cache",
-                  "proxy",
-                  "mirror",
-                  "backup",
-                  "archive",
-                  "storage",
-                ];
-                const qualityIndicators = [
-                  "hd",
-                  "4k",
-                  "uhd",
-                  "1080p",
-                  "720p",
-                  "480p",
-                  "360p",
-                  "240p",
-                  "144p",
-                  "high",
-                  "medium",
-                  "low",
-                  "best",
-                  "worst",
-                  "original",
-                  "compressed",
-                  "quality",
-                  "resolution",
-                  "bitrate",
-                  "fps",
-                  "frame",
-                ];
-
-                // Primary: Enhanced content-type and file size analysis
-                const hasVideoMimeType = videoMimeTypes.some((type) =>
-                  contentType.toLowerCase().includes(type)
-                );
-                const hasVideoExtension = videoExtensions.some((ext) =>
-                  actualVideoUrl.toLowerCase().includes(ext)
-                );
-                const hasVideoUrlPattern = videoUrlPatterns.some((pattern) =>
-                  actualVideoUrl.toLowerCase().includes(pattern)
-                );
-                const hasQualityIndicator = qualityIndicators.some((quality) =>
-                  actualVideoUrl.toLowerCase().includes(quality)
-                );
-                const isLargeFile = parseInt(contentLength) > 500000; // Lowered threshold to 500KB
-                const hasVideoHeaders =
-                  contentRange.includes("bytes") || acceptRanges === "bytes";
-
-                // Secondary: Enhanced URL pattern matching and Instagram CDN detection
-                const isInstagramCDN =
-                  actualVideoUrl.includes("scontent.cdninstagram.com") ||
-                  actualVideoUrl.includes("cdninstagram.com") ||
-                  actualVideoUrl.includes("fbcdn.net");
-                const isSnapsaveVideo =
-                  actualVideoUrl.includes("rapidcdn.app/v2") ||
-                  actualVideoUrl.includes("snapsave.app/video");
-
-                // Calculate confidence score
-                let confidenceScore = 0;
-                if (hasVideoMimeType) confidenceScore += 3;
-                if (hasVideoExtension) confidenceScore += 2;
-                if (hasVideoUrlPattern) confidenceScore += 1;
-                if (hasQualityIndicator) confidenceScore += 1;
-                if (isLargeFile) confidenceScore += 2;
-                if (hasVideoHeaders) confidenceScore += 1;
-                if (isInstagramCDN) confidenceScore += 1;
-                if (isSnapsaveVideo) confidenceScore += 1;
-
-                console.log(
-                  `  🎯 Video Detection Score: ${confidenceScore}/12`
-                );
-                console.log(
-                  `  📊 Criteria: MIME(${hasVideoMimeType}) Ext(${hasVideoExtension}) Pattern(${hasVideoUrlPattern}) Quality(${hasQualityIndicator}) Size(${isLargeFile}) Headers(${hasVideoHeaders}) CDN(${isInstagramCDN}) Snapsave(${isSnapsaveVideo})`
-                );
-
-                // Determine if this is video based on confidence score
-                confirmedVideo = confidenceScore >= 3; // Require at least 3 points for video detection
-
-                // Tertiary: File header analysis and magic number detection
-                if (response.data && response.data.length > 0) {
-                  try {
-                    // Get first few bytes for magic number detection
-                    const firstBytes = response.data.slice(0, 12);
-                    const hexSignature = firstBytes
-                      .toString("hex")
-                      .toLowerCase();
-
-                    console.log(
-                      `  🔍 File Header Analysis: ${hexSignature.substring(
-                        0,
-                        24
-                      )}...`
-                    );
-
-                    // Video file magic numbers - COMPREHENSIVE LIST
-                    const videoMagicNumbers = {
-                      mp4: [
-                        "66747970",
-                        "00000020",
-                        "0000001c",
-                        "00000018",
-                        "00000014",
-                      ], // 'ftyp' and variations
-                      mov: [
-                        "66747970",
-                        "6d6f6f76",
-                        "6d646174",
-                        "6d657461",
-                        "75647461",
-                      ], // 'ftyp', 'moov', 'mdat', 'meta', 'udta'
-                      avi: ["52494646", "41564920", "4156494c", "41564958"], // 'RIFF' + 'AVI ', 'AVIL', 'AVIX'
-                      webm: ["1a45dfa3", "1549a966", "1654ae6b"], // WebM/Matroska signatures
-                      mkv: ["1a45dfa3", "1549a966", "1654ae6b"], // Matroska signatures
-                      flv: ["464c5601", "464c5604", "464c5605"], // 'FLV' + versions
-                      wmv: ["3026b275", "8e8e8e8e"], // WMV signatures
-                      asf: ["3026b275", "8e8e8e8e"], // ASF signatures
-                      "3gp": [
-                        "66747970",
-                        "33677020",
-                        "33677034",
-                        "33677035",
-                        "33677036",
-                      ], // 'ftyp' + 3GP variations
-                      m4v: ["66747970", "4d345620", "4d345634"], // 'ftyp' + M4V variations
-                      ts: ["47400000", "47400001", "47400002"], // MPEG-TS signatures
-                      ogv: ["4f676753", "4f676753"], // Ogg signatures
-                      rm: ["2e524d46", "2e7261fd"], // RealMedia signatures
-                      rmvb: ["2e524d46", "2e7261fd"], // RealMedia signatures
-                      divx: ["52494646", "44495658"], // 'RIFF' + 'DIVX'
-                      xvid: ["52494646", "58564944"], // 'RIFF' + 'XVID'
-                    };
-
-                    // Check for video magic numbers
-                    let hasVideoMagicNumber = false;
-                    for (const [format, signatures] of Object.entries(
-                      videoMagicNumbers
-                    )) {
-                      if (
-                        signatures.some((sig) => hexSignature.includes(sig))
-                      ) {
-                        console.log(
-                          `  ✅ Detected ${format.toUpperCase()} magic number`
-                        );
-                        hasVideoMagicNumber = true;
-                        confidenceScore += 2; // Bonus points for magic number match
-                        break;
-                      }
-                    }
-
-                    // Check for image magic numbers (to confirm it's NOT a video) - COMPREHENSIVE LIST
-                    const imageMagicNumbers = {
-                      jpeg: ["ffd8ff", "ffd8fe", "ffd8db"], // JPEG signatures
-                      jpg: ["ffd8ff", "ffd8fe", "ffd8db"], // JPG signatures
-                      png: ["89504e47", "89504e470d0a1a0a"], // PNG signatures
-                      gif: ["47494638", "474946383761", "474946383961"], // GIF87a, GIF89a
-                      webp: ["52494646", "57454250"], // 'RIFF' + 'WEBP'
-                      bmp: ["424d", "424d0000"], // 'BM' signatures
-                      tiff: ["49492a00", "4d4d002a", "4d4d002b"], // TIFF signatures
-                      ico: ["00000100", "00000200"], // ICO signatures
-                      cur: ["00000200"], // CUR signatures
-                      svg: ["3c737667", "3c3f786d6c"], // SVG signatures
-                      pdf: ["25504446"], // PDF signature
-                      eps: ["c5d0d3c6", "25215053"], // EPS signatures
-                      raw: ["49492a00", "4d4d002a", "4d4d002b"], // RAW signatures (TIFF-based)
-                    };
-
-                    let hasImageMagicNumber = false;
-                    for (const [format, signatures] of Object.entries(
-                      imageMagicNumbers
-                    )) {
-                      if (
-                        signatures.some((sig) => hexSignature.includes(sig))
-                      ) {
-                        console.log(
-                          `  🖼️ Detected ${format.toUpperCase()} magic number (likely image)`
-                        );
-                        hasImageMagicNumber = true;
-                        confidenceScore -= 2; // Penalty for image magic number
-                        break;
-                      }
-                    }
-
-                    // Update confidence score
-                    console.log(
-                      `  🎯 Updated Video Detection Score: ${confidenceScore}/14`
-                    );
-                    confirmedVideo = confidenceScore >= 3; // Re-evaluate with magic number data
-                  } catch (headerError) {
-                    console.log(
-                      `  ⚠️ File header analysis failed: ${headerError.message}`
-                    );
-                  }
-                }
-
-                // Additional check: if it's a rapidcdn URL, try to extract the original Instagram URL
-                if (
-                  actualVideoUrl.includes("rapidcdn.app") &&
-                  actualVideoUrl.includes("token=")
-                ) {
-                  try {
-                    // Extract the token and decode it to find the original Instagram URL
-                    const tokenMatch = actualVideoUrl.match(/token=([^&]+)/);
-                    if (tokenMatch) {
-                      const token = tokenMatch[1];
-
-                      // Try multiple decoding approaches
-                      let tokenData = null;
-                      let decodedToken = "";
-
-                      try {
-                        // Method 1: Standard base64 decode
-                        decodedToken = Buffer.from(token, "base64").toString(
-                          "utf-8"
-                        );
-                        tokenData = JSON.parse(decodedToken);
-                      } catch (decodeError1) {
-                        try {
-                          // Method 2: URL-safe base64 decode
-                          const urlSafeToken = token
-                            .replace(/-/g, "+")
-                            .replace(/_/g, "/");
-                          decodedToken = Buffer.from(
-                            urlSafeToken,
-                            "base64"
-                          ).toString("utf-8");
-                          tokenData = JSON.parse(decodedToken);
-                        } catch (decodeError2) {
-                          try {
-                            // Method 3: Try to extract URL directly from token string
-                            const urlMatch = token.match(/https?:\/\/[^\s"']+/);
-                            if (urlMatch) {
-                              tokenData = { url: urlMatch[0] };
-                            }
-                          } catch (decodeError3) {
-                            console.log(
-                              `  ⚠️ All token decoding methods failed`
-                            );
-                          }
-                        }
-                      }
-
-                      if (tokenData && tokenData.url) {
-                        console.log(
-                          `  🔗 Found original Instagram URL: ${tokenData.url.substring(
-                            0,
-                            100
-                          )}...`
-                        );
-
-                        // Check if the original URL is a video - COMPREHENSIVE CHECK
-                        const originalVideoPatterns = [
-                          ".mp4",
-                          ".m4v",
-                          ".mov",
-                          ".avi",
-                          ".webm",
-                          ".mkv",
-                          ".flv",
-                          ".wmv",
-                          ".asf",
-                          ".3gp",
-                          ".3g2",
-                          ".ogv",
-                          ".ts",
-                          ".mts",
-                          ".m2ts",
-                          ".vob",
-                          ".ogm",
-                          ".rm",
-                          ".rmvb",
-                          ".divx",
-                          ".xvid",
-                          ".h264",
-                          ".h265",
-                          ".hevc",
-                          ".vp8",
-                          ".vp9",
-                          "video",
-                          "v2",
-                          "v3",
-                          "stream",
-                          "media",
-                          "content",
-                          "download",
-                          "v/t51.2885-15",
-                          "v/t51.2885-16",
-                          "v/t51.2885-17",
-                          "v/t51.2885-18",
-                          "cdninstagram.com/v/",
-                          "fbcdn.net/v/",
-                          "scontent.cdninstagram.com/v/",
-                        ];
-                        const originalIsVideo = originalVideoPatterns.some(
-                          (pattern) =>
-                            tokenData.url
-                              .toLowerCase()
-                              .includes(pattern.toLowerCase())
-                        );
-
-                        if (originalIsVideo) {
-                          confirmedVideo = true;
-                          actualVideoUrl = tokenData.url;
-                          console.log(
-                            `  ✅ Confirmed as video from original URL`
-                          );
-                        }
-                      }
-                    }
-                  } catch (tokenError) {
-                    console.log(
-                      `  ⚠️ Token extraction failed: ${tokenError.message}`
-                    );
-                  }
-                }
-              } catch (headError) {
-                console.log(`  ⚠️ Could not analyze URL: ${headError.message}`);
-                // Keep original detection if analysis fails
-              }
-            }
-
-            console.log(`  🎯 Final enhanced detection result:`);
-            console.log(`  - confirmedVideo: ${confirmedVideo}`);
-            console.log(`  - storyType: ${confirmedVideo ? "video" : "photo"}`);
-            console.log(`  - isVideo: ${confirmedVideo}`);
-            console.log(
-              `  - contentType: ${confirmedVideo ? "video" : "image"}`
-            );
-
-            // Create consistent story ID from Snapsave URL (hash-based)
-            const storyIdHash = require("crypto")
-              .createHash("md5")
-              .update(url)
-              .digest("hex")
-              .substring(0, 16);
-
-            stories.push({
-              thumbnail: item.thumbnail || url,
-              url: actualVideoUrl,
-              storyId: `snapsave_${storyIdHash}`,
-              storyType: confirmedVideo ? "video" : "photo",
-              quality: item.quality || "HD",
-              isVideo: confirmedVideo,
-              method: "integrated_enhanced",
-              originalUrl: url,
-              contentType: confirmedVideo ? "video" : "image",
-            });
-
-            console.log(
-              `  ✅ Analyzed ${
-                confirmedVideo ? "video" : "photo"
-              }: ${actualVideoUrl.substring(0, 50)}...`
-            );
-          }
-
-          console.log(
-            `  ✅ URL analysis ${i + 1}/${snapsaveResult.data.length} completed`
-          );
-        }
-      }
-    } catch (analysisError) {
-      console.log(`  ❌ Analysis failed: ${analysisError.message}`);
-    }
-
-    console.log(`📊 Integrated enhanced logic found ${stories.length} stories`);
-
-    if (stories.length > 0) {
-      console.log(
-        `✅ Integrated enhanced logic found ${stories.length} stories`
-      );
-      return stories;
-    } else {
-      console.log(`⚠️ No stories found via integrated enhanced logic`);
-      return [];
-    }
-  } catch (error) {
-    console.log(`❌ Enhanced downloader failed: ${error.message}`);
-    throw error;
-  }
+  // COMMENTED OUT - Using FastDl.app instead
+  console.log(
+    `🎬 [COMMENTED OUT] Processing stories for @${username} - Using FastDl.app instead`
+  );
+  return [];
 }
 
 // Extract stories from Instagram stories page content
