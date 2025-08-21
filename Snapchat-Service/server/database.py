@@ -263,7 +263,7 @@ class DatabaseManager:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 
-                # Count records before deletion
+                # Get counts before deletion
                 cursor.execute("SELECT COUNT(*) FROM processed_media WHERE username = ?", (username,))
                 processed_count = cursor.fetchone()[0]
                 
@@ -290,6 +290,35 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"❌ Failed to clear user data: {e}")
             return {"processed_deleted": 0, "cache_deleted": 0, "telegram_logs_deleted": 0, "target_deleted": 0}
+
+    async def clear_all_cached_media(self) -> Dict[str, int]:
+        """Clear all cached media for all users"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Get counts before deletion
+                cursor.execute("SELECT COUNT(*) FROM recent_media_cache")
+                cache_count = cursor.fetchone()[0]
+                
+                cursor.execute("SELECT COUNT(*) FROM processed_media")
+                processed_count = cursor.fetchone()[0]
+                
+                # Delete all cached media
+                cursor.execute("DELETE FROM recent_media_cache")
+                cursor.execute("DELETE FROM processed_media")
+                
+                conn.commit()
+                
+                logger.info(f"Cleared {cache_count} cached media and {processed_count} processed media records")
+                
+                return {
+                    "cache_deleted": cache_count,
+                    "processed_deleted": processed_count
+                }
+        except Exception as e:
+            logger.error(f"❌ Failed to clear all cached media: {e}")
+            return {"cache_deleted": 0, "processed_deleted": 0}
     
     async def get_telegram_stats(self) -> Dict[str, Any]:
         """Get Telegram sending statistics"""

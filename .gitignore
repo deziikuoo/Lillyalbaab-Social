@@ -109,6 +109,24 @@ debug-*.js
 *.test.js
 *.spec.js
 
+# Downloaded media files
+Snapchat-Service/server/downloads/
+Instagram-Video-Downloader-API/downloads/
+*.mp4
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
 # Keep-alive scripts (optional - remove if you want to include them)
 # keep-alive.js
 # keep-alive.ps1

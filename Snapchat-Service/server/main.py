@@ -79,21 +79,17 @@ class ActivityTracker:
         
         self.recent_stories += new_stories_count
         self.last_activity = datetime.now(timezone(timedelta(hours=-4)))  # EDT timezone
-        logger.info(f"Activity updated: +{new_stories_count} stories (total: {self.recent_stories} in 24h)")
+        logger.info(f"Activity updated: +{new_stories_count} stories (total: {self.recent_stories} in current poll cycle)")
     
     def get_activity_level(self):
-        # Reset daily counter
-        now = datetime.now(timezone(timedelta(hours=-4)))  # EDT timezone
-        hours_since_reset = (now - self.last_reset).total_seconds() / 3600
-        if hours_since_reset >= 24:
-            self.recent_stories = 0
-            self.last_reset = now
-            logger.info("Daily activity reset")
-        
-        # Activity levels (adjusted for Snapchat's faster content cycle)
+        # Activity levels - reset counter at end of each poll cycle
         if self.recent_stories >= 5: return 'high'
         if self.recent_stories >= 2: return 'medium'
         return 'low'
+    
+    def reset_activity_counter(self):
+        self.recent_stories = 0
+        logger.info("🔄 Activity counter reset for next poll cycle")
     
     def get_polling_interval(self):
         base_interval = 10  # minutes (faster than Instagram due to story expiration)
@@ -1936,6 +1932,10 @@ async def check_for_new_stories(force=False):
         logger.info('Polling check completed')
         # Always print request statistics after each polling run
         request_tracker.print_stats()
+        
+        # Reset activity counter for next poll cycle
+        activity_tracker.reset_activity_counter()
+        
         logger.info('')
         
     except Exception as error:
@@ -2422,6 +2422,130 @@ async def enhanced_check_for_new_stories(force=False):
 
 # Replace the original check_for_new_stories with the enhanced version
 check_for_new_stories = enhanced_check_for_new_stories
+
+# Add clear cache endpoint
+@app.post("/clear-cache")
+async def clear_cache():
+    """Clear all cached data and processed media"""
+    try:
+        # Clear progress data
+        with progress_lock:
+            progress_data.clear()
+            file_progress.clear()
+        
+        # Clear WebSocket connections
+        for key in list(websocket_manager.active_connections.keys()):
+            for websocket in websocket_manager.active_connections[key]:
+                try:
+                    await websocket.close()
+                except:
+                    pass
+            websocket_manager.active_connections[key] = []
+        
+        # Clear database cache (if using database)
+        if db_manager:
+            try:
+                await db_manager.clear_all_cached_media()
+                logger.info("Database cache cleared")
+            except Exception as e:
+                logger.warning(f"Could not clear database cache: {e}")
+        
+        logger.info("Cache cleared successfully")
+        return {"success": True, "message": "Cache cleared successfully"}
+        
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear cache: {str(e)}")
+
+# Add gallery endpoint for all users
+@app.get("/gallery/{media_type}", response_model=GalleryResponse)
+async def get_gallery_all_users(media_type: str):
+    """Get gallery for all users of a specific media type"""
+    logger.info(f"Fetching gallery for all users - {media_type}")
+    if media_type not in ["stories", "highlights", "spotlights"]:
+        raise HTTPException(status_code=400, detail="Invalid media type")
+    
+    all_media_files = []
+    
+    # Get all user directories
+    if not os.path.exists(DOWNLOADS_DIR):
+        return GalleryResponse(status="success", media=[])
+    
+    for username in os.listdir(DOWNLOADS_DIR):
+        user_dir = os.path.join(DOWNLOADS_DIR, username)
+        if not os.path.isdir(user_dir):
+            continue
+            
+        media_dir = os.path.join(user_dir, media_type)
+        if not os.path.exists(media_dir):
+            continue
+        
+        try:
+            metadata = load_media_metadata(username, media_type)
+            key = f"{username}:{media_type}"
+            
+            with progress_lock:
+                file_progress_data = file_progress.get(key, {})
+            
+            for item in metadata:
+                file_path = os.path.join(media_dir, item["filename"])
+                if os.path.isfile(file_path):
+                    file_type = item["type"]
+                    download_status = item["download_status"]
+                    progress = item["progress"]
+                    
+                    if item["filename"] in file_progress_data:
+                        file_status = file_progress_data[item["filename"]]
+                        download_status = file_status["status"]
+                        progress = file_status["progress"]
+                    
+                    # Use the actual file as both thumbnail and download URL
+                    file_url = f"/downloads/{username}/{media_type}/{item['filename']}"
+                    all_media_files.append(
+                        GalleryMediaItem(
+                            filename=item["filename"],
+                            type=file_type,
+                            thumbnail_url=file_url,
+                            download_status=download_status,
+                            progress=progress,
+                            download_url=file_url
+                        )
+                    )
+        except Exception as e:
+            logger.warning(f"Error processing user {username}: {e}")
+            continue
+    
+    return GalleryResponse(status="success", media=all_media_files)
+
+# Static file serving for downloaded media
+@app.get("/downloads/{username}/{media_type}/{filename}")
+async def serve_downloaded_file(username: str, media_type: str, filename: str):
+    """Serve downloaded media files"""
+    try:
+        file_path = os.path.join(DOWNLOADS_DIR, username, media_type, filename)
+        
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        # Determine content type based on file extension
+        content_type = "application/octet-stream"
+        if filename.lower().endswith(('.jpg', '.jpeg')):
+            content_type = "image/jpeg"
+        elif filename.lower().endswith('.png'):
+            content_type = "image/png"
+        elif filename.lower().endswith(('.mp4', '.mov')):
+            content_type = "video/mp4"
+        elif filename.lower().endswith('.gif'):
+            content_type = "image/gif"
+        
+        return FileResponse(
+            path=file_path,
+            media_type=content_type,
+            filename=filename
+        )
+    except Exception as e:
+        logger.error(f"Error serving file {filename}: {e}")
+        raise HTTPException(status_code=500, detail="Error serving file")
 
 if __name__ == "__main__":
     import uvicorn

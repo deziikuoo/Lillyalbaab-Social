@@ -1,596 +1,204 @@
-﻿/* Snapchat-themed color variables */
-:root {
-  --snapchat-yellow: #fffc00;
-  --snapchat-orange: #ff6b35;
-  --snapchat-red: #f7931e;
-  --snapchat-dark: #1a1a1a;
-  --snapchat-light: #ffffff;
-  --snapchat-gray: #f5f5f5;
-  --snapchat-shadow: rgba(0, 0, 0, 0.1);
-  --snapchat-border: rgba(255, 252, 0, 0.2);
-}
-
-/* Enhanced Snapchat Page */
+/* Snapchat-specific styles */
 .snap-page {
-  padding: 20px;
-  background: linear-gradient(120deg, #fffc00 0%, #ff6b35 50%, #f7931e 100%);
-  min-height: 100vh;
-  color: #1a1a1a;
+  padding: 20px 0;
 }
 
 .snap-page h1 {
   text-align: center;
-  font-size: 2.5rem;
-  font-weight: 700;
-  margin-bottom: 10px;
-  background: linear-gradient(135deg, #fffc00 0%, #ff6b35 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.app-subtitle {
-  text-align: center;
-  color: #666;
   margin-bottom: 30px;
-  font-size: 1.1rem;
-  line-height: 1.6;
+  color: #fffc00;
+  font-size: 28px;
+  font-weight: bold;
 }
 
-/* Enhanced Grid Layout */
 .snap-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-/* Enhanced Cards with Glass Morphism */
-.snap-card {
-  border: 1px solid var(--snapchat-border);
-  border-radius: 16px;
-  padding: 24px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s ease;
-}
-
-.snap-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
-}
-
-.snap-card h2 {
-  color: #333;
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin-bottom: 20px;
-  text-align: center;
-}
-
-/* Enhanced Form Elements */
-.snap-row {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.snap-input {
-  flex: 1;
-  min-width: 200px;
-  padding: 12px 16px;
-  border: 2px solid var(--snapchat-border);
-  border-radius: 8px;
-  background: white;
-  color: #1a1a1a;
-  font-size: 16px;
-  outline: none;
-  transition: all 0.3s ease;
-}
-
-.snap-input:focus {
-  border-color: var(--snapchat-orange);
-  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1);
-}
-
-.snap-select {
-  padding: 12px 16px;
-  border: 2px solid var(--snapchat-border);
-  border-radius: 8px;
-  background: white;
-  color: #1a1a1a;
-  font-size: 16px;
-  outline: none;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  min-width: 120px;
-}
-
-.snap-select:focus {
-  border-color: var(--snapchat-orange);
-  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1);
-}
-
-.snap-btn {
-  padding: 12px 20px;
-  border-radius: 25px;
-  background: linear-gradient(135deg, #fffc00 0%, #ff6b35 100%);
-  color: #1a1a1a;
-  border: none;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 14px;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 12px rgba(255, 252, 0, 0.3);
-  white-space: nowrap;
-}
-
-.snap-btn:hover:enabled {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(255, 252, 0, 0.4);
-}
-
-.snap-btn:disabled {
-  background: #ccc;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
-/* Enhanced Progress Display */
-.snap-progress-line {
-  display: flex;
-  justify-content: space-between;
-  font-size: 14px;
-  margin: 8px 0;
-  padding: 8px;
-  background: rgba(255, 252, 0, 0.05);
-  border-radius: 8px;
-  border: 1px solid var(--snapchat-border);
-}
-
-/* Enhanced Badges */
-.snap-badge {
-  margin-left: 8px;
-  padding: 4px 8px;
-  border-radius: 12px;
-  background: rgba(255, 252, 0, 0.2);
-  color: #1a1a1a;
-  font-size: 12px;
-  font-weight: 500;
-  align-self: flex-start;
-}
-
-.snap-badge.complete {
-  background: rgba(46, 204, 113, 0.2);
-  color: #27ae60;
-}
-
-.snap-badge.error {
-  background: rgba(231, 76, 60, 0.2);
-  color: #e74c3c;
-}
-
-.snap-file-progress {
-  margin-left: auto;
-  font-weight: 600;
-  color: var(--snapchat-orange);
-}
-
-/* Enhanced Gallery */
-.snap-gallery {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 16px;
+  gap: 30px;
   margin-top: 20px;
 }
 
-.snap-media {
-  background: white;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s ease;
-  border: 1px solid rgba(0, 0, 0, 0.05);
-}
-
-.snap-media:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-}
-
-.snap-media img,
-.snap-media video {
-  width: 100%;
-  height: 150px;
-  object-fit: cover;
-  border-radius: 8px 8px 0 0;
-}
-
-.snap-media-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-}
-
-.snap-file-name {
-  font-weight: 600;
-  color: #333;
-  font-size: 14px;
-  word-break: break-word;
-}
-
-.snap-link {
-  color: var(--snapchat-orange);
-  text-decoration: none;
-  font-weight: 500;
-  transition: color 0.3s ease;
-}
-
-.snap-link:hover {
-  color: #e55a2b;
-}
-
-.snap-empty {
-  text-align: center;
-  color: #666;
-  padding: 40px;
-  font-style: italic;
-  background: rgba(255, 252, 0, 0.05);
-  border-radius: 12px;
-  border: 1px solid var(--snapchat-border);
-}
-
-.snap-error {
-  color: #e74c3c;
-  background: rgba(231, 76, 60, 0.1);
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(231, 76, 60, 0.3);
-  font-weight: 500;
-  margin: 16px 0;
-}
-
-/* Target Management Styles */
-.target-management {
-  background: rgba(255, 252, 0, 0.05);
-  border: 1px solid var(--snapchat-border);
-  border-radius: 16px;
-  padding: 24px;
-  margin-bottom: 30px;
-  backdrop-filter: blur(5px);
-}
-
-.current-target {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.target-label {
-  font-weight: 600;
-  color: #333;
-  font-size: 1rem;
-}
-
-.target-username {
-  font-weight: 700;
-  color: var(--snapchat-orange);
-  font-size: 1.1rem;
-  background: rgba(255, 107, 53, 0.1);
-  padding: 8px 16px;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 107, 53, 0.3);
-}
-
-.target-buttons {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.btn-change-target,
-.btn-show-polling,
-.btn-show-stats {
-  background: linear-gradient(135deg, #fffc00 0%, #ff6b35 100%);
-  color: #1a1a1a;
-  border: none;
-  padding: 10px 20px;
-  border-radius: 25px;
-  font-weight: 600;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 12px rgba(255, 252, 0, 0.3);
-}
-
-.btn-change-target:hover,
-.btn-show-polling:hover,
-.btn-show-stats:hover,
-.btn-refresh-status:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(255, 252, 0, 0.4);
-}
-
-/* Target Manager Form */
-.target-manager {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  margin-top: 16px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-}
-
-.target-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.input-group {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.target-input {
-  flex: 1;
-  min-width: 250px;
-  padding: 12px 16px;
-  border: 2px solid var(--snapchat-border);
-  border-radius: 8px;
-  font-size: 1rem;
-  outline: none;
-  transition: all 0.3s ease;
-}
-
-.target-input:focus {
-  border-color: var(--snapchat-orange);
-  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1);
-}
-
-.btn-update-target {
-  background: var(--snapchat-orange);
-  color: white;
-  border: none;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.btn-update-target:hover:enabled {
-  background: #e55a2b;
-  transform: translateY(-1px);
-}
-
-.btn-update-target:disabled {
-  background: #ccc;
-  cursor: not-allowed;
-}
-
-.target-error {
-  color: #e74c3c;
-  background: rgba(231, 76, 60, 0.1);
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(231, 76, 60, 0.3);
-  font-size: 0.9rem;
-}
-
-.target-examples {
-  color: #666;
-  font-size: 0.85rem;
-  font-style: italic;
-}
-
-/* Polling Manager */
-.polling-manager {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  margin-top: 16px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-}
-
-.polling-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.polling-buttons {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.btn-start-polling,
-.btn-stop-polling,
-.btn-manual-poll {
-  background: linear-gradient(135deg, #fffc00 0%, #ff6b35 100%);
-  color: #1a1a1a;
-  border: none;
-  padding: 12px 20px;
-  border-radius: 25px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 12px rgba(255, 252, 0, 0.3);
-}
-
-.btn-start-polling:hover,
-.btn-stop-polling:hover,
-.btn-manual-poll:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(255, 252, 0, 0.4);
-}
-
-.btn-stop-polling {
-  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
-  color: white;
-}
-
-.polling-info {
-  color: #666;
-  font-size: 0.9rem;
-  font-style: italic;
-}
-
-/* Statistics Manager */
-.stats-manager {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  margin-top: 16px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-}
-
-.stats-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.stats-header h3 {
-  color: #333;
-  font-size: 1.2rem;
-  font-weight: 600;
-}
-
-.btn-refresh-stats {
-  background: var(--snapchat-orange);
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.btn-refresh-stats:hover:enabled {
-  background: #e55a2b;
-  transform: translateY(-1px);
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-}
-
-.stat-item {
-  background: rgba(255, 252, 0, 0.1);
-  padding: 16px;
-  border-radius: 8px;
-  border: 1px solid var(--snapchat-border);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.stat-label {
-  font-size: 0.9rem;
-  color: #666;
-  font-weight: 500;
-}
-
-.stat-value {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--snapchat-orange);
-}
-
-/* Responsive Design */
 @media (max-width: 768px) {
   .snap-grid {
     grid-template-columns: 1fr;
-    gap: 16px;
-  }
-  
-  .snap-row {
-    flex-direction: column;
-  }
-  
-  .target-buttons {
-    flex-direction: column;
-  }
-  
-  .polling-buttons {
-    flex-direction: column;
-  }
-  
-  .current-target {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  
-  .snap-gallery {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  }
-  
-  .stats-grid {
-    grid-template-columns: 1fr;
+    gap: 20px;
   }
 }
 
-@media (max-width: 480px) {
-  .snap-page {
-    padding: 10px;
-  }
-  
-  .snap-card {
-    padding: 16px;
-  }
-  
-  .snap-page h1 {
-    font-size: 1.8rem;
-  }
-  
-  .target-username {
-    font-size: 1rem;
-    padding: 6px 12px;
-  }
-  
-  .btn-change-target,
-  .btn-show-polling,
-  .btn-show-stats {
-    padding: 8px 16px;
-    font-size: 0.8rem;
-  }
-  
-  .snap-btn {
-    padding: 10px 16px;
-    font-size: 12px;
-  }
+/* Snapchat-themed color overrides */
+.downloader-container,
+.gallery-container {
+  background: rgba(255, 252, 0, 0.05);
+  border: 1px solid rgba(255, 252, 0, 0.2);
 }
 
-/* Smooth transitions for all interactive elements */
-.snap-card,
-.target-management,
-.polling-manager,
-.stats-manager {
+.downloader-header h2,
+.gallery-header h2 {
+  color: #fffc00;
+}
+
+.download-button {
+  background: linear-gradient(135deg, #fffc00 0%, #ff6b35 100%);
+  color: #1a1a1a;
+  font-weight: bold;
+}
+
+.download-button:hover:enabled {
+  background: linear-gradient(135deg, #ff6b35 0%, #fffc00 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 252, 0, 0.3);
+}
+
+.username-input:focus,
+.download-type-select:focus {
+  border-color: #fffc00;
+  box-shadow: 0 0 0 2px rgba(255, 252, 0, 0.2);
+}
+
+.telegram-toggle input:checked + .toggle-slider {
+  background: #fffc00;
+}
+
+.telegram-toggle input:checked + .toggle-slider:before {
+  background: #1a1a1a;
+}
+
+.progress-fill {
+  background: linear-gradient(90deg, #fffc00, #ff6b35);
+}
+
+.file-progress-fill {
+  background: linear-gradient(90deg, #fffc00, #ff6b35);
+}
+
+.gallery-item {
+  border: 1px solid rgba(255, 252, 0, 0.2);
   transition: all 0.3s ease;
 }
 
-/* Enhanced focus states for accessibility */
-.snap-btn:focus,
-.snap-input:focus,
-.snap-select:focus {
-  outline: 2px solid var(--snapchat-orange);
-  outline-offset: 2px;
+.gallery-item:hover {
+  border-color: #fffc00;
+  box-shadow: 0 8px 25px rgba(255, 252, 0, 0.15);
 }
 
+.item-type {
+  background: #fffc00;
+  color: #1a1a1a;
+}
+
+.download-link {
+  background: #fffc00;
+  color: #1a1a1a;
+}
+
+.download-link:hover {
+  background: #ff6b35;
+  color: white;
+}
+
+.telegram-send-btn {
+  background: #0088cc;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.telegram-send-btn:hover:enabled {
+  background: #006699;
+  transform: translateY(-1px);
+}
+
+.telegram-send-btn.success {
+  background: #28a745;
+}
+
+.telegram-send-btn.error {
+  background: #dc3545;
+}
+
+.telegram-send-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.telegram-error {
+  color: #dc3545;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.success-message {
+  background: rgba(40, 167, 69, 0.1);
+  border: 1px solid rgba(40, 167, 69, 0.3);
+  color: #28a745;
+  padding: 12px;
+  border-radius: 8px;
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.clear-progress-btn {
+  background: #6c757d;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.clear-progress-btn:hover {
+  background: #5a6268;
+}
+
+.file-progress {
+  margin-top: 16px;
+}
+
+.file-progress-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+
+.filename {
+  font-size: 12px;
+  color: #ccc;
+  min-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 252, 0, 0.2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.file-progress-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.file-progress-text {
+  font-size: 11px;
+  color: #999;
+  min-width: 40px;
+  text-align: right;
+}

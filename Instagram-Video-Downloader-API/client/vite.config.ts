@@ -1,56 +1,65 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
     proxy: {
-      '/igdl': {
-        target: 'http://localhost:3000',
+      "/igdl": {
+        target: "http://localhost:3000",
         changeOrigin: true,
       },
-      '/send-to-telegram': {
-        target: 'http://localhost:3000',
+      "/send-to-telegram": {
+        target: "http://localhost:3000",
         changeOrigin: true,
       },
-      '/target': {
-        target: 'http://localhost:3000',
+      "/target": {
+        target: "http://localhost:3000",
         changeOrigin: true,
       },
-      '/poll-now': {
-        target: 'http://localhost:3000',
+      "/poll-now": {
+        target: "http://localhost:3000",
         changeOrigin: true,
       },
-      '/start-polling': {
-        target: 'http://localhost:3000',
+      "/start-polling": {
+        target: "http://localhost:3000",
         changeOrigin: true,
       },
-      '/stop-polling': {
-        target: 'http://localhost:3000',
+      "/stop-polling": {
+        target: "http://localhost:3000",
         changeOrigin: true,
       },
-      '/status': {
-        target: 'http://localhost:3000',
+      "/status": {
+        target: "http://localhost:3000",
         changeOrigin: true,
       },
-      '/stats': {
-        target: 'http://localhost:3000',
+      "/stats": {
+        target: "http://localhost:3000",
         changeOrigin: true,
       },
-      '/set-target': {
-        target: 'http://localhost:3000',
+      "/set-target": {
+        target: "http://localhost:3000",
         changeOrigin: true,
       },
-      // Snapchat service proxy (REST + optional WS)
-      '/snapchat-api': {
-        target: 'http://localhost:8000',
+      // Snapchat service proxy (REST + WebSocket)
+      "/snapchat-api": {
+        target: "http://localhost:8000",
         changeOrigin: true,
         ws: true,
-        rewrite: (p) => p.replace(/^\/snapchat-api/, ''),
+        rewrite: (p) => p.replace(/^\/snapchat-api/, ""),
+      },
+      // Static file serving for downloads
+      "/downloads": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      // Snapchat-specific endpoints (these conflict with Instagram, so we need to be specific)
+      "/snapchat-api/send-to-telegram": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/snapchat-api/, ""),
       },
     },
   },
-})
-
-
+});

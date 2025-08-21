@@ -283,7 +283,7 @@ class FastDlSession {
     await element.click({ delay: Math.random() * 100 + 50 });
   }
 }
-
+*/
 // ===== GLOBAL ERROR HANDLING =====
 process.on("uncaughtException", (error) => {
   console.error("🚨 UNCAUGHT EXCEPTION:", error);
@@ -317,9 +317,6 @@ process.on("SIGINT", () => {
   console.log("🛑 Received SIGINT, shutting down gracefully...");
   cleanupAndExit(0);
 });
-
-// Placeholder for cleanupAndExit function - will be defined after database initialization
-
 // ===== MEMORY MANAGEMENT =====
 const memoryManager = {
   lastCleanup: Date.now(),
@@ -342,27 +339,6 @@ const memoryManager = {
         }
       }
 
-      // Clean up browser pool if too many instances - COMMENTED OUT DUE TO PUPPETEER ISSUES
-      /*
-      const browserStats = browserPool.getStats();
-      if (browserStats.total > 1 && browserStats.inUse === 0) {
-        console.log("🧹 Cleaning up unused browser instances...");
-        await browserPool.cleanup();
-      }
-      */
-
-      // Validate cache integrity (every 4th cleanup = every 2 hours) - TEMPORARILY DISABLED
-      const cleanupCount = Math.floor(
-        (Date.now() - this.lastCleanup) / this.cleanupInterval
-      );
-      if (cleanupCount % 4 === 0) {
-        console.log("🔍 Running cache integrity validation...");
-        // await validateCacheIntegrity(); // TEMPORARILY DISABLED
-      }
-
-      // Check storage limits (every cleanup cycle) - TEMPORARILY DISABLED
-      // await checkStorageLimitAndCleanup();
-
       // Schedule 4-week cache cleanup (every 1344 cleanup cycles = 4 weeks) - TEMPORARILY DISABLED
       // 30 min * 1344 = 40320 min = 672 hours = 28 days = 4 weeks
       const weeklyCleanupCount = Math.floor(
@@ -370,16 +346,14 @@ const memoryManager = {
       );
       if (weeklyCleanupCount % 1344 === 0 && weeklyCleanupCount > 0) {
         console.log("📋 Scheduling 4-week cache cleanup operation...");
-        // await cleanupQueue.addToQueue({
-        //   name: "4-Week Cache Cleanup",
-        //   execute: async () => {
-        //     await cleanExpiredCache();
-        //   },
-        // });
       }
 
-      this.lastCleanup = Date.now();
-      console.log("✅ Memory cleanup completed");
+      try {
+        this.lastCleanup = Date.now();
+        console.log("✅ Memory cleanup completed");
+      } catch (error) {
+        console.error("❌ Memory cleanup failed:", error);
+      }
     } catch (error) {
       console.error("❌ Memory cleanup failed:", error);
     }
@@ -387,7 +361,7 @@ const memoryManager = {
 
   start() {
     setInterval(() => {
-      this.performCleanup();
+      this.performCleanup(); // Ensure 'this' context is preserved
     }, this.cleanupInterval);
     console.log("🧠 Memory management system started");
   },
@@ -4783,7 +4757,7 @@ app.post("/send-to-telegram", async (req, res) => {
       photoUrl, // optional legacy param for photos
       caption, // optional caption text
       originalInstagramUrl, // optional original IG URL
-      source = "instagram", // 'instagram' | 'snapchat'
+      source = "instagram", // 'instagram'
       type, // 'video' | 'photo' | undefined (try to infer)
     } = req.body || {};
 
@@ -4795,27 +4769,7 @@ app.post("/send-to-telegram", async (req, res) => {
         .json({ error: "mediaUrl (or videoUrl/photoUrl) is required" });
     }
 
-    // Normalize Snapchat proxy URLs to server-to-server base
-    const SNAP_INTERNAL =
-      process.env.SNAPCHAT_API_INTERNAL || "http://localhost:8000";
-    const normalizeUrl = (url) => {
-      try {
-        if (url.startsWith("/snapchat-api/")) {
-          return `${SNAP_INTERNAL}${url.replace("/snapchat-api", "")}`;
-        }
-        if (url.includes("://localhost:5173/snapchat-api/")) {
-          return url.replace(
-            "://localhost:5173/snapchat-api/",
-            "://localhost:8000/"
-          );
-        }
-        return url;
-      } catch (_) {
-        return url;
-      }
-    };
-
-    const finalUrl = normalizeUrl(providedUrl);
+    const finalUrl = providedUrl;
 
     // Compose caption with emoji prefix based on source
     let fullCaption = caption || "";
@@ -4825,7 +4779,7 @@ app.post("/send-to-telegram", async (req, res) => {
     if (!fullCaption) {
       fullCaption = `New media\n\nDownloaded via Tyla IG Kapturez`;
     }
-    const emoji = source === "snapchat" ? "👻" : "📷";
+    const emoji = "📷";
     if (!fullCaption.trim().startsWith(emoji)) {
       fullCaption = `${emoji} ${fullCaption}`;
     }
@@ -5108,6 +5062,10 @@ async function checkForNewPosts(force = false) {
     console.log("✅ Polling check completed");
     // Always print request statistics after each polling run
     requestTracker.printStats();
+
+    // Reset activity counter for next poll cycle
+    activityTracker.resetActivityCounter();
+
     console.log("");
   } catch (error) {
     console.error("Polling error:", error.message);
@@ -5752,24 +5710,20 @@ let activityTracker = {
     this.recentPosts += newPostsCount;
     this.lastActivity = new Date();
     console.log(
-      `📊 Activity updated: +${newPostsCount} posts (total: ${this.recentPosts} in 24h)`
+      `📊 Activity updated: +${newPostsCount} posts (total: ${this.recentPosts} in current poll cycle)`
     );
   },
 
   getActivityLevel() {
-    // Reset daily counter
-    const now = new Date();
-    const hoursSinceReset = (now - this.lastReset) / (1000 * 60 * 60);
-    if (hoursSinceReset >= 24) {
-      this.recentPosts = 0;
-      this.lastReset = now;
-      console.log(`🔄 Daily activity reset`);
-    }
-
-    // More conservative activity levels
-    if (this.recentPosts >= 3) return "high";
+    // Activity levels - reset counter at end of each poll cycle
+    if (this.recentPosts >= 2) return "high";
     if (this.recentPosts >= 1) return "medium";
     return "low";
+  },
+
+  resetActivityCounter() {
+    this.recentPosts = 0;
+    console.log(`🔄 Activity counter reset for next poll cycle`);
   },
 
   getPollingInterval() {
