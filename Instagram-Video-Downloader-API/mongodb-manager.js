@@ -9,7 +9,7 @@ class MongoDBManager {
     // MongoDB connection string
     this.connectionString =
       process.env.MONGODB_URI ||
-      "mongodb+srv://ifdawanprintqualified14:oGTyQTIU0UQ8R5Zu@tylasocial.j6cgdfx.mongodb.net/?retryWrites=true&w=majority&appName=tylasocial&ssl=true&tls=true&tlsAllowInvalidCertificates=true";
+      "mongodb+srv://ifdawanprintqualified14:oGTyQTIU0UQ8R5Zu@tylasocial.j6cgdfx.mongodb.net/?retryWrites=true&w=majority&appName=tylasocial";
     this.dbName = "tylasocial";
   }
 
@@ -20,17 +20,17 @@ class MongoDBManager {
     while (attempt < maxRetries) {
       try {
         attempt++;
-        console.log(`🔌 Connecting to MongoDB... (attempt ${attempt}/${maxRetries})`);
-        
+        console.log(
+          `🔌 Connecting to MongoDB... (attempt ${attempt}/${maxRetries})`
+        );
+
         // MongoDB connection options to handle SSL/TLS issues
         const options = {
-          ssl: true,
-          sslValidate: false, // Disable SSL certificate validation
           tls: true,
           tlsAllowInvalidCertificates: true, // Allow invalid certificates
           tlsAllowInvalidHostnames: true, // Allow invalid hostnames
           retryWrites: true,
-          w: 'majority',
+          w: "majority",
           maxPoolSize: 10,
           serverSelectionTimeoutMS: 10000, // Increased timeout
           socketTimeoutMS: 45000,
@@ -53,8 +53,11 @@ class MongoDBManager {
 
         return true;
       } catch (error) {
-        console.error(`❌ MongoDB connection attempt ${attempt} failed:`, error.message);
-        
+        console.error(
+          `❌ MongoDB connection attempt ${attempt} failed:`,
+          error.message
+        );
+
         if (this.client) {
           try {
             await this.client.close();
@@ -62,12 +65,12 @@ class MongoDBManager {
             console.log("⚠️ Error closing MongoDB client:", closeError.message);
           }
         }
-        
+
         this.isConnected = false;
-        
+
         if (attempt < maxRetries) {
           console.log(`🔄 Retrying MongoDB connection in 2 seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         } else {
           console.error("❌ All MongoDB connection attempts failed");
           return false;
