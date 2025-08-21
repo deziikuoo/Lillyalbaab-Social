@@ -2610,10 +2610,14 @@ async function scrapeInstagramPosts(username, userAgent) {
 
     // Fallback to browser automation
     console.log(`🔄 Web Profile Info API failed, trying browser automation...`);
-    const browserPosts = await scrapeInstagramBrowser(username);
-    if (browserPosts.length > 0) {
-      console.log(`✅ Browser automation found ${browserPosts.length} posts`);
-      return browserPosts;
+    try {
+      const browserPosts = await scrapeInstagramBrowser(username);
+      if (browserPosts.length > 0) {
+        console.log(`✅ Browser automation found ${browserPosts.length} posts`);
+        return browserPosts;
+      }
+    } catch (browserError) {
+      console.log(`❌ Browser automation also failed: ${browserError.message}`);
     }
 
     console.log(`❌ No posts found for @${username}`);
@@ -2626,66 +2630,101 @@ async function scrapeInstagramPosts(username, userAgent) {
 
 // Web Profile Info API scraping (URLs only)
 async function scrapeWithWebProfileInfo(username, userAgent) {
-  try {
-    console.log(`🌐 Using Web Profile Info API for @${username}`);
+  const profileUrl = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`;
+  
+  // Try with different user agents if the first one fails
+  const userAgents = [
+    userAgent,
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  ];
+  
+  for (let attempt = 0; attempt < userAgents.length; attempt++) {
+    const currentUserAgent = userAgents[attempt];
+    
+    try {
+      console.log(`🌐 Using Web Profile Info API for @${username} (attempt ${attempt + 1}/${userAgents.length})`);
 
-    const profileUrl = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`;
+      const response = await axios.get(profileUrl, {
+        headers: {
+          "User-Agent": currentUserAgent,
+          Accept: "application/json",
+          "Accept-Language": "en-US,en;q=0.9",
+          "X-IG-App-ID": "936619743392459",
+          "X-ASBD-ID": "129477",
+          "X-IG-WWW-Claim": "0",
+          "X-Requested-With": "XMLHttpRequest",
+          "Sec-Fetch-Dest": "empty",
+          "Sec-Fetch-Mode": "cors",
+          "Sec-Fetch-Site": "same-origin",
+          "Referer": "https://www.instagram.com/",
+          "Origin": "https://www.instagram.com",
+        },
+        timeout: 15000,
+      });
 
-    const response = await axios.get(profileUrl, {
-      headers: {
-        "User-Agent": userAgent,
-        Accept: "application/json",
-        "Accept-Language": "en-US,en;q=0.9",
-        "X-IG-App-ID": "936619743392459",
-        "X-ASBD-ID": "129477",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-origin",
-      },
-      timeout: 15000,
-    });
+      if (response.data && response.data.data && response.data.data.user) {
+        const user = response.data.data.user;
+        const postUrls = [];
 
-    if (response.data && response.data.data && response.data.data.user) {
-      const user = response.data.data.user;
-      const postUrls = [];
+        // Extract only post URLs from the profile data
+        if (
+          user.edge_owner_to_timeline_media &&
+          user.edge_owner_to_timeline_media.edges
+        ) {
+          const edges = user.edge_owner_to_timeline_media.edges;
 
-      // Extract only post URLs from the profile data
-      if (
-        user.edge_owner_to_timeline_media &&
-        user.edge_owner_to_timeline_media.edges
-      ) {
-        const edges = user.edge_owner_to_timeline_media.edges;
+          edges.forEach((edge) => {
+            if (edge && edge.node && edge.node.shortcode) {
+              const url = `https://www.instagram.com/p/${edge.node.shortcode}/`;
+              postUrls.push({
+                url,
+                shortcode: edge.node.shortcode,
+                is_pinned: false, // Will be updated by GraphQL processing
+              });
+            }
+          });
 
-        edges.forEach((edge) => {
-          if (edge && edge.node && edge.node.shortcode) {
-            const url = `https://www.instagram.com/p/${edge.node.shortcode}/`;
-            postUrls.push({
-              url,
-              shortcode: edge.node.shortcode,
-              is_pinned: false, // Will be updated by GraphQL processing
-            });
-          }
-        });
+          console.log(
+            `📱 Web Profile Info API collected ${postUrls.length} post URLs`
+          );
+          return postUrls.slice(0, 8); // Limit to 8 posts (3 pinned + 5 recent)
+        }
+      }
 
-        console.log(
-          `📱 Web Profile Info API collected ${postUrls.length} post URLs`
-        );
-        return postUrls.slice(0, 8); // Limit to 8 posts (3 pinned + 5 recent)
+      console.log(`⚠️ Web Profile Info API returned no posts`);
+      return [];
+    } catch (error) {
+      console.log(`❌ Web Profile Info API failed (attempt ${attempt + 1}): ${error.message}`);
+      requestTracker.trackInstagram(profileUrl, false, error.message);
+      
+      if (error.response?.status === 429) {
+        console.log(`🚫 Rate limit detected in Web Profile Info API`);
+        await rateLimitDelay();
+        increaseErrorMultiplier();
+        break; // Don't retry on rate limit
+      } else if (error.response?.status === 401) {
+        console.log(`🔐 Authentication failed (401) - Instagram may have detected automated requests`);
+        if (attempt < userAgents.length - 1) {
+          console.log(`🔄 Trying with different user agent...`);
+          continue; // Try next user agent
+        } else {
+          console.log(`🔄 All user agents failed, will trigger fallback to browser automation`);
+        }
+      }
+      
+      // For other errors, continue to next attempt
+      if (attempt < userAgents.length - 1) {
+        console.log(`🔄 Retrying with different user agent...`);
+        continue;
       }
     }
-
-    console.log(`⚠️ Web Profile Info API returned no posts`);
-    return [];
-  } catch (error) {
-    console.log(`❌ Web Profile Info API failed: ${error.message}`);
-    requestTracker.trackInstagram(profileUrl, false, error.message);
-    if (error.response?.status === 429) {
-      console.log(`🚫 Rate limit detected in Web Profile Info API`);
-      await rateLimitDelay();
-      increaseErrorMultiplier();
-    }
-    return [];
   }
+  
+  // If we get here, all attempts failed
+  console.log(`❌ All Web Profile Info API attempts failed`);
+  return [];
 }
 
 // Check if post was already processed (excluding pinned posts from recent checks)
