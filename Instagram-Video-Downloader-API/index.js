@@ -3083,6 +3083,25 @@ function updateRecentPostsCache(username, posts) {
                 console.log(
                   `✅ Updated cache with ${total} posts for @${username} (memory + database)`
                 );
+                
+                // Debug: Verify cache was actually written to database
+                setTimeout(async () => {
+                  try {
+                    const verifyCount = await new Promise((resolve, reject) => {
+                      db.get(
+                        "SELECT COUNT(*) as count FROM recent_posts_cache WHERE username = ?",
+                        [username],
+                        (err, row) => {
+                          if (err) reject(err);
+                          else resolve(row ? row.count : 0);
+                        }
+                      );
+                    });
+                    console.log(`🔍 Cache verification: ${verifyCount} posts now in database for @${username}`);
+                  } catch (error) {
+                    console.error(`❌ Cache verification failed: ${error.message}`);
+                  }
+                }, 1000);
                 resolve();
               }
             }
@@ -3626,6 +3645,62 @@ async function loadExistingCache() {
       console.log(`📊 Database file exists: ${dbPath} (${stats.size} bytes)`);
     } else {
       console.log(`⚠️ Database file does not exist: ${dbPath}`);
+    }
+
+    // Debug: Check database schema and tables
+    console.log(`🔍 Checking database schema...`);
+    const tables = await new Promise((resolve, reject) => {
+      db.all(
+        "SELECT name FROM sqlite_master WHERE type='table'",
+        (err, rows) => {
+          if (err) {
+            console.error(`❌ Schema query error: ${err.message}`);
+            reject(err);
+          } else {
+            console.log(`📊 Database tables: ${rows ? rows.map(r => r.name).join(', ') : 'none'}`);
+            resolve(rows || []);
+          }
+        }
+      );
+    });
+
+    // Debug: Check if recent_posts_cache table exists and has data
+    const tableExists = tables.some(t => t.name === 'recent_posts_cache');
+    console.log(`📊 recent_posts_cache table exists: ${tableExists}`);
+
+    if (tableExists) {
+      const tableCount = await new Promise((resolve, reject) => {
+        db.get(
+          "SELECT COUNT(*) as count FROM recent_posts_cache",
+          (err, row) => {
+            if (err) {
+              console.error(`❌ Table count error: ${err.message}`);
+              reject(err);
+            } else {
+              console.log(`📊 recent_posts_cache table has ${row ? row.count : 0} rows`);
+              resolve(row ? row.count : 0);
+            }
+          }
+        );
+      });
+
+      if (tableCount > 0) {
+        // Show sample data
+        const sampleData = await new Promise((resolve, reject) => {
+          db.all(
+            "SELECT username, shortcode, cached_at FROM recent_posts_cache LIMIT 5",
+            (err, rows) => {
+              if (err) {
+                console.error(`❌ Sample data error: ${err.message}`);
+                reject(err);
+              } else {
+                console.log(`📊 Sample cache data:`, rows);
+                resolve(rows || []);
+              }
+            }
+          );
+        });
+      }
     }
 
     // Get all cached usernames
