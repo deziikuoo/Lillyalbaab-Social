@@ -3170,6 +3170,7 @@ async function updateRecentPostsCache(username, posts) {
     });
   }
 }
+}
 
 // Find new posts not in cache
 async function findNewPosts(username, fetchedPosts) {
