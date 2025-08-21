@@ -3264,166 +3264,199 @@ const cleanupQueue = {
 
 // Enhanced cache cleanup with transactions and batching
 async function cleanExpiredCache() {
-  return new Promise(async (resolve, reject) => {
-    try {
-      console.log("🧹 Starting enhanced cache cleanup...");
+  try {
+    console.log("🧹 Starting enhanced cache cleanup...");
 
-      // Use database transaction
-      await new Promise((resolveTransaction, rejectTransaction) => {
-        db.serialize(() => {
-          db.run("BEGIN TRANSACTION");
+    // Use MongoDB if available, otherwise fallback to SQLite
+    if (mongoManager && mongoManager.isConnected) {
+      try {
+        console.log("🧹 Using MongoDB for cache cleanup...");
+        await mongoManager.cleanExpiredCache();
+        
+        // Update memory cache atomically
+        await updateMemoryCacheAfterCleanup();
 
-          const weekAgo = new Date();
-          weekAgo.setDate(weekAgo.getDate() - 28); // 4 weeks instead of 7 days
+        // Run cache integrity check
+        console.log("🔍 Running post-cleanup cache integrity check...");
+        await validateCacheIntegrity();
 
-          console.log(
-            `📅 Cleaning cache entries older than: ${weekAgo.toLocaleDateString()}`
-          );
+        return { cacheRemoved: 0, processedRemoved: 0 }; // MongoDB manager handles the counts
+      } catch (error) {
+        console.error(`❌ MongoDB cache cleanup failed: ${error.message}`);
+        console.log("🔄 Falling back to SQLite...");
+        // Continue to SQLite fallback
+      }
+    }
 
-          // Get all users with cache data
-          db.all(
-            "SELECT DISTINCT username FROM recent_posts_cache",
-            (err, users) => {
-              if (err) {
-                db.run("ROLLBACK");
-                rejectTransaction(err);
-                return;
-              }
+    // Fallback to SQLite
+    if (db) {
+      console.log("🧹 Using SQLite for cache cleanup...");
+      
+      return new Promise(async (resolve, reject) => {
+        try {
+          // Use database transaction
+          await new Promise((resolveTransaction, rejectTransaction) => {
+            db.serialize(() => {
+              db.run("BEGIN TRANSACTION");
 
-              let totalCacheRemoved = 0;
-              let totalProcessedRemoved = 0;
-              let completedUsers = 0;
+              const weekAgo = new Date();
+              weekAgo.setDate(weekAgo.getDate() - 28); // 4 weeks instead of 7 days
 
-              if (users.length === 0) {
-                db.run("COMMIT");
-                resolveTransaction({ cacheRemoved: 0, processedRemoved: 0 });
-                return;
-              }
+              console.log(
+                `📅 Cleaning cache entries older than: ${weekAgo.toLocaleDateString()}`
+              );
 
-              users.forEach((user, index) => {
-                // Clean cache for each user (keep last 8 posts)
-                db.all(
-                  `SELECT shortcode FROM recent_posts_cache 
-                 WHERE username = ? 
-                 ORDER BY cached_at ASC`,
-                  [user.username],
-                  (err, posts) => {
-                    if (err) {
-                      db.run("ROLLBACK");
-                      rejectTransaction(err);
-                      return;
-                    }
+              // Get all users with cache data
+              db.all(
+                "SELECT DISTINCT username FROM recent_posts_cache",
+                (err, users) => {
+                  if (err) {
+                    db.run("ROLLBACK");
+                    rejectTransaction(err);
+                    return;
+                  }
 
-                    if (posts.length > 8) {
-                      const postsToDelete = posts.slice(0, posts.length - 8);
-                      const shortcodesToDelete = postsToDelete.map(
-                        (p) => p.shortcode
-                      );
+                  let totalCacheRemoved = 0;
+                  let totalProcessedRemoved = 0;
+                  let completedUsers = 0;
 
-                      if (shortcodesToDelete.length > 0) {
-                        const placeholders = shortcodesToDelete
-                          .map(() => "?")
-                          .join(",");
-                        db.run(
-                          `DELETE FROM recent_posts_cache 
-                         WHERE username = ? AND shortcode IN (${placeholders})`,
-                          [user.username, ...shortcodesToDelete],
-                          function (err) {
-                            if (err) {
-                              db.run("ROLLBACK");
-                              rejectTransaction(err);
-                              return;
-                            }
-                            totalCacheRemoved += this.changes;
-                            console.log(
-                              `   🗑️ @${user.username}: Removed ${this.changes} old cache entries`
-                            );
-                          }
-                        );
-                      }
-                    }
+                  if (users.length === 0) {
+                    db.run("COMMIT");
+                    resolveTransaction({ cacheRemoved: 0, processedRemoved: 0 });
+                    return;
+                  }
 
-                    // Clean old processed posts (keep last 8)
+                  users.forEach((user, index) => {
+                    // Clean cache for each user (keep last 8 posts)
                     db.all(
-                      `SELECT id FROM processed_posts 
-                     WHERE username = ? AND is_pinned = FALSE
-                     ORDER BY processed_at ASC`,
+                      `SELECT shortcode FROM recent_posts_cache 
+                     WHERE username = ? 
+                     ORDER BY cached_at ASC`,
                       [user.username],
-                      (err, processedPosts) => {
+                      (err, posts) => {
                         if (err) {
                           db.run("ROLLBACK");
                           rejectTransaction(err);
                           return;
                         }
 
-                        if (processedPosts.length > 8) {
-                          const postsToDelete = processedPosts.slice(
-                            0,
-                            processedPosts.length - 8
+                        if (posts.length > 8) {
+                          const postsToDelete = posts.slice(0, posts.length - 8);
+                          const shortcodesToDelete = postsToDelete.map(
+                            (p) => p.shortcode
                           );
-                          const idsToDelete = postsToDelete.map((p) => p.id);
 
-                          if (idsToDelete.length > 0) {
-                            const placeholders = idsToDelete
+                          if (shortcodesToDelete.length > 0) {
+                            const placeholders = shortcodesToDelete
                               .map(() => "?")
                               .join(",");
                             db.run(
-                              `DELETE FROM processed_posts 
-                             WHERE username = ? AND id IN (${placeholders})`,
-                              [user.username, ...idsToDelete],
+                              `DELETE FROM recent_posts_cache 
+                             WHERE username = ? AND shortcode IN (${placeholders})`,
+                              [user.username, ...shortcodesToDelete],
                               function (err) {
                                 if (err) {
                                   db.run("ROLLBACK");
                                   rejectTransaction(err);
                                   return;
                                 }
-                                totalProcessedRemoved += this.changes;
+                                totalCacheRemoved += this.changes;
                                 console.log(
-                                  `   🗑️ @${user.username}: Removed ${this.changes} old processed posts`
+                                  `   🗑️ @${user.username}: Removed ${this.changes} old cache entries (SQLite)`
                                 );
                               }
                             );
                           }
                         }
 
-                        completedUsers++;
-                        if (completedUsers === users.length) {
-                          db.run("COMMIT");
-                          resolveTransaction({
-                            cacheRemoved: totalCacheRemoved,
-                            processedRemoved: totalProcessedRemoved,
-                          });
-                        }
+                        // Clean old processed posts (keep last 8)
+                        db.all(
+                          `SELECT id FROM processed_posts 
+                         WHERE username = ? AND is_pinned = FALSE
+                         ORDER BY processed_at ASC`,
+                          [user.username],
+                          (err, processedPosts) => {
+                            if (err) {
+                              db.run("ROLLBACK");
+                              rejectTransaction(err);
+                              return;
+                            }
+
+                            if (processedPosts.length > 8) {
+                              const postsToDelete = processedPosts.slice(
+                                0,
+                                processedPosts.length - 8
+                              );
+                              const idsToDelete = postsToDelete.map((p) => p.id);
+
+                              if (idsToDelete.length > 0) {
+                                const placeholders = idsToDelete
+                                  .map(() => "?")
+                                  .join(",");
+                                db.run(
+                                  `DELETE FROM processed_posts 
+                                 WHERE username = ? AND id IN (${placeholders})`,
+                                  [user.username, ...idsToDelete],
+                                  function (err) {
+                                    if (err) {
+                                      db.run("ROLLBACK");
+                                      rejectTransaction(err);
+                                      return;
+                                    }
+                                    totalProcessedRemoved += this.changes;
+                                    console.log(
+                                      `   🗑️ @${user.username}: Removed ${this.changes} old processed posts (SQLite)`
+                                    );
+                                  }
+                                );
+                              }
+                            }
+
+                            completedUsers++;
+                            if (completedUsers === users.length) {
+                              db.run("COMMIT");
+                              resolveTransaction({
+                                cacheRemoved: totalCacheRemoved,
+                                processedRemoved: totalProcessedRemoved,
+                              });
+                            }
+                          }
+                        );
                       }
                     );
-                  }
-                );
-              });
-            }
+                  });
+                }
+              );
+            });
+          });
+
+          console.log(
+            `✅ Enhanced SQLite cache cleanup completed: ${totalCacheRemoved} cache entries, ${totalProcessedRemoved} processed posts removed`
           );
-        });
+
+          // Update memory cache atomically
+          await updateMemoryCacheAfterCleanup();
+
+          // Run cache integrity check
+          console.log("🔍 Running post-cleanup cache integrity check...");
+          await validateCacheIntegrity();
+
+          resolve({
+            cacheRemoved: totalCacheRemoved,
+            processedRemoved: totalProcessedRemoved,
+          });
+        } catch (error) {
+          console.error(`❌ Enhanced SQLite cache cleanup failed: ${error.message}`);
+          reject(error);
+        }
       });
-
-      console.log(
-        `✅ Enhanced cache cleanup completed: ${totalCacheRemoved} cache entries, ${totalProcessedRemoved} processed posts removed`
-      );
-
-      // Update memory cache atomically
-      await updateMemoryCacheAfterCleanup();
-
-      // Run cache integrity check
-      console.log("🔍 Running post-cleanup cache integrity check...");
-      await validateCacheIntegrity();
-
-      resolve({
-        cacheRemoved: totalCacheRemoved,
-        processedRemoved: totalProcessedRemoved,
-      });
-    } catch (error) {
-      console.error(`❌ Enhanced cache cleanup failed: ${error.message}`);
-      reject(error);
     }
-  });
+
+    return { cacheRemoved: 0, processedRemoved: 0 };
+  } catch (error) {
+    console.error(`❌ Enhanced cache cleanup failed: ${error.message}`);
+    throw error;
+  }
 }
 
 // Update memory cache after database cleanup
