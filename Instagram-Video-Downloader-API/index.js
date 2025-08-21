@@ -162,7 +162,41 @@ class FastDlSession {
           "--no-first-run",
           "--no-zygote",
           "--disable-gpu",
+          "--disable-web-security",
+          "--disable-features=VizDisplayCompositor",
+          "--single-process",
+          "--disable-extensions",
+          "--disable-plugins",
+          "--disable-images",
+          "--disable-javascript",
+          "--disable-background-timer-throttling",
+          "--disable-backgrounding-occluded-windows",
+          "--disable-renderer-backgrounding",
+          "--disable-field-trial-config",
+          "--disable-ipc-flooding-protection",
+          "--disable-hang-monitor",
+          "--disable-prompt-on-repost",
+          "--disable-domain-reliability",
+          "--disable-component-extensions-with-background-pages",
+          "--disable-default-apps",
+          "--disable-sync",
+          "--disable-translate",
+          "--hide-scrollbars",
+          "--mute-audio",
+          "--no-default-browser-check",
+          "--no-pings",
+          "--disable-background-networking",
+          "--disable-client-side-phishing-detection",
+          "--disable-component-update",
+          "--disable-features=TranslateUI",
+          "--force-color-profile=srgb",
+          "--metrics-recording-only",
+          "--password-store=basic",
+          "--use-mock-keychain",
+          "--disable-blink-features=AutomationControlled"
         ],
+        ignoreDefaultArgs: ['--disable-extensions'],
+        timeout: 30000
       });
 
       this.page = await this.browser.newPage();
@@ -1522,18 +1556,94 @@ async function scrapeInstagramBrowser(username) {
   try {
     console.log(`🤖 Starting human-like browser automation for @${username}`);
 
-    browser = await puppeteer.launch({
-      headless: "new",
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-accelerated-2d-canvas",
-        "--no-first-run",
-        "--no-zygote",
-        "--disable-gpu",
-      ],
-    });
+    // Try multiple launch configurations for Render compatibility
+    const launchConfigs = [
+      {
+        headless: "new",
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-accelerated-2d-canvas",
+          "--no-first-run",
+          "--no-zygote",
+          "--disable-gpu",
+          "--disable-web-security",
+          "--disable-features=VizDisplayCompositor",
+          "--single-process",
+          "--disable-extensions",
+          "--disable-plugins",
+          "--disable-images",
+          "--disable-javascript",
+          "--disable-background-timer-throttling",
+          "--disable-backgrounding-occluded-windows",
+          "--disable-renderer-backgrounding",
+          "--disable-field-trial-config",
+          "--disable-ipc-flooding-protection",
+          "--disable-hang-monitor",
+          "--disable-prompt-on-repost",
+          "--disable-domain-reliability",
+          "--disable-component-extensions-with-background-pages",
+          "--disable-default-apps",
+          "--disable-sync",
+          "--disable-translate",
+          "--hide-scrollbars",
+          "--mute-audio",
+          "--no-default-browser-check",
+          "--no-pings",
+          "--disable-background-networking",
+          "--disable-client-side-phishing-detection",
+          "--disable-component-update",
+          "--disable-features=TranslateUI",
+          "--force-color-profile=srgb",
+          "--metrics-recording-only",
+          "--password-store=basic",
+          "--use-mock-keychain",
+          "--disable-blink-features=AutomationControlled"
+        ],
+        ignoreDefaultArgs: ['--disable-extensions'],
+        timeout: 30000
+      },
+      {
+        headless: true,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+          "--single-process"
+        ],
+        timeout: 30000
+      },
+      {
+        headless: true,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox"
+        ],
+        timeout: 30000
+      }
+    ];
+
+    let launchSuccess = false;
+    for (let i = 0; i < launchConfigs.length; i++) {
+      try {
+        console.log(`🤖 Attempting browser launch with config ${i + 1}/${launchConfigs.length}`);
+        browser = await puppeteer.launch(launchConfigs[i]);
+        launchSuccess = true;
+        console.log(`✅ Browser launched successfully with config ${i + 1}`);
+        break;
+      } catch (launchError) {
+        console.log(`❌ Browser launch config ${i + 1} failed: ${launchError.message}`);
+        if (i === launchConfigs.length - 1) {
+          throw new Error(`All browser launch configurations failed. Last error: ${launchError.message}`);
+        }
+      }
+    }
+
+    if (!launchSuccess) {
+      throw new Error("Failed to launch browser with any configuration");
+    }
 
     const page = await browser.newPage();
 
@@ -2620,7 +2730,20 @@ async function scrapeInstagramPosts(username, userAgent) {
       console.log(`❌ Browser automation also failed: ${browserError.message}`);
     }
 
-    console.log(`❌ No posts found for @${username}`);
+    // Final fallback: return cached data if available
+    console.log(`🔄 Both API and browser automation failed, checking cached data...`);
+    try {
+      const cachedPosts = getCachedRecentPosts(username);
+      if (cachedPosts && cachedPosts.length > 0) {
+        console.log(`📋 Using cached data for @${username} (${cachedPosts.length} posts)`);
+        console.log(`⚠️ This is a fallback - no new posts will be processed`);
+        return cachedPosts;
+      }
+    } catch (cacheError) {
+      console.log(`❌ Cache fallback also failed: ${cacheError.message}`);
+    }
+
+    console.log(`❌ No posts found for @${username} (all methods failed)`);
     return [];
   } catch (error) {
     console.error("Instagram scraping error:", error.message);
@@ -2631,20 +2754,24 @@ async function scrapeInstagramPosts(username, userAgent) {
 // Web Profile Info API scraping (URLs only)
 async function scrapeWithWebProfileInfo(username, userAgent) {
   const profileUrl = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`;
-  
+
   // Try with different user agents if the first one fails
   const userAgents = [
     userAgent,
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   ];
-  
+
   for (let attempt = 0; attempt < userAgents.length; attempt++) {
     const currentUserAgent = userAgents[attempt];
-    
+
     try {
-      console.log(`🌐 Using Web Profile Info API for @${username} (attempt ${attempt + 1}/${userAgents.length})`);
+      console.log(
+        `🌐 Using Web Profile Info API for @${username} (attempt ${
+          attempt + 1
+        }/${userAgents.length})`
+      );
 
       const response = await axios.get(profileUrl, {
         headers: {
@@ -2658,8 +2785,8 @@ async function scrapeWithWebProfileInfo(username, userAgent) {
           "Sec-Fetch-Dest": "empty",
           "Sec-Fetch-Mode": "cors",
           "Sec-Fetch-Site": "same-origin",
-          "Referer": "https://www.instagram.com/",
-          "Origin": "https://www.instagram.com",
+          Referer: "https://www.instagram.com/",
+          Origin: "https://www.instagram.com",
         },
         timeout: 15000,
       });
@@ -2696,24 +2823,32 @@ async function scrapeWithWebProfileInfo(username, userAgent) {
       console.log(`⚠️ Web Profile Info API returned no posts`);
       return [];
     } catch (error) {
-      console.log(`❌ Web Profile Info API failed (attempt ${attempt + 1}): ${error.message}`);
+      console.log(
+        `❌ Web Profile Info API failed (attempt ${attempt + 1}): ${
+          error.message
+        }`
+      );
       requestTracker.trackInstagram(profileUrl, false, error.message);
-      
+
       if (error.response?.status === 429) {
         console.log(`🚫 Rate limit detected in Web Profile Info API`);
         await rateLimitDelay();
         increaseErrorMultiplier();
         break; // Don't retry on rate limit
       } else if (error.response?.status === 401) {
-        console.log(`🔐 Authentication failed (401) - Instagram may have detected automated requests`);
+        console.log(
+          `🔐 Authentication failed (401) - Instagram may have detected automated requests`
+        );
         if (attempt < userAgents.length - 1) {
           console.log(`🔄 Trying with different user agent...`);
           continue; // Try next user agent
         } else {
-          console.log(`🔄 All user agents failed, will trigger fallback to browser automation`);
+          console.log(
+            `🔄 All user agents failed, will trigger fallback to browser automation`
+          );
         }
       }
-      
+
       // For other errors, continue to next attempt
       if (attempt < userAgents.length - 1) {
         console.log(`🔄 Retrying with different user agent...`);
@@ -2721,7 +2856,7 @@ async function scrapeWithWebProfileInfo(username, userAgent) {
       }
     }
   }
-  
+
   // If we get here, all attempts failed
   console.log(`❌ All Web Profile Info API attempts failed`);
   return [];
@@ -6219,9 +6354,43 @@ const browserPool = {
           "--no-first-run",
           "--no-zygote",
           "--disable-gpu",
+          "--disable-web-security",
+          "--disable-features=VizDisplayCompositor",
+          "--single-process",
+          "--disable-extensions",
+          "--disable-plugins",
+          "--disable-images",
+          "--disable-javascript",
+          "--disable-background-timer-throttling",
+          "--disable-backgrounding-occluded-windows",
+          "--disable-renderer-backgrounding",
+          "--disable-field-trial-config",
+          "--disable-ipc-flooding-protection",
+          "--disable-hang-monitor",
+          "--disable-prompt-on-repost",
+          "--disable-domain-reliability",
+          "--disable-component-extensions-with-background-pages",
+          "--disable-default-apps",
+          "--disable-sync",
+          "--disable-translate",
+          "--hide-scrollbars",
+          "--mute-audio",
+          "--no-default-browser-check",
+          "--no-pings",
+          "--disable-background-networking",
+          "--disable-client-side-phishing-detection",
+          "--disable-component-update",
+          "--disable-features=TranslateUI",
+          "--force-color-profile=srgb",
+          "--metrics-recording-only",
+          "--password-store=basic",
+          "--use-mock-keychain",
+          "--disable-blink-features=AutomationControlled",
           "--memory-pressure-off",
-          "--max_old_space_size=512",
+          "--max_old_space_size=512"
         ],
+        ignoreDefaultArgs: ['--disable-extensions'],
+        timeout: 30000
       });
 
       this.browsers.push(browser);

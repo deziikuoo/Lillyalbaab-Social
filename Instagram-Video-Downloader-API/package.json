@@ -22,6 +22,7 @@
     "monitor-health": "node monitor-health.js",
     "start:monitored": "concurrently -k -n \"API,HealthMonitor\" -c \"cyan,yellow\" \"npm start\" \"npm run monitor-health\"",
     "test-cache": "node test-cache.js",
+    "postinstall": "npx puppeteer browsers install chrome",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
