@@ -193,10 +193,10 @@ class FastDlSession {
           "--metrics-recording-only",
           "--password-store=basic",
           "--use-mock-keychain",
-          "--disable-blink-features=AutomationControlled"
+          "--disable-blink-features=AutomationControlled",
         ],
-        ignoreDefaultArgs: ['--disable-extensions'],
-        timeout: 30000
+        ignoreDefaultArgs: ["--disable-extensions"],
+        timeout: 30000,
       });
 
       this.page = await this.browser.newPage();
@@ -1599,10 +1599,10 @@ async function scrapeInstagramBrowser(username) {
           "--metrics-recording-only",
           "--password-store=basic",
           "--use-mock-keychain",
-          "--disable-blink-features=AutomationControlled"
+          "--disable-blink-features=AutomationControlled",
         ],
-        ignoreDefaultArgs: ['--disable-extensions'],
-        timeout: 30000
+        ignoreDefaultArgs: ["--disable-extensions"],
+        timeout: 30000,
       },
       {
         headless: true,
@@ -1611,32 +1611,37 @@ async function scrapeInstagramBrowser(username) {
           "--disable-setuid-sandbox",
           "--disable-dev-shm-usage",
           "--disable-gpu",
-          "--single-process"
+          "--single-process",
         ],
-        timeout: 30000
+        timeout: 30000,
       },
       {
         headless: true,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox"
-        ],
-        timeout: 30000
-      }
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        timeout: 30000,
+      },
     ];
 
     let launchSuccess = false;
     for (let i = 0; i < launchConfigs.length; i++) {
       try {
-        console.log(`🤖 Attempting browser launch with config ${i + 1}/${launchConfigs.length}`);
+        console.log(
+          `🤖 Attempting browser launch with config ${i + 1}/${
+            launchConfigs.length
+          }`
+        );
         browser = await puppeteer.launch(launchConfigs[i]);
         launchSuccess = true;
         console.log(`✅ Browser launched successfully with config ${i + 1}`);
         break;
       } catch (launchError) {
-        console.log(`❌ Browser launch config ${i + 1} failed: ${launchError.message}`);
+        console.log(
+          `❌ Browser launch config ${i + 1} failed: ${launchError.message}`
+        );
         if (i === launchConfigs.length - 1) {
-          throw new Error(`All browser launch configurations failed. Last error: ${launchError.message}`);
+          throw new Error(
+            `All browser launch configurations failed. Last error: ${launchError.message}`
+          );
         }
       }
     }
@@ -2720,6 +2725,7 @@ async function scrapeInstagramPosts(username, userAgent) {
 
     // Fallback to browser automation
     console.log(`🔄 Web Profile Info API failed, trying browser automation...`);
+    let browserFailed = false;
     try {
       const browserPosts = await scrapeInstagramBrowser(username);
       if (browserPosts.length > 0) {
@@ -2727,23 +2733,37 @@ async function scrapeInstagramPosts(username, userAgent) {
         return browserPosts;
       }
     } catch (browserError) {
+      browserFailed = true;
       console.log(`❌ Browser automation also failed: ${browserError.message}`);
     }
 
+    // Both API and browser automation failed - this is a critical issue
+    if (browserFailed) {
+      console.log(`🚨 CRITICAL: Both Instagram API and browser automation failed for @${username}`);
+      console.log(`🚨 This indicates a serious issue that needs immediate evaluation:`);
+      console.log(`   - Instagram may have blocked automated access`);
+      console.log(`   - Browser automation may not be properly configured`);
+      console.log(`   - Network connectivity issues may be present`);
+      console.log(`🚨 PROCESS EVALUATION REQUIRED - Check logs and system status`);
+    }
+
     // Final fallback: return cached data if available
-    console.log(`🔄 Both API and browser automation failed, checking cached data...`);
+    console.log(`🔄 Attempting cache fallback due to complete API/browser failure...`);
     try {
       const cachedPosts = getCachedRecentPosts(username);
       if (cachedPosts && cachedPosts.length > 0) {
         console.log(`📋 Using cached data for @${username} (${cachedPosts.length} posts)`);
-        console.log(`⚠️ This is a fallback - no new posts will be processed`);
+        console.log(`⚠️ WARNING: This is an emergency fallback - no new posts will be processed`);
+        console.log(`⚠️ System is operating in degraded mode - manual intervention may be required`);
         return cachedPosts;
       }
     } catch (cacheError) {
       console.log(`❌ Cache fallback also failed: ${cacheError.message}`);
     }
 
-    console.log(`❌ No posts found for @${username} (all methods failed)`);
+    console.log(`❌ COMPLETE FAILURE: No posts found for @${username} - all methods failed`);
+    console.log(`🚨 SYSTEM STATUS: Instagram scraping is completely non-functional`);
+    console.log(`🚨 IMMEDIATE ACTION REQUIRED: Check system configuration and Instagram access`);
     return [];
   } catch (error) {
     console.error("Instagram scraping error:", error.message);
@@ -6387,10 +6407,10 @@ const browserPool = {
           "--use-mock-keychain",
           "--disable-blink-features=AutomationControlled",
           "--memory-pressure-off",
-          "--max_old_space_size=512"
+          "--max_old_space_size=512",
         ],
-        ignoreDefaultArgs: ['--disable-extensions'],
-        timeout: 30000
+        ignoreDefaultArgs: ["--disable-extensions"],
+        timeout: 30000,
       });
 
       this.browsers.push(browser);
