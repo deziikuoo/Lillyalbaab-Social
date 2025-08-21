@@ -752,22 +752,26 @@ if (!fs.existsSync(DOWNLOADS_DIR)) {
 
 // Initialize MongoDB database
 let mongoManager;
-try {
-  mongoManager = new MongoDBManager();
-  const connected = await mongoManager.connect();
-  if (connected) {
-    console.log(`✅ MongoDB database connected successfully`);
-  } else {
-    console.log(`⚠️ MongoDB connection failed, falling back to SQLite`);
-    // Fallback to SQLite if MongoDB fails
+
+// Initialize databases (MongoDB with SQLite fallback)
+async function initializeDatabases() {
+  try {
+    mongoManager = new MongoDBManager();
+    const connected = await mongoManager.connect();
+    if (connected) {
+      console.log(`✅ MongoDB database connected successfully`);
+    } else {
+      console.log(`⚠️ MongoDB connection failed, falling back to SQLite`);
+      // Fallback to SQLite if MongoDB fails
+      db = new sqlite3.Database("./instagram_tracker.db");
+      console.log(`✅ SQLite fallback database initialized`);
+    }
+  } catch (error) {
+    console.error(`❌ MongoDB initialization failed: ${error.message}`);
+    console.log(`🔄 Falling back to SQLite database...`);
     db = new sqlite3.Database("./instagram_tracker.db");
     console.log(`✅ SQLite fallback database initialized`);
   }
-} catch (error) {
-  console.error(`❌ MongoDB initialization failed: ${error.message}`);
-  console.log(`🔄 Falling back to SQLite database...`);
-  db = new sqlite3.Database("./instagram_tracker.db");
-  console.log(`✅ SQLite fallback database initialized`);
 }
 
 // Initialize SQLite database (fallback only)
@@ -6050,6 +6054,9 @@ app.listen(port, async () => {
   console.log(
     "📊 Request tracking enabled - use /stats endpoint to view statistics"
   );
+
+  // Initialize databases first
+  await initializeDatabases();
 
   // Check cache on app boot
   await checkCacheOnBoot();
