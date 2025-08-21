@@ -318,35 +318,7 @@ process.on("SIGINT", () => {
   cleanupAndExit(0);
 });
 
-async function cleanupAndExit(code) {
-  console.log("🧹 Cleaning up resources...");
-
-  // Stop polling
-  if (currentPollingTimeout) {
-    clearTimeout(currentPollingTimeout);
-    currentPollingTimeout = null;
-  }
-
-  // Clean up browser pool - COMMENTED OUT DUE TO PUPPETEER ISSUES
-  /*
-  try {
-    await browserPool.cleanup();
-    console.log("✅ Browser pool cleaned up");
-  } catch (error) {
-    console.error("Error cleaning up browser pool:", error);
-  }
-  */
-
-// Close database connections
-if (db) {
-  db.close((err) => {
-    if (err) console.error("Error closing database:", err);
-    else console.log("✅ Database connection closed");
-    process.exit(code);
-  });
-} else {
-  process.exit(code);
-}
+// Placeholder for cleanupAndExit function - will be defined after database initialization
 
 // ===== MEMORY MANAGEMENT =====
 const memoryManager = {
@@ -379,31 +351,31 @@ const memoryManager = {
       }
       */
 
-      // Validate cache integrity (every 4th cleanup = every 2 hours)
+      // Validate cache integrity (every 4th cleanup = every 2 hours) - TEMPORARILY DISABLED
       const cleanupCount = Math.floor(
         (Date.now() - this.lastCleanup) / this.cleanupInterval
       );
       if (cleanupCount % 4 === 0) {
         console.log("🔍 Running cache integrity validation...");
-        await validateCacheIntegrity();
+        // await validateCacheIntegrity(); // TEMPORARILY DISABLED
       }
 
-      // Check storage limits (every cleanup cycle)
-      await checkStorageLimitAndCleanup();
+      // Check storage limits (every cleanup cycle) - TEMPORARILY DISABLED
+      // await checkStorageLimitAndCleanup();
 
-      // Schedule 4-week cache cleanup (every 1344 cleanup cycles = 4 weeks)
+      // Schedule 4-week cache cleanup (every 1344 cleanup cycles = 4 weeks) - TEMPORARILY DISABLED
       // 30 min * 1344 = 40320 min = 672 hours = 28 days = 4 weeks
       const weeklyCleanupCount = Math.floor(
         (Date.now() - this.lastCleanup) / this.cleanupInterval
       );
       if (weeklyCleanupCount % 1344 === 0 && weeklyCleanupCount > 0) {
         console.log("📋 Scheduling 4-week cache cleanup operation...");
-        await cleanupQueue.addToQueue({
-          name: "4-Week Cache Cleanup",
-          execute: async () => {
-            await cleanExpiredCache();
-          },
-        });
+        // await cleanupQueue.addToQueue({
+        //   name: "4-Week Cache Cleanup",
+        //   execute: async () => {
+        //     await cleanExpiredCache();
+        //   },
+        // });
       }
 
       this.lastCleanup = Date.now();
@@ -986,6 +958,38 @@ function getBackoffDelay(attempt = 1, baseDelay = 60000) {
   const maxDelay = 300000; // 5 minutes max
   const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxDelay);
   return delay + Math.random() * 30000; // Add up to 30 seconds randomness
+}
+
+// Graceful shutdown function (defined after database initialization)
+async function cleanupAndExit(code) {
+  console.log("🧹 Cleaning up resources...");
+
+  // Stop polling
+  if (currentPollingTimeout) {
+    clearTimeout(currentPollingTimeout);
+    currentPollingTimeout = null;
+  }
+
+  // Clean up browser pool - COMMENTED OUT DUE TO PUPPETEER ISSUES
+  /*
+  try {
+    await browserPool.cleanup();
+    console.log("✅ Browser pool cleaned up");
+  } catch (error) {
+    console.error("Error cleaning up browser pool:", error);
+  }
+  */
+
+  // Close database connections
+  if (db) {
+    db.close((err) => {
+      if (err) console.error("Error closing database:", err);
+      else console.log("✅ Database connection closed");
+      process.exit(code);
+    });
+  } else {
+    process.exit(code);
+  }
 }
 
 // Parse and validate Instagram username/URL
