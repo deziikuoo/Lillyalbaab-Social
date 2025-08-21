@@ -752,6 +752,7 @@ if (!fs.existsSync(DOWNLOADS_DIR)) {
 
 // Initialize MongoDB database
 let mongoManager;
+let db; // Declare db variable at top level
 
 // Initialize databases (MongoDB with SQLite fallback)
 async function initializeDatabases() {
@@ -763,21 +764,24 @@ async function initializeDatabases() {
     } else {
       console.log(`⚠️ MongoDB connection failed, falling back to SQLite`);
       // Fallback to SQLite if MongoDB fails
-      db = new sqlite3.Database("./instagram_tracker.db");
+      db = new sqlite3.Database(dbPath);
       console.log(`✅ SQLite fallback database initialized`);
+      initializeSQLiteTables();
     }
   } catch (error) {
     console.error(`❌ MongoDB initialization failed: ${error.message}`);
     console.log(`🔄 Falling back to SQLite database...`);
-    db = new sqlite3.Database("./instagram_tracker.db");
+    db = new sqlite3.Database(dbPath);
     console.log(`✅ SQLite fallback database initialized`);
+    initializeSQLiteTables();
   }
 }
 
-// Initialize SQLite database (fallback only)
-if (db) {
-  db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS processed_posts (
+// Initialize SQLite tables
+function initializeSQLiteTables() {
+  if (db) {
+    db.serialize(() => {
+      db.run(`CREATE TABLE IF NOT EXISTS processed_posts (
     id TEXT PRIMARY KEY,
     username TEXT,
     post_url TEXT,
@@ -787,26 +791,26 @@ if (db) {
     processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
-    // Add is_pinned column if it doesn't exist (for existing databases)
-    db.run(
-      `ALTER TABLE processed_posts ADD COLUMN is_pinned BOOLEAN DEFAULT FALSE`,
-      function (err) {
-        if (err && !err.message.includes("duplicate column name")) {
-          console.log(`⚠️ Schema update warning: ${err.message}`);
+      // Add is_pinned column if it doesn't exist (for existing databases)
+      db.run(
+        `ALTER TABLE processed_posts ADD COLUMN is_pinned BOOLEAN DEFAULT FALSE`,
+        function (err) {
+          if (err && !err.message.includes("duplicate column name")) {
+            console.log(`⚠️ Schema update warning: ${err.message}`);
+          }
         }
-      }
-    );
-    db.run(
-      `ALTER TABLE processed_posts ADD COLUMN pinned_at DATETIME`,
-      function (err) {
-        if (err && !err.message.includes("duplicate column name")) {
-          console.log(`⚠️ Schema update warning: ${err.message}`);
+      );
+      db.run(
+        `ALTER TABLE processed_posts ADD COLUMN pinned_at DATETIME`,
+        function (err) {
+          if (err && !err.message.includes("duplicate column name")) {
+            console.log(`⚠️ Schema update warning: ${err.message}`);
+          }
         }
-      }
-    );
+      );
 
-    // Cache for recent posts (pinned + recent, max 8 per user)
-    db.run(`CREATE TABLE IF NOT EXISTS recent_posts_cache (
+      // Cache for recent posts (pinned + recent, max 8 per user)
+      db.run(`CREATE TABLE IF NOT EXISTS recent_posts_cache (
     username TEXT,
     post_url TEXT,
     shortcode TEXT,
@@ -816,16 +820,16 @@ if (db) {
     PRIMARY KEY (username, shortcode)
   )`);
 
-    // Cache cleanup tracking
-    db.run(`CREATE TABLE IF NOT EXISTS cache_cleanup_log (
+      // Cache cleanup tracking
+      db.run(`CREATE TABLE IF NOT EXISTS cache_cleanup_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     cleaned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     posts_removed INTEGER,
     username TEXT
   )`);
 
-    // Stories tracking tables
-    db.run(`CREATE TABLE IF NOT EXISTS processed_stories (
+      // Stories tracking tables
+      db.run(`CREATE TABLE IF NOT EXISTS processed_stories (
     id TEXT PRIMARY KEY,
     username TEXT,
     story_url TEXT,
@@ -834,7 +838,7 @@ if (db) {
     processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
-    db.run(`CREATE TABLE IF NOT EXISTS recent_stories_cache (
+      db.run(`CREATE TABLE IF NOT EXISTS recent_stories_cache (
     username TEXT,
     story_url TEXT,
     story_id TEXT,
@@ -842,8 +846,11 @@ if (db) {
     cached_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (username, story_id)
   )`);
-  });
+    });
+  }
 }
+
+
 
 // User-Agent rotation for bot evasion
 const userAgents = [
