@@ -3622,41 +3622,75 @@ async function performStorageCleanup() {
 }
 
 // Get last cleanup date
-function getLastCleanupDate() {
-  return new Promise((resolve, reject) => {
-    db.get(
-      `
-      SELECT cleaned_at FROM cache_cleanup_log 
-      ORDER BY cleaned_at DESC LIMIT 1
-    `,
-      (err, row) => {
-        if (err) reject(err);
-        else {
-          // If no cleanup record exists, return current date (no cleanup needed yet)
-          const defaultDate = new Date();
-          defaultDate.setDate(defaultDate.getDate() - 1); // Set to yesterday as default
-          resolve(row ? new Date(row.cleaned_at) : defaultDate);
+async function getLastCleanupDate() {
+  // Use MongoDB if available, otherwise fallback to SQLite
+  if (mongoManager && mongoManager.isConnected) {
+    try {
+      return await mongoManager.getLastCleanupDate();
+    } catch (error) {
+      console.error(`❌ MongoDB cleanup date check failed: ${error.message}`);
+      // Fallback to SQLite
+    }
+  }
+
+  // Fallback to SQLite
+  if (db) {
+    return new Promise((resolve, reject) => {
+      db.get(
+        `
+        SELECT cleaned_at FROM cache_cleanup_log 
+        ORDER BY cleaned_at DESC LIMIT 1
+      `,
+        (err, row) => {
+          if (err) reject(err);
+          else {
+            // If no cleanup record exists, return current date (no cleanup needed yet)
+            const defaultDate = new Date();
+            defaultDate.setDate(defaultDate.getDate() - 1); // Set to yesterday as default
+            resolve(row ? new Date(row.cleaned_at) : defaultDate);
+          }
         }
-      }
-    );
-  });
+      );
+    });
+  }
+
+  // Default fallback
+  const defaultDate = new Date();
+  defaultDate.setDate(defaultDate.getDate() - 8); // Set to 8 days ago to trigger cleanup
+  return defaultDate;
 }
 
 // Update last cleanup date
-function updateLastCleanupDate(postsRemoved = 0, username = null) {
-  return new Promise((resolve, reject) => {
-    db.run(
-      `
-      INSERT INTO cache_cleanup_log (posts_removed, username) 
-      VALUES (?, ?)
-    `,
-      [postsRemoved, username],
-      function (err) {
-        if (err) reject(err);
-        else resolve(this.lastID);
-      }
-    );
-  });
+async function updateLastCleanupDate(postsRemoved = 0, username = null) {
+  // Use MongoDB if available, otherwise fallback to SQLite
+  if (mongoManager && mongoManager.isConnected) {
+    try {
+      await mongoManager.updateLastCleanupDate(postsRemoved, username);
+      return true;
+    } catch (error) {
+      console.error(`❌ MongoDB cleanup date update failed: ${error.message}`);
+      // Fallback to SQLite
+    }
+  }
+
+  // Fallback to SQLite
+  if (db) {
+    return new Promise((resolve, reject) => {
+      db.run(
+        `
+        INSERT INTO cache_cleanup_log (posts_removed, username) 
+        VALUES (?, ?)
+      `,
+        [postsRemoved, username],
+        function (err) {
+          if (err) reject(err);
+          else resolve(this.lastID);
+        }
+      );
+    });
+  }
+
+  return false;
 }
 
 // Check cache on app boot and load existing cache data
