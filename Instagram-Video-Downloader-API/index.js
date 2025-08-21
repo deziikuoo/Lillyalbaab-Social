@@ -3100,6 +3100,12 @@ function findNewPosts(username, fetchedPosts) {
       const cachedPosts = await getCachedRecentPosts(username);
       const cachedShortcodes = new Set(cachedPosts.map((p) => p.shortcode));
 
+      // Debug: Log cache details
+      console.log(`🔍 Cache debug for @${username}:`);
+      console.log(`   - Fetched posts: ${fetchedPosts.length}`);
+      console.log(`   - Cached posts: ${cachedPosts.length}`);
+      console.log(`   - Cached shortcodes: ${Array.from(cachedShortcodes).join(', ')}`);
+
       const newPosts = fetchedPosts.filter((post) => {
         const shortcode =
           post.shortcode || post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2];
@@ -3611,13 +3617,29 @@ async function checkCacheOnBoot() {
 // Load existing cache data into memory
 async function loadExistingCache() {
   try {
+    // Debug: Check if database file exists and has data
+    const fs = require('fs');
+    const path = require('path');
+    
+    if (fs.existsSync(dbPath)) {
+      const stats = fs.statSync(dbPath);
+      console.log(`📊 Database file exists: ${dbPath} (${stats.size} bytes)`);
+    } else {
+      console.log(`⚠️ Database file does not exist: ${dbPath}`);
+    }
+
     // Get all cached usernames
     const cachedUsers = await new Promise((resolve, reject) => {
       db.all(
         "SELECT DISTINCT username FROM recent_posts_cache",
         (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
+          if (err) {
+            console.error(`❌ Database query error: ${err.message}`);
+            reject(err);
+          } else {
+            console.log(`📊 Found ${rows ? rows.length : 0} cached users in database`);
+            resolve(rows || []);
+          }
         }
       );
     });
