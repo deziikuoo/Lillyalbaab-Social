@@ -6789,3 +6789,82 @@ const circuitBreaker = {
 };
 
 // ===== BROWSER POOL MANAGEMENT =====
+
+// Add storage status endpoint for debugging persistent storage
+app.get("/storage-status", (req, res) => {
+  const fs = require("fs");
+  const path = require("path");
+
+  try {
+    const dbStats = fs.statSync(dbPath);
+    const downloadsExists = fs.existsSync(DOWNLOADS_DIR);
+    const downloadsFiles = downloadsExists ? fs.readdirSync(DOWNLOADS_DIR).length : 0;
+
+    // Check if we're in production and if persistent storage is working
+    const isProduction = process.env.NODE_ENV === "production";
+    const persistentStorageWorking = isProduction && dbStats.size > 0;
+
+    res.json({
+      environment: {
+        node_env: process.env.NODE_ENV,
+        is_production: isProduction
+      },
+      database: {
+        path: dbPath,
+        size: dbStats.size,
+        size_mb: (dbStats.size / (1024 * 1024)).toFixed(2),
+        exists: true,
+        last_modified: dbStats.mtime
+      },
+      downloads: {
+        path: DOWNLOADS_DIR,
+        exists: downloadsExists,
+        files: downloadsFiles
+      },
+      persistent_storage: {
+        configured: isProduction,
+        working: persistentStorageWorking,
+        mount_path: "/opt/render/project/src/data"
+      },
+      recommendations: {
+        needs_persistent_disk: isProduction && !persistentStorageWorking,
+        disk_mount_path: "/opt/render/project/src/data",
+        disk_size: "10GB"
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: error.message,
+      environment: process.env.NODE_ENV,
+      database_path: dbPath,
+      downloads_path: DOWNLOADS_DIR
+    });
+  }
+});
+
+// Add cache status endpoint for debugging cache issues
+app.get("/cache-status", (req, res) => {
+  try {
+    const memoryCacheUsers = global.postCache ? Object.keys(global.postCache) : [];
+    const memoryCachePosts = global.postCache ? 
+      Object.values(global.postCache).reduce((total, posts) => total + posts.length, 0) : 0;
+
+    res.json({
+      memory_cache: {
+        users: memoryCacheUsers,
+        total_posts: memoryCachePosts,
+        exists: !!global.postCache
+      },
+      database: {
+        path: dbPath,
+        exists: require('fs').existsSync(dbPath)
+      },
+      recommendations: {
+        check_persistent_disk: process.env.NODE_ENV === "production",
+        persistent_disk_url: "https://render.com/docs/persistent-disk-storage"
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
