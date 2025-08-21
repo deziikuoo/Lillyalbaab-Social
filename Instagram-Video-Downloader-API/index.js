@@ -2889,7 +2889,9 @@ async function isPostProcessed(postId, username) {
     try {
       return await mongoManager.isPostProcessed(postId, username);
     } catch (error) {
-      console.error(`❌ MongoDB post processing check failed: ${error.message}`);
+      console.error(
+        `❌ MongoDB post processing check failed: ${error.message}`
+      );
       // Fallback to SQLite
     }
   }
@@ -2957,7 +2959,13 @@ async function markPostAsProcessed(
   // Use MongoDB if available, otherwise fallback to SQLite
   if (mongoManager && mongoManager.isConnected) {
     try {
-      await mongoManager.markPostAsProcessed(postId, username, postUrl, postType, isPinned);
+      await mongoManager.markPostAsProcessed(
+        postId,
+        username,
+        postUrl,
+        postType,
+        isPinned
+      );
       return true;
     } catch (error) {
       console.error(`❌ MongoDB post marking failed: ${error.message}`);
@@ -2982,7 +2990,9 @@ async function markPostAsProcessed(
           function (err) {
             if (err) reject(err);
             else {
-              console.log(`📌 Marked pinned post ${postId} as processed (SQLite)`);
+              console.log(
+                `📌 Marked pinned post ${postId} as processed (SQLite)`
+              );
               resolve(this.lastID);
             }
           }
@@ -3019,7 +3029,7 @@ async function getCachedRecentPosts(username) {
   if (mongoManager && mongoManager.isConnected) {
     try {
       const cachedPosts = await mongoManager.getCachedRecentPosts(username);
-      
+
       // Update in-memory cache
       if (!global.postCache) {
         global.postCache = {};
@@ -3071,7 +3081,7 @@ async function updateRecentPostsCache(username, posts) {
   if (mongoManager && mongoManager.isConnected) {
     try {
       await mongoManager.updateRecentPostsCache(username, posts);
-      
+
       // Update in-memory cache
       if (!global.postCache) {
         global.postCache = {};
@@ -3079,8 +3089,7 @@ async function updateRecentPostsCache(username, posts) {
       global.postCache[username] = posts.map((post, idx) => ({
         post_url: post.url,
         shortcode:
-          post.shortcode ||
-          post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2],
+          post.shortcode || post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2],
         is_pinned: post.is_pinned || false,
         post_order: idx + 1,
         cached_at: new Date().toISOString(),
@@ -3126,7 +3135,8 @@ async function updateRecentPostsCache(username, posts) {
 
           posts.forEach((post, index) => {
             const shortcode =
-              post.shortcode || post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2];
+              post.shortcode ||
+              post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2];
             const isPinned = post.is_pinned || false;
             const postOrder = index + 1;
             const now = new Date().toISOString();
@@ -3166,10 +3176,9 @@ async function updateRecentPostsCache(username, posts) {
             );
           });
         }
-      });
+      );
     });
   }
-}
 }
 
 // Find new posts not in cache
@@ -3182,7 +3191,9 @@ async function findNewPosts(username, fetchedPosts) {
     console.log(`🔍 Cache debug for @${username}:`);
     console.log(`   - Fetched posts: ${fetchedPosts.length}`);
     console.log(`   - Cached posts: ${cachedPosts.length}`);
-    console.log(`   - Cached shortcodes: ${Array.from(cachedShortcodes).join(', ')}`);
+    console.log(
+      `   - Cached shortcodes: ${Array.from(cachedShortcodes).join(", ")}`
+    );
 
     const newPosts = fetchedPosts.filter((post) => {
       const shortcode =
@@ -3277,7 +3288,7 @@ async function cleanExpiredCache() {
       try {
         console.log("🧹 Using MongoDB for cache cleanup...");
         await mongoManager.cleanExpiredCache();
-        
+
         // Update memory cache atomically
         await updateMemoryCacheAfterCleanup();
 
@@ -3296,7 +3307,7 @@ async function cleanExpiredCache() {
     // Fallback to SQLite
     if (db) {
       console.log("🧹 Using SQLite for cache cleanup...");
-      
+
       return new Promise(async (resolve, reject) => {
         try {
           // Use database transaction
@@ -3327,7 +3338,10 @@ async function cleanExpiredCache() {
 
                   if (users.length === 0) {
                     db.run("COMMIT");
-                    resolveTransaction({ cacheRemoved: 0, processedRemoved: 0 });
+                    resolveTransaction({
+                      cacheRemoved: 0,
+                      processedRemoved: 0,
+                    });
                     return;
                   }
 
@@ -3346,7 +3360,10 @@ async function cleanExpiredCache() {
                         }
 
                         if (posts.length > 8) {
-                          const postsToDelete = posts.slice(0, posts.length - 8);
+                          const postsToDelete = posts.slice(
+                            0,
+                            posts.length - 8
+                          );
                           const shortcodesToDelete = postsToDelete.map(
                             (p) => p.shortcode
                           );
@@ -3392,7 +3409,9 @@ async function cleanExpiredCache() {
                                 0,
                                 processedPosts.length - 8
                               );
-                              const idsToDelete = postsToDelete.map((p) => p.id);
+                              const idsToDelete = postsToDelete.map(
+                                (p) => p.id
+                              );
 
                               if (idsToDelete.length > 0) {
                                 const placeholders = idsToDelete
@@ -3451,7 +3470,9 @@ async function cleanExpiredCache() {
             processedRemoved: totalProcessedRemoved,
           });
         } catch (error) {
-          console.error(`❌ Enhanced SQLite cache cleanup failed: ${error.message}`);
+          console.error(
+            `❌ Enhanced SQLite cache cleanup failed: ${error.message}`
+          );
           reject(error);
         }
       });
@@ -3765,24 +3786,26 @@ async function loadExistingCache() {
     // Use MongoDB if available, otherwise fallback to SQLite
     if (mongoManager && mongoManager.isConnected) {
       console.log("📊 Loading cache from MongoDB...");
-      
+
       try {
         // Get MongoDB stats to check cache status
         const stats = await mongoManager.getStats();
         console.log(`📊 MongoDB collections:`, stats.collections);
-        
+
         // Get all cached usernames from MongoDB
         const collection = mongoManager.db.collection("recent_posts_cache");
         const cachedUsers = await collection.distinct("username");
-        
+
         console.log(`📊 Found ${cachedUsers.length} cached users in MongoDB`);
-        
+
         if (cachedUsers.length === 0) {
           console.log("📊 No existing cache data found in MongoDB");
           return;
         }
 
-        console.log(`📊 Loading cache for ${cachedUsers.length} users from MongoDB...`);
+        console.log(
+          `📊 Loading cache for ${cachedUsers.length} users from MongoDB...`
+        );
 
         let loadedUsers = 0;
         let totalPosts = 0;
@@ -3818,7 +3841,7 @@ async function loadExistingCache() {
           );
           await retryCacheLoad();
         }
-        
+
         return; // Successfully loaded from MongoDB
       } catch (error) {
         console.error(`❌ MongoDB cache loading failed: ${error.message}`);
@@ -3830,11 +3853,11 @@ async function loadExistingCache() {
     // Fallback to SQLite
     if (db) {
       console.log("📊 Loading cache from SQLite...");
-      
+
       // Debug: Check if database file exists and has data
-      const fs = require('fs');
-      const path = require('path');
-      
+      const fs = require("fs");
+      const path = require("path");
+
       if (fs.existsSync(dbPath)) {
         const stats = fs.statSync(dbPath);
         console.log(`📊 Database file exists: ${dbPath} (${stats.size} bytes)`);
@@ -3852,7 +3875,11 @@ async function loadExistingCache() {
               console.error(`❌ Schema query error: ${err.message}`);
               reject(err);
             } else {
-              console.log(`📊 Database tables: ${rows ? rows.map(r => r.name).join(', ') : 'none'}`);
+              console.log(
+                `📊 Database tables: ${
+                  rows ? rows.map((r) => r.name).join(", ") : "none"
+                }`
+              );
               resolve(rows || []);
             }
           }
@@ -3860,7 +3887,7 @@ async function loadExistingCache() {
       });
 
       // Debug: Check if recent_posts_cache table exists and has data
-      const tableExists = tables.some(t => t.name === 'recent_posts_cache');
+      const tableExists = tables.some((t) => t.name === "recent_posts_cache");
       console.log(`📊 recent_posts_cache table exists: ${tableExists}`);
 
       if (tableExists) {
@@ -3872,7 +3899,9 @@ async function loadExistingCache() {
                 console.error(`❌ Table count error: ${err.message}`);
                 reject(err);
               } else {
-                console.log(`📊 recent_posts_cache table has ${row ? row.count : 0} rows`);
+                console.log(
+                  `📊 recent_posts_cache table has ${row ? row.count : 0} rows`
+                );
                 resolve(row ? row.count : 0);
               }
             }
@@ -3907,7 +3936,9 @@ async function loadExistingCache() {
               console.error(`❌ Database query error: ${err.message}`);
               reject(err);
             } else {
-              console.log(`📊 Found ${rows ? rows.length : 0} cached users in database`);
+              console.log(
+                `📊 Found ${rows ? rows.length : 0} cached users in database`
+              );
               resolve(rows || []);
             }
           }
@@ -3919,7 +3950,9 @@ async function loadExistingCache() {
         return;
       }
 
-      console.log(`📊 Loading cache for ${cachedUsers.length} users from SQLite...`);
+      console.log(
+        `📊 Loading cache for ${cachedUsers.length} users from SQLite...`
+      );
 
       let loadedUsers = 0;
       let totalPosts = 0;
@@ -3981,7 +4014,7 @@ async function retryCacheLoad() {
     if (mongoManager && mongoManager.isConnected) {
       try {
         console.log("🔄 Attempting MongoDB cache reload...");
-        
+
         // Force reload from MongoDB
         const collection = mongoManager.db.collection("recent_posts_cache");
         const cachedUsers = await collection.distinct("username");
@@ -3991,7 +4024,9 @@ async function retryCacheLoad() {
           return;
         }
 
-        console.log(`🔄 Reloading cache for ${cachedUsers.length} users from MongoDB...`);
+        console.log(
+          `🔄 Reloading cache for ${cachedUsers.length} users from MongoDB...`
+        );
 
         let loadedUsers = 0;
         let totalPosts = 0;
@@ -4036,9 +4071,11 @@ async function retryCacheLoad() {
             `✅ Automatic MongoDB cache reload successful (${loadedUsers} users, ${totalPosts} posts)`
           );
         } else {
-          console.log("❌ Automatic MongoDB cache reload failed - no posts loaded");
+          console.log(
+            "❌ Automatic MongoDB cache reload failed - no posts loaded"
+          );
         }
-        
+
         return; // Successfully reloaded from MongoDB
       } catch (error) {
         console.error(`❌ MongoDB cache reload failed: ${error.message}`);
@@ -4050,7 +4087,7 @@ async function retryCacheLoad() {
     // Fallback to SQLite
     if (db) {
       console.log("🔄 Attempting SQLite cache reload...");
-      
+
       // Force reload from database
       const cachedUsers = await new Promise((resolve, reject) => {
         db.all(
@@ -4067,7 +4104,9 @@ async function retryCacheLoad() {
         return;
       }
 
-      console.log(`🔄 Reloading cache for ${cachedUsers.length} users from SQLite...`);
+      console.log(
+        `🔄 Reloading cache for ${cachedUsers.length} users from SQLite...`
+      );
 
       let loadedUsers = 0;
       let totalPosts = 0;
@@ -4112,7 +4151,9 @@ async function retryCacheLoad() {
           `✅ Automatic SQLite cache reload successful (${loadedUsers} users, ${totalPosts} posts)`
         );
       } else {
-        console.log("❌ Automatic SQLite cache reload failed - no posts loaded");
+        console.log(
+          "❌ Automatic SQLite cache reload failed - no posts loaded"
+        );
       }
     }
   } catch (error) {
@@ -5472,10 +5513,10 @@ function scheduleNextPoll() {
         // Check for new stories first, then posts
         await checkForNewStories();
         await checkForNewPosts();
-        
+
         // Reset activity counter for next poll cycle
         activityTracker.resetActivityCounter();
-        
+
         scheduleNextPoll(); // Schedule the next poll
       } catch (error) {
         console.error("❌ Polling cycle failed:", error);
@@ -5491,10 +5532,10 @@ function scheduleNextPoll() {
             try {
               await checkForNewStories();
               await checkForNewPosts();
-              
+
               // Reset activity counter for next poll cycle
               activityTracker.resetActivityCounter();
-              
+
               scheduleNextPoll();
             } catch (retryError) {
               console.error("❌ Polling retry failed:", retryError);
@@ -6494,7 +6535,7 @@ function parseStoriesFromJson(jsonData, username) {
 // Check if a story was already processed
 async function checkStoryProcessed(username, storyId) {
   console.log(`🔍 [DB] Checking if story ${storyId} exists for @${username}`);
-  
+
   // Use MongoDB if available, otherwise fallback to SQLite
   if (mongoManager && mongoManager.isConnected) {
     try {
@@ -6539,7 +6580,12 @@ async function markStoryProcessed(username, storyUrl, storyType, storyId) {
   // Use MongoDB if available, otherwise fallback to SQLite
   if (mongoManager && mongoManager.isConnected) {
     try {
-      await mongoManager.markStoryProcessed(username, storyUrl, storyType, storyId);
+      await mongoManager.markStoryProcessed(
+        username,
+        storyUrl,
+        storyType,
+        storyId
+      );
       return;
     } catch (error) {
       console.error(`❌ MongoDB story marking failed: ${error.message}`);
@@ -7104,7 +7150,9 @@ app.get("/storage-status", (req, res) => {
   try {
     const dbStats = fs.statSync(dbPath);
     const downloadsExists = fs.existsSync(DOWNLOADS_DIR);
-    const downloadsFiles = downloadsExists ? fs.readdirSync(DOWNLOADS_DIR).length : 0;
+    const downloadsFiles = downloadsExists
+      ? fs.readdirSync(DOWNLOADS_DIR).length
+      : 0;
 
     // Check if we're in production and if persistent storage is working
     const isProduction = process.env.NODE_ENV === "production";
@@ -7113,37 +7161,37 @@ app.get("/storage-status", (req, res) => {
     res.json({
       environment: {
         node_env: process.env.NODE_ENV,
-        is_production: isProduction
+        is_production: isProduction,
       },
       database: {
         path: dbPath,
         size: dbStats.size,
         size_mb: (dbStats.size / (1024 * 1024)).toFixed(2),
         exists: true,
-        last_modified: dbStats.mtime
+        last_modified: dbStats.mtime,
       },
       downloads: {
         path: DOWNLOADS_DIR,
         exists: downloadsExists,
-        files: downloadsFiles
+        files: downloadsFiles,
       },
       persistent_storage: {
         configured: isProduction,
         working: persistentStorageWorking,
-        mount_path: "/opt/render/project/src/data"
+        mount_path: "/opt/render/project/src/data",
       },
       recommendations: {
         needs_persistent_disk: isProduction && !persistentStorageWorking,
         disk_mount_path: "/opt/render/project/src/data",
-        disk_size: "10GB"
-      }
+        disk_size: "10GB",
+      },
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: error.message,
       environment: process.env.NODE_ENV,
       database_path: dbPath,
-      downloads_path: DOWNLOADS_DIR
+      downloads_path: DOWNLOADS_DIR,
     });
   }
 });
@@ -7151,24 +7199,30 @@ app.get("/storage-status", (req, res) => {
 // Add cache status endpoint for debugging cache issues
 app.get("/cache-status", (req, res) => {
   try {
-    const memoryCacheUsers = global.postCache ? Object.keys(global.postCache) : [];
-    const memoryCachePosts = global.postCache ? 
-      Object.values(global.postCache).reduce((total, posts) => total + posts.length, 0) : 0;
+    const memoryCacheUsers = global.postCache
+      ? Object.keys(global.postCache)
+      : [];
+    const memoryCachePosts = global.postCache
+      ? Object.values(global.postCache).reduce(
+          (total, posts) => total + posts.length,
+          0
+        )
+      : 0;
 
     res.json({
       memory_cache: {
         users: memoryCacheUsers,
         total_posts: memoryCachePosts,
-        exists: !!global.postCache
+        exists: !!global.postCache,
       },
       database: {
         path: dbPath,
-        exists: require('fs').existsSync(dbPath)
+        exists: require("fs").existsSync(dbPath),
       },
       recommendations: {
         check_persistent_disk: process.env.NODE_ENV === "production",
-        persistent_disk_url: "https://render.com/docs/persistent-disk-storage"
-      }
+        persistent_disk_url: "https://render.com/docs/persistent-disk-storage",
+      },
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
