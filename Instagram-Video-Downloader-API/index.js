@@ -3724,129 +3724,199 @@ async function checkCacheOnBoot() {
 // Load existing cache data into memory
 async function loadExistingCache() {
   try {
-    // Debug: Check if database file exists and has data
-    const fs = require('fs');
-    const path = require('path');
-    
-    if (fs.existsSync(dbPath)) {
-      const stats = fs.statSync(dbPath);
-      console.log(`📊 Database file exists: ${dbPath} (${stats.size} bytes)`);
-    } else {
-      console.log(`⚠️ Database file does not exist: ${dbPath}`);
-    }
+    // Use MongoDB if available, otherwise fallback to SQLite
+    if (mongoManager && mongoManager.isConnected) {
+      console.log("📊 Loading cache from MongoDB...");
+      
+      try {
+        // Get MongoDB stats to check cache status
+        const stats = await mongoManager.getStats();
+        console.log(`📊 MongoDB collections:`, stats.collections);
+        
+        // Get all cached usernames from MongoDB
+        const collection = mongoManager.db.collection("recent_posts_cache");
+        const cachedUsers = await collection.distinct("username");
+        
+        console.log(`📊 Found ${cachedUsers.length} cached users in MongoDB`);
+        
+        if (cachedUsers.length === 0) {
+          console.log("📊 No existing cache data found in MongoDB");
+          return;
+        }
 
-    // Debug: Check database schema and tables
-    console.log(`🔍 Checking database schema...`);
-    const tables = await new Promise((resolve, reject) => {
-      db.all(
-        "SELECT name FROM sqlite_master WHERE type='table'",
-        (err, rows) => {
-          if (err) {
-            console.error(`❌ Schema query error: ${err.message}`);
-            reject(err);
+        console.log(`📊 Loading cache for ${cachedUsers.length} users from MongoDB...`);
+
+        let loadedUsers = 0;
+        let totalPosts = 0;
+
+        // Load cache for each user
+        for (const username of cachedUsers) {
+          const cachedPosts = await getCachedRecentPosts(username);
+          if (cachedPosts.length > 0) {
+            console.log(
+              `   📱 @${username}: ${cachedPosts.length} posts cached (MongoDB)`
+            );
+
+            // Store in global cache for faster access
+            if (!global.postCache) {
+              global.postCache = {};
+            }
+            global.postCache[username] = cachedPosts;
+            loadedUsers++;
+            totalPosts += cachedPosts.length;
           } else {
-            console.log(`📊 Database tables: ${rows ? rows.map(r => r.name).join(', ') : 'none'}`);
-            resolve(rows || []);
+            console.log(`   ⚠️ @${username}: 0 posts cached (empty cache)`);
           }
         }
-      );
-    });
 
-    // Debug: Check if recent_posts_cache table exists and has data
-    const tableExists = tables.some(t => t.name === 'recent_posts_cache');
-    console.log(`📊 recent_posts_cache table exists: ${tableExists}`);
+        console.log(
+          `✅ MongoDB cache loaded successfully (${loadedUsers} users, ${totalPosts} total posts)`
+        );
 
-    if (tableExists) {
-      const tableCount = await new Promise((resolve, reject) => {
-        db.get(
-          "SELECT COUNT(*) as count FROM recent_posts_cache",
-          (err, row) => {
+        // Check if cache loading was successful
+        if (loadedUsers === 0 && cachedUsers.length > 0) {
+          console.log(
+            "⚠️ MongoDB cache loading resulted in 0 posts - attempting automatic reload..."
+          );
+          await retryCacheLoad();
+        }
+        
+        return; // Successfully loaded from MongoDB
+      } catch (error) {
+        console.error(`❌ MongoDB cache loading failed: ${error.message}`);
+        console.log("🔄 Falling back to SQLite...");
+        // Continue to SQLite fallback
+      }
+    }
+
+    // Fallback to SQLite
+    if (db) {
+      console.log("📊 Loading cache from SQLite...");
+      
+      // Debug: Check if database file exists and has data
+      const fs = require('fs');
+      const path = require('path');
+      
+      if (fs.existsSync(dbPath)) {
+        const stats = fs.statSync(dbPath);
+        console.log(`📊 Database file exists: ${dbPath} (${stats.size} bytes)`);
+      } else {
+        console.log(`⚠️ Database file does not exist: ${dbPath}`);
+      }
+
+      // Debug: Check database schema and tables
+      console.log(`🔍 Checking database schema...`);
+      const tables = await new Promise((resolve, reject) => {
+        db.all(
+          "SELECT name FROM sqlite_master WHERE type='table'",
+          (err, rows) => {
             if (err) {
-              console.error(`❌ Table count error: ${err.message}`);
+              console.error(`❌ Schema query error: ${err.message}`);
               reject(err);
             } else {
-              console.log(`📊 recent_posts_cache table has ${row ? row.count : 0} rows`);
-              resolve(row ? row.count : 0);
+              console.log(`📊 Database tables: ${rows ? rows.map(r => r.name).join(', ') : 'none'}`);
+              resolve(rows || []);
             }
           }
         );
       });
 
-      if (tableCount > 0) {
-        // Show sample data
-        const sampleData = await new Promise((resolve, reject) => {
-          db.all(
-            "SELECT username, shortcode, cached_at FROM recent_posts_cache LIMIT 5",
-            (err, rows) => {
+      // Debug: Check if recent_posts_cache table exists and has data
+      const tableExists = tables.some(t => t.name === 'recent_posts_cache');
+      console.log(`📊 recent_posts_cache table exists: ${tableExists}`);
+
+      if (tableExists) {
+        const tableCount = await new Promise((resolve, reject) => {
+          db.get(
+            "SELECT COUNT(*) as count FROM recent_posts_cache",
+            (err, row) => {
               if (err) {
-                console.error(`❌ Sample data error: ${err.message}`);
+                console.error(`❌ Table count error: ${err.message}`);
                 reject(err);
               } else {
-                console.log(`📊 Sample cache data:`, rows);
-                resolve(rows || []);
+                console.log(`📊 recent_posts_cache table has ${row ? row.count : 0} rows`);
+                resolve(row ? row.count : 0);
               }
             }
           );
         });
-      }
-    }
 
-    // Get all cached usernames
-    const cachedUsers = await new Promise((resolve, reject) => {
-      db.all(
-        "SELECT DISTINCT username FROM recent_posts_cache",
-        (err, rows) => {
-          if (err) {
-            console.error(`❌ Database query error: ${err.message}`);
-            reject(err);
-          } else {
-            console.log(`📊 Found ${rows ? rows.length : 0} cached users in database`);
-            resolve(rows || []);
+        if (tableCount > 0) {
+          // Show sample data
+          const sampleData = await new Promise((resolve, reject) => {
+            db.all(
+              "SELECT username, shortcode, cached_at FROM recent_posts_cache LIMIT 5",
+              (err, rows) => {
+                if (err) {
+                  console.error(`❌ Sample data error: ${err.message}`);
+                  reject(err);
+                } else {
+                  console.log(`📊 Sample cache data:`, rows);
+                  resolve(rows || []);
+                }
+              }
+            );
+          });
+        }
+      }
+
+      // Get all cached usernames
+      const cachedUsers = await new Promise((resolve, reject) => {
+        db.all(
+          "SELECT DISTINCT username FROM recent_posts_cache",
+          (err, rows) => {
+            if (err) {
+              console.error(`❌ Database query error: ${err.message}`);
+              reject(err);
+            } else {
+              console.log(`📊 Found ${rows ? rows.length : 0} cached users in database`);
+              resolve(rows || []);
+            }
           }
-        }
-      );
-    });
-
-    if (cachedUsers.length === 0) {
-      console.log("📊 No existing cache data found");
-      return;
-    }
-
-    console.log(`📊 Loading cache for ${cachedUsers.length} users...`);
-
-    let loadedUsers = 0;
-    let totalPosts = 0;
-
-    // Load cache for each user
-    for (const user of cachedUsers) {
-      const cachedPosts = await getCachedRecentPosts(user.username);
-      if (cachedPosts.length > 0) {
-        console.log(
-          `   📱 @${user.username}: ${cachedPosts.length} posts cached`
         );
+      });
 
-        // Store in global cache for faster access
-        if (!global.postCache) {
-          global.postCache = {};
-        }
-        global.postCache[user.username] = cachedPosts;
-        loadedUsers++;
-        totalPosts += cachedPosts.length;
-      } else {
-        console.log(`   ⚠️ @${user.username}: 0 posts cached (empty cache)`);
+      if (cachedUsers.length === 0) {
+        console.log("📊 No existing cache data found in SQLite");
+        return;
       }
-    }
 
-    console.log(
-      `✅ Cache loaded successfully (${loadedUsers} users, ${totalPosts} total posts)`
-    );
+      console.log(`📊 Loading cache for ${cachedUsers.length} users from SQLite...`);
 
-    // Check if cache loading was successful
-    if (loadedUsers === 0 && cachedUsers.length > 0) {
+      let loadedUsers = 0;
+      let totalPosts = 0;
+
+      // Load cache for each user
+      for (const user of cachedUsers) {
+        const cachedPosts = await getCachedRecentPosts(user.username);
+        if (cachedPosts.length > 0) {
+          console.log(
+            `   📱 @${user.username}: ${cachedPosts.length} posts cached (SQLite)`
+          );
+
+          // Store in global cache for faster access
+          if (!global.postCache) {
+            global.postCache = {};
+          }
+          global.postCache[user.username] = cachedPosts;
+          loadedUsers++;
+          totalPosts += cachedPosts.length;
+        } else {
+          console.log(`   ⚠️ @${user.username}: 0 posts cached (empty cache)`);
+        }
+      }
+
       console.log(
-        "⚠️ Cache loading resulted in 0 posts - attempting automatic reload..."
+        `✅ SQLite cache loaded successfully (${loadedUsers} users, ${totalPosts} total posts)`
       );
-      await retryCacheLoad();
+
+      // Check if cache loading was successful
+      if (loadedUsers === 0 && cachedUsers.length > 0) {
+        console.log(
+          "⚠️ SQLite cache loading resulted in 0 posts - attempting automatic reload..."
+        );
+        await retryCacheLoad();
+      }
     }
   } catch (error) {
     console.error(`❌ Failed to load existing cache: ${error.message}`);
@@ -3869,68 +3939,143 @@ async function retryCacheLoad() {
     // Wait a moment for database to stabilize
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    // Force reload from database
-    const cachedUsers = await new Promise((resolve, reject) => {
-      db.all(
-        "SELECT DISTINCT username FROM recent_posts_cache",
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
-      );
-    });
-
-    if (cachedUsers.length === 0) {
-      console.log("📊 No cached users found in database during reload");
-      return;
-    }
-
-    console.log(`🔄 Reloading cache for ${cachedUsers.length} users...`);
-
-    let loadedUsers = 0;
-    let totalPosts = 0;
-
-    for (const user of cachedUsers) {
+    // Use MongoDB if available, otherwise fallback to SQLite
+    if (mongoManager && mongoManager.isConnected) {
       try {
-        // Force database query (bypass memory cache)
-        const cachedPosts = await new Promise((resolve, reject) => {
-          db.all(
-            "SELECT post_url, shortcode, is_pinned, post_order, cached_at FROM recent_posts_cache WHERE username = ? ORDER BY is_pinned DESC, post_order ASC",
-            [user.username],
-            (err, rows) => {
-              if (err) reject(err);
-              else resolve(rows || []);
-            }
-          );
-        });
+        console.log("🔄 Attempting MongoDB cache reload...");
+        
+        // Force reload from MongoDB
+        const collection = mongoManager.db.collection("recent_posts_cache");
+        const cachedUsers = await collection.distinct("username");
 
-        if (cachedPosts.length > 0) {
-          console.log(
-            `   ✅ @${user.username}: ${cachedPosts.length} posts reloaded`
-          );
-
-          if (!global.postCache) {
-            global.postCache = {};
-          }
-          global.postCache[user.username] = cachedPosts;
-          loadedUsers++;
-          totalPosts += cachedPosts.length;
-        } else {
-          console.log(`   ⚠️ @${user.username}: Still 0 posts after reload`);
+        if (cachedUsers.length === 0) {
+          console.log("📊 No cached users found in MongoDB during reload");
+          return;
         }
-      } catch (userError) {
-        console.error(
-          `   ❌ Failed to reload cache for @${user.username}: ${userError.message}`
-        );
+
+        console.log(`🔄 Reloading cache for ${cachedUsers.length} users from MongoDB...`);
+
+        let loadedUsers = 0;
+        let totalPosts = 0;
+
+        for (const username of cachedUsers) {
+          try {
+            // Force MongoDB query (bypass memory cache)
+            const cachedPosts = await collection
+              .find({ username })
+              .sort({ is_pinned: -1, post_order: 1 })
+              .toArray();
+
+            if (cachedPosts.length > 0) {
+              console.log(
+                `   ✅ @${username}: ${cachedPosts.length} posts reloaded (MongoDB)`
+              );
+
+              if (!global.postCache) {
+                global.postCache = {};
+              }
+              global.postCache[username] = cachedPosts.map((post) => ({
+                post_url: post.post_url,
+                shortcode: post.shortcode,
+                is_pinned: post.is_pinned,
+                post_order: post.post_order,
+                cached_at: post.cached_at,
+              }));
+              loadedUsers++;
+              totalPosts += cachedPosts.length;
+            } else {
+              console.log(`   ⚠️ @${username}: Still 0 posts after reload`);
+            }
+          } catch (userError) {
+            console.error(
+              `   ❌ Failed to reload cache for @${username}: ${userError.message}`
+            );
+          }
+        }
+
+        if (loadedUsers > 0) {
+          console.log(
+            `✅ Automatic MongoDB cache reload successful (${loadedUsers} users, ${totalPosts} posts)`
+          );
+        } else {
+          console.log("❌ Automatic MongoDB cache reload failed - no posts loaded");
+        }
+        
+        return; // Successfully reloaded from MongoDB
+      } catch (error) {
+        console.error(`❌ MongoDB cache reload failed: ${error.message}`);
+        console.log("🔄 Falling back to SQLite...");
+        // Continue to SQLite fallback
       }
     }
 
-    if (loadedUsers > 0) {
-      console.log(
-        `✅ Automatic cache reload successful (${loadedUsers} users, ${totalPosts} posts)`
-      );
-    } else {
-      console.log("❌ Automatic cache reload failed - no posts loaded");
+    // Fallback to SQLite
+    if (db) {
+      console.log("🔄 Attempting SQLite cache reload...");
+      
+      // Force reload from database
+      const cachedUsers = await new Promise((resolve, reject) => {
+        db.all(
+          "SELECT DISTINCT username FROM recent_posts_cache",
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+          }
+        );
+      });
+
+      if (cachedUsers.length === 0) {
+        console.log("📊 No cached users found in SQLite during reload");
+        return;
+      }
+
+      console.log(`🔄 Reloading cache for ${cachedUsers.length} users from SQLite...`);
+
+      let loadedUsers = 0;
+      let totalPosts = 0;
+
+      for (const user of cachedUsers) {
+        try {
+          // Force database query (bypass memory cache)
+          const cachedPosts = await new Promise((resolve, reject) => {
+            db.all(
+              "SELECT post_url, shortcode, is_pinned, post_order, cached_at FROM recent_posts_cache WHERE username = ? ORDER BY is_pinned DESC, post_order ASC",
+              [user.username],
+              (err, rows) => {
+                if (err) reject(err);
+                else resolve(rows || []);
+              }
+            );
+          });
+
+          if (cachedPosts.length > 0) {
+            console.log(
+              `   ✅ @${user.username}: ${cachedPosts.length} posts reloaded (SQLite)`
+            );
+
+            if (!global.postCache) {
+              global.postCache = {};
+            }
+            global.postCache[user.username] = cachedPosts;
+            loadedUsers++;
+            totalPosts += cachedPosts.length;
+          } else {
+            console.log(`   ⚠️ @${user.username}: Still 0 posts after reload`);
+          }
+        } catch (userError) {
+          console.error(
+            `   ❌ Failed to reload cache for @${user.username}: ${userError.message}`
+          );
+        }
+      }
+
+      if (loadedUsers > 0) {
+        console.log(
+          `✅ Automatic SQLite cache reload successful (${loadedUsers} users, ${totalPosts} posts)`
+        );
+      } else {
+        console.log("❌ Automatic SQLite cache reload failed - no posts loaded");
+      }
     }
   } catch (error) {
     console.error(`❌ Automatic cache reload failed: ${error.message}`);
