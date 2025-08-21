@@ -2879,94 +2879,125 @@ async function scrapeWithWebProfileInfo(username, userAgent) {
 }
 
 // Check if post was already processed (excluding pinned posts from recent checks)
-function isPostProcessed(postId, username) {
-  return new Promise((resolve, reject) => {
-    // Check if post exists
-    db.get(
-      `
-      SELECT id, is_pinned, pinned_at, processed_at 
-      FROM processed_posts 
-      WHERE id = ? AND username = ?
-    `,
-      [postId, username],
-      (err, row) => {
-        if (err) reject(err);
-        else {
-          if (!row) {
-            resolve(false); // Not processed - allow processing
-          } else if (row.is_pinned) {
-            // For pinned posts, check if they were pinned recently (within last 24 hours)
-            const pinnedTime = new Date(row.pinned_at);
-            const now = new Date();
-            const hoursSincePinned = (now - pinnedTime) / (1000 * 60 * 60);
+async function isPostProcessed(postId, username) {
+  // Use MongoDB if available, otherwise fallback to SQLite
+  if (mongoManager && mongoManager.isConnected) {
+    try {
+      return await mongoManager.isPostProcessed(postId, username);
+    } catch (error) {
+      console.error(`❌ MongoDB post processing check failed: ${error.message}`);
+      // Fallback to SQLite
+    }
+  }
 
-            if (hoursSincePinned < 24) {
-              // Recently pinned - allow re-processing to capture any updates
-              console.log(
-                `📌 Pinned post ${postId} was pinned ${hoursSincePinned.toFixed(
-                  1
-                )} hours ago - allowing re-processing`
-              );
-              resolve(false);
+  // Fallback to SQLite
+  if (db) {
+    return new Promise((resolve, reject) => {
+      // Check if post exists
+      db.get(
+        `
+        SELECT id, is_pinned, pinned_at, processed_at 
+        FROM processed_posts 
+        WHERE id = ? AND username = ?
+      `,
+        [postId, username],
+        (err, row) => {
+          if (err) reject(err);
+          else {
+            if (!row) {
+              resolve(false); // Not processed - allow processing
+            } else if (row.is_pinned) {
+              // For pinned posts, check if they were pinned recently (within last 24 hours)
+              const pinnedTime = new Date(row.pinned_at);
+              const now = new Date();
+              const hoursSincePinned = (now - pinnedTime) / (1000 * 60 * 60);
+
+              if (hoursSincePinned < 24) {
+                // Recently pinned - allow re-processing to capture any updates
+                console.log(
+                  `📌 Pinned post ${postId} was pinned ${hoursSincePinned.toFixed(
+                    1
+                  )} hours ago - allowing re-processing`
+                );
+                resolve(false);
+              } else {
+                // Old pinned post - treat as processed to avoid spam
+                console.log(
+                  `📌 Old pinned post ${postId} was pinned ${hoursSincePinned.toFixed(
+                    1
+                  )} hours ago - treating as processed`
+                );
+                resolve(true);
+              }
             } else {
-              // Old pinned post - treat as processed to avoid spam
-              console.log(
-                `📌 Old pinned post ${postId} was pinned ${hoursSincePinned.toFixed(
-                  1
-                )} hours ago - treating as processed`
-              );
+              // Regular post - always treat as processed once processed
               resolve(true);
             }
-          } else {
-            // Regular post - always treat as processed once processed
-            resolve(true);
           }
         }
-      }
-    );
-  });
+      );
+    });
+  }
+
+  return false; // Default to not processed if no database available
 }
 
 // Mark post as processed
-function markPostAsProcessed(
+async function markPostAsProcessed(
   postId,
   username,
   postUrl,
   postType,
   isPinned = false
 ) {
-  return new Promise((resolve, reject) => {
-    const now = new Date().toISOString();
-
-    if (isPinned) {
-      // For pinned posts, update existing record or insert new one
-      db.run(
-        `
-        INSERT OR REPLACE INTO processed_posts 
-        (id, username, post_url, post_type, is_pinned, pinned_at, processed_at) 
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `,
-        [postId, username, postUrl, postType, true, now, now],
-        function (err) {
-          if (err) reject(err);
-          else {
-            console.log(`📌 Marked pinned post ${postId} as processed`);
-            resolve(this.lastID);
-          }
-        }
-      );
-    } else {
-      // For regular posts, insert new record
-      db.run(
-        "INSERT INTO processed_posts (id, username, post_url, post_type, is_pinned) VALUES (?, ?, ?, ?, ?)",
-        [postId, username, postUrl, postType, false],
-        function (err) {
-          if (err) reject(err);
-          else resolve(this.lastID);
-        }
-      );
+  // Use MongoDB if available, otherwise fallback to SQLite
+  if (mongoManager && mongoManager.isConnected) {
+    try {
+      await mongoManager.markPostAsProcessed(postId, username, postUrl, postType, isPinned);
+      return true;
+    } catch (error) {
+      console.error(`❌ MongoDB post marking failed: ${error.message}`);
+      // Fallback to SQLite
     }
-  });
+  }
+
+  // Fallback to SQLite
+  if (db) {
+    return new Promise((resolve, reject) => {
+      const now = new Date().toISOString();
+
+      if (isPinned) {
+        // For pinned posts, update existing record or insert new one
+        db.run(
+          `
+          INSERT OR REPLACE INTO processed_posts 
+          (id, username, post_url, post_type, is_pinned, pinned_at, processed_at) 
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `,
+          [postId, username, postUrl, postType, true, now, now],
+          function (err) {
+            if (err) reject(err);
+            else {
+              console.log(`📌 Marked pinned post ${postId} as processed (SQLite)`);
+              resolve(this.lastID);
+            }
+          }
+        );
+      } else {
+        // For regular posts, insert new record
+        db.run(
+          "INSERT INTO processed_posts (id, username, post_url, post_type, is_pinned) VALUES (?, ?, ?, ?, ?)",
+          [postId, username, postUrl, postType, false],
+          function (err) {
+            if (err) reject(err);
+            else resolve(this.lastID);
+          }
+        );
+      }
+    });
+  }
+
+  return false;
 }
 
 // Cache functions for recent posts
