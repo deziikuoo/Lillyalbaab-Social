@@ -337,16 +337,15 @@ async function cleanupAndExit(code) {
   }
   */
 
-  // Close database connections
-  if (db) {
-    db.close((err) => {
-      if (err) console.error("Error closing database:", err);
-      else console.log("✅ Database connection closed");
-      process.exit(code);
-    });
-  } else {
+// Close database connections
+if (db) {
+  db.close((err) => {
+    if (err) console.error("Error closing database:", err);
+    else console.log("✅ Database connection closed");
     process.exit(code);
-  }
+  });
+} else {
+  process.exit(code);
 }
 
 // ===== MEMORY MANAGEMENT =====
@@ -491,7 +490,6 @@ const healthCheck = {
     console.log("🏥 Health check system started");
   },
 };
-*/
 
 // ===== REQUEST TRACKING SYSTEM =====
 const requestTracker = {
@@ -2750,14 +2748,14 @@ async function scrapeInstagramPosts(username, userAgent) {
     */
 
     // API failed - browser automation is currently disabled due to Puppeteer issues
-    console.log(
-      `🚨 CRITICAL: Instagram API failed for @${username}`
-    );
+    console.log(`🚨 CRITICAL: Instagram API failed for @${username}`);
     console.log(
       `🚨 This indicates a serious issue that needs immediate evaluation:`
     );
     console.log(`   - Instagram may have blocked automated access`);
-    console.log(`   - Browser automation is currently disabled due to Puppeteer issues`);
+    console.log(
+      `   - Browser automation is currently disabled due to Puppeteer issues`
+    );
     console.log(`   - Network connectivity issues may be present`);
     console.log(
       `🚨 PROCESS EVALUATION REQUIRED - Check logs and system status`
