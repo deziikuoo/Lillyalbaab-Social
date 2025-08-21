@@ -18,7 +18,10 @@
     "pm2:logs": "pm2 logs",
     "pm2:status": "pm2 status",
     "keep-alive": "node keep-alive.js",
-    "keep-alive:render": "HEALTH_URL=https://your-app-name.onrender.com/health node keep-alive.js",
+    "keep-alive:render": "HEALTH_URL=https://tyla-social.onrender.com/health node keep-alive.js",
+    "monitor-health": "node monitor-health.js",
+    "start:monitored": "concurrently -k -n \"API,HealthMonitor\" -c \"cyan,yellow\" \"npm start\" \"npm run monitor-health\"",
+    "test-cache": "node test-cache.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

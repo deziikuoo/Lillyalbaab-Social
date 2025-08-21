@@ -3,4 +3,4 @@ https://tyla-social-git-master-dawans-projects.vercel.app/
 
 
 #storage viewing: for render
-GET https://your-render-app.onrender.com/storage-status
+GET https://tyla-social.onrender.com/storage-status

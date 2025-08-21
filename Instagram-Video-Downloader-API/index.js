@@ -281,13 +281,21 @@ process.on("SIGINT", () => {
   cleanupAndExit(0);
 });
 
-function cleanupAndExit(code) {
+async function cleanupAndExit(code) {
   console.log("🧹 Cleaning up resources...");
 
   // Stop polling
   if (currentPollingTimeout) {
     clearTimeout(currentPollingTimeout);
     currentPollingTimeout = null;
+  }
+
+  // Clean up browser pool
+  try {
+    await browserPool.cleanup();
+    console.log("✅ Browser pool cleaned up");
+  } catch (error) {
+    console.error("Error cleaning up browser pool:", error);
   }
 
   // Close database connections
@@ -307,7 +315,7 @@ const memoryManager = {
   lastCleanup: Date.now(),
   cleanupInterval: 30 * 60 * 1000, // 30 minutes
 
-  performCleanup() {
+  async performCleanup() {
     try {
       // Force garbage collection if available
       if (global.gc) {
@@ -322,6 +330,40 @@ const memoryManager = {
           console.log(`🧹 Clearing large post cache (${cacheSize} entries)`);
           global.postCache = {};
         }
+      }
+
+      // Clean up browser pool if too many instances
+      const browserStats = browserPool.getStats();
+      if (browserStats.total > 1 && browserStats.inUse === 0) {
+        console.log("🧹 Cleaning up unused browser instances...");
+        await browserPool.cleanup();
+      }
+
+      // Validate cache integrity (every 4th cleanup = every 2 hours)
+      const cleanupCount = Math.floor(
+        (Date.now() - this.lastCleanup) / this.cleanupInterval
+      );
+      if (cleanupCount % 4 === 0) {
+        console.log("🔍 Running cache integrity validation...");
+        await validateCacheIntegrity();
+      }
+
+      // Check storage limits (every cleanup cycle)
+      await checkStorageLimitAndCleanup();
+
+      // Schedule 4-week cache cleanup (every 1344 cleanup cycles = 4 weeks)
+      // 30 min * 1344 = 40320 min = 672 hours = 28 days = 4 weeks
+      const weeklyCleanupCount = Math.floor(
+        (Date.now() - this.lastCleanup) / this.cleanupInterval
+      );
+      if (weeklyCleanupCount % 1344 === 0 && weeklyCleanupCount > 0) {
+        console.log("📋 Scheduling 4-week cache cleanup operation...");
+        await cleanupQueue.addToQueue({
+          name: "4-Week Cache Cleanup",
+          execute: async () => {
+            await cleanExpiredCache();
+          },
+        });
       }
 
       this.lastCleanup = Date.now();
@@ -729,20 +771,24 @@ try {
 } catch (error) {
   console.error(`❌ Database initialization failed: ${error.message}`);
   console.log(`🔧 Attempting to create database directory...`);
-  
+
   // Try to create the database directory
   const dbDir = path.dirname(dbPath);
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
     console.log(`📁 Created database directory: ${dbDir}`);
   }
-  
+
   // Try again
   try {
     db = new sqlite3.Database(dbPath);
-    console.log(`✅ Database initialized successfully after directory creation`);
+    console.log(
+      `✅ Database initialized successfully after directory creation`
+    );
   } catch (retryError) {
-    console.error(`❌ Database initialization still failed: ${retryError.message}`);
+    console.error(
+      `❌ Database initialization still failed: ${retryError.message}`
+    );
     console.log(`🔄 Falling back to local database...`);
     db = new sqlite3.Database("./instagram_tracker.db");
   }
@@ -751,7 +797,7 @@ try {
 // Initialize database
 if (db) {
   db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS processed_posts (
+    db.run(`CREATE TABLE IF NOT EXISTS processed_posts (
     id TEXT PRIMARY KEY,
     username TEXT,
     post_url TEXT,
@@ -761,26 +807,26 @@ if (db) {
     processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
-  // Add is_pinned column if it doesn't exist (for existing databases)
-  db.run(
-    `ALTER TABLE processed_posts ADD COLUMN is_pinned BOOLEAN DEFAULT FALSE`,
-    function (err) {
-      if (err && !err.message.includes("duplicate column name")) {
-        console.log(`⚠️ Schema update warning: ${err.message}`);
+    // Add is_pinned column if it doesn't exist (for existing databases)
+    db.run(
+      `ALTER TABLE processed_posts ADD COLUMN is_pinned BOOLEAN DEFAULT FALSE`,
+      function (err) {
+        if (err && !err.message.includes("duplicate column name")) {
+          console.log(`⚠️ Schema update warning: ${err.message}`);
+        }
       }
-    }
-  );
-  db.run(
-    `ALTER TABLE processed_posts ADD COLUMN pinned_at DATETIME`,
-    function (err) {
-      if (err && !err.message.includes("duplicate column name")) {
-        console.log(`⚠️ Schema update warning: ${err.message}`);
+    );
+    db.run(
+      `ALTER TABLE processed_posts ADD COLUMN pinned_at DATETIME`,
+      function (err) {
+        if (err && !err.message.includes("duplicate column name")) {
+          console.log(`⚠️ Schema update warning: ${err.message}`);
+        }
       }
-    }
-  );
+    );
 
-  // Cache for recent posts (pinned + recent, max 8 per user)
-  db.run(`CREATE TABLE IF NOT EXISTS recent_posts_cache (
+    // Cache for recent posts (pinned + recent, max 8 per user)
+    db.run(`CREATE TABLE IF NOT EXISTS recent_posts_cache (
     username TEXT,
     post_url TEXT,
     shortcode TEXT,
@@ -790,16 +836,16 @@ if (db) {
     PRIMARY KEY (username, shortcode)
   )`);
 
-  // Cache cleanup tracking
-  db.run(`CREATE TABLE IF NOT EXISTS cache_cleanup_log (
+    // Cache cleanup tracking
+    db.run(`CREATE TABLE IF NOT EXISTS cache_cleanup_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     cleaned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     posts_removed INTEGER,
     username TEXT
   )`);
 
-  // Stories tracking tables
-  db.run(`CREATE TABLE IF NOT EXISTS processed_stories (
+    // Stories tracking tables
+    db.run(`CREATE TABLE IF NOT EXISTS processed_stories (
     id TEXT PRIMARY KEY,
     username TEXT,
     story_url TEXT,
@@ -808,7 +854,7 @@ if (db) {
     processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS recent_stories_cache (
+    db.run(`CREATE TABLE IF NOT EXISTS recent_stories_cache (
     username TEXT,
     story_url TEXT,
     story_id TEXT,
@@ -2734,9 +2780,19 @@ function markPostAsProcessed(
 }
 
 // Cache functions for recent posts
-// Get cached recent posts for a username
+// Get cached recent posts for a username (with in-memory cache)
 function getCachedRecentPosts(username) {
   return new Promise((resolve, reject) => {
+    // First check in-memory cache for faster access
+    if (global.postCache && global.postCache[username]) {
+      console.log(
+        `📊 Using in-memory cache for @${username} (${global.postCache[username].length} posts)`
+      );
+      resolve(global.postCache[username]);
+      return;
+    }
+
+    // Fallback to database
     db.all(
       `
       SELECT post_url, shortcode, is_pinned, post_order, cached_at 
@@ -2747,7 +2803,17 @@ function getCachedRecentPosts(username) {
       [username],
       (err, rows) => {
         if (err) reject(err);
-        else resolve(rows || []);
+        else {
+          const cachedPosts = rows || [];
+
+          // Update in-memory cache
+          if (!global.postCache) {
+            global.postCache = {};
+          }
+          global.postCache[username] = cachedPosts;
+
+          resolve(cachedPosts);
+        }
       }
     );
   });
@@ -2799,8 +2865,23 @@ function updateRecentPostsCache(username, posts) {
               completed++;
               if (completed === total) {
                 stmt.finalize();
+
+                // Update in-memory cache
+                if (!global.postCache) {
+                  global.postCache = {};
+                }
+                global.postCache[username] = posts.map((post, idx) => ({
+                  post_url: post.url,
+                  shortcode:
+                    post.shortcode ||
+                    post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2],
+                  is_pinned: post.is_pinned || false,
+                  post_order: idx + 1,
+                  cached_at: now,
+                }));
+
                 console.log(
-                  `✅ Updated cache with ${total} posts for @${username}`
+                  `✅ Updated cache with ${total} posts for @${username} (memory + database)`
                 );
                 resolve();
               }
@@ -2835,49 +2916,429 @@ function findNewPosts(username, fetchedPosts) {
   });
 }
 
-// Clean expired cache entries (7 days old)
-function cleanExpiredCache() {
-  return new Promise((resolve, reject) => {
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
+// Cleanup queue management
+const cleanupQueue = {
+  isRunning: false,
+  queue: [],
+  pollingBlocked: false,
 
-    // Clean both cache and old processed posts
-    const cleanCache = new Promise((resolveCache, rejectCache) => {
-      db.run(
-        `
-        DELETE FROM recent_posts_cache 
-        WHERE cached_at < ?
-      `,
-        [weekAgo.toISOString()],
-        function (err) {
-          if (err) rejectCache(err);
-          else resolveCache(this.changes);
+  async addToQueue(operation) {
+    this.queue.push(operation);
+    console.log(
+      `📋 Added cleanup operation to queue (${this.queue.length} pending)`
+    );
+
+    if (!this.isRunning) {
+      await this.processQueue();
+    }
+  },
+
+  async processQueue() {
+    if (this.isRunning || this.queue.length === 0) {
+      return;
+    }
+
+    this.isRunning = true;
+    console.log(
+      `🔄 Starting cleanup queue processing (${this.queue.length} operations)`
+    );
+
+    while (this.queue.length > 0) {
+      const operation = this.queue.shift();
+      try {
+        console.log(`🔄 Executing cleanup operation: ${operation.name}`);
+        await operation.execute();
+        console.log(`✅ Cleanup operation completed: ${operation.name}`);
+
+        // Add delay between operations
+        if (this.queue.length > 0) {
+          console.log(`⏳ Waiting 2 seconds before next cleanup operation...`);
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
-      );
-    });
-
-    const cleanProcessed = new Promise((resolveProcessed, rejectProcessed) => {
-      db.run(
-        `
-        DELETE FROM processed_posts 
-        WHERE processed_at < ? AND is_pinned = FALSE
-      `,
-        [weekAgo.toISOString()],
-        function (err) {
-          if (err) rejectProcessed(err);
-          else resolveProcessed(this.changes);
-        }
-      );
-    });
-
-    Promise.all([cleanCache, cleanProcessed])
-      .then(([cacheRemoved, processedRemoved]) => {
-        console.log(
-          `🧹 Cleaned ${cacheRemoved} expired cache entries and ${processedRemoved} old processed posts`
+      } catch (error) {
+        console.error(
+          `❌ Cleanup operation failed: ${operation.name} - ${error.message}`
         );
-        resolve(cacheRemoved + processedRemoved);
-      })
-      .catch(reject);
+      }
+    }
+
+    this.isRunning = false;
+    console.log(`✅ Cleanup queue processing completed`);
+  },
+
+  async waitForCompletion() {
+    if (this.isRunning) {
+      console.log(
+        `⏳ Polling blocked - waiting for cleanup operations to complete...`
+      );
+      this.pollingBlocked = true;
+
+      while (this.isRunning) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+
+      console.log(`✅ Cleanup completed - polling can proceed`);
+      this.pollingBlocked = false;
+    }
+  },
+};
+
+// Enhanced cache cleanup with transactions and batching
+async function cleanExpiredCache() {
+  return new Promise(async (resolve, reject) => {
+    try {
+      console.log("🧹 Starting enhanced cache cleanup...");
+
+      // Use database transaction
+      await new Promise((resolveTransaction, rejectTransaction) => {
+        db.serialize(() => {
+          db.run("BEGIN TRANSACTION");
+
+          const weekAgo = new Date();
+          weekAgo.setDate(weekAgo.getDate() - 28); // 4 weeks instead of 7 days
+
+          console.log(
+            `📅 Cleaning cache entries older than: ${weekAgo.toLocaleDateString()}`
+          );
+
+          // Get all users with cache data
+          db.all(
+            "SELECT DISTINCT username FROM recent_posts_cache",
+            (err, users) => {
+              if (err) {
+                db.run("ROLLBACK");
+                rejectTransaction(err);
+                return;
+              }
+
+              let totalCacheRemoved = 0;
+              let totalProcessedRemoved = 0;
+              let completedUsers = 0;
+
+              if (users.length === 0) {
+                db.run("COMMIT");
+                resolveTransaction({ cacheRemoved: 0, processedRemoved: 0 });
+                return;
+              }
+
+              users.forEach((user, index) => {
+                // Clean cache for each user (keep last 8 posts)
+                db.all(
+                  `SELECT shortcode FROM recent_posts_cache 
+                 WHERE username = ? 
+                 ORDER BY cached_at ASC`,
+                  [user.username],
+                  (err, posts) => {
+                    if (err) {
+                      db.run("ROLLBACK");
+                      rejectTransaction(err);
+                      return;
+                    }
+
+                    if (posts.length > 8) {
+                      const postsToDelete = posts.slice(0, posts.length - 8);
+                      const shortcodesToDelete = postsToDelete.map(
+                        (p) => p.shortcode
+                      );
+
+                      if (shortcodesToDelete.length > 0) {
+                        const placeholders = shortcodesToDelete
+                          .map(() => "?")
+                          .join(",");
+                        db.run(
+                          `DELETE FROM recent_posts_cache 
+                         WHERE username = ? AND shortcode IN (${placeholders})`,
+                          [user.username, ...shortcodesToDelete],
+                          function (err) {
+                            if (err) {
+                              db.run("ROLLBACK");
+                              rejectTransaction(err);
+                              return;
+                            }
+                            totalCacheRemoved += this.changes;
+                            console.log(
+                              `   🗑️ @${user.username}: Removed ${this.changes} old cache entries`
+                            );
+                          }
+                        );
+                      }
+                    }
+
+                    // Clean old processed posts (keep last 8)
+                    db.all(
+                      `SELECT id FROM processed_posts 
+                     WHERE username = ? AND is_pinned = FALSE
+                     ORDER BY processed_at ASC`,
+                      [user.username],
+                      (err, processedPosts) => {
+                        if (err) {
+                          db.run("ROLLBACK");
+                          rejectTransaction(err);
+                          return;
+                        }
+
+                        if (processedPosts.length > 8) {
+                          const postsToDelete = processedPosts.slice(
+                            0,
+                            processedPosts.length - 8
+                          );
+                          const idsToDelete = postsToDelete.map((p) => p.id);
+
+                          if (idsToDelete.length > 0) {
+                            const placeholders = idsToDelete
+                              .map(() => "?")
+                              .join(",");
+                            db.run(
+                              `DELETE FROM processed_posts 
+                             WHERE username = ? AND id IN (${placeholders})`,
+                              [user.username, ...idsToDelete],
+                              function (err) {
+                                if (err) {
+                                  db.run("ROLLBACK");
+                                  rejectTransaction(err);
+                                  return;
+                                }
+                                totalProcessedRemoved += this.changes;
+                                console.log(
+                                  `   🗑️ @${user.username}: Removed ${this.changes} old processed posts`
+                                );
+                              }
+                            );
+                          }
+                        }
+
+                        completedUsers++;
+                        if (completedUsers === users.length) {
+                          db.run("COMMIT");
+                          resolveTransaction({
+                            cacheRemoved: totalCacheRemoved,
+                            processedRemoved: totalProcessedRemoved,
+                          });
+                        }
+                      }
+                    );
+                  }
+                );
+              });
+            }
+          );
+        });
+      });
+
+      console.log(
+        `✅ Enhanced cache cleanup completed: ${totalCacheRemoved} cache entries, ${totalProcessedRemoved} processed posts removed`
+      );
+
+      // Update memory cache atomically
+      await updateMemoryCacheAfterCleanup();
+
+      // Run cache integrity check
+      console.log("🔍 Running post-cleanup cache integrity check...");
+      await validateCacheIntegrity();
+
+      resolve({
+        cacheRemoved: totalCacheRemoved,
+        processedRemoved: totalProcessedRemoved,
+      });
+    } catch (error) {
+      console.error(`❌ Enhanced cache cleanup failed: ${error.message}`);
+      reject(error);
+    }
+  });
+}
+
+// Update memory cache after database cleanup
+async function updateMemoryCacheAfterCleanup() {
+  try {
+    console.log("🔄 Updating memory cache after database cleanup...");
+
+    // Clear existing memory cache
+    if (global.postCache) {
+      global.postCache = {};
+    }
+
+    // Reload cache from database
+    await loadExistingCache();
+
+    console.log("✅ Memory cache updated after cleanup");
+  } catch (error) {
+    console.error(
+      `❌ Failed to update memory cache after cleanup: ${error.message}`
+    );
+  }
+}
+
+// Storage-based cleanup when database size exceeds limit
+async function checkStorageLimitAndCleanup() {
+  try {
+    const dbPath =
+      process.env.NODE_ENV === "production"
+        ? "/opt/render/project/src/data/instagram_tracker.db"
+        : "./instagram_tracker.db";
+
+    const fs = require("fs");
+    const stats = fs.statSync(dbPath);
+    const dbSizeMB = stats.size / (1024 * 1024);
+
+    // Trigger cleanup if database exceeds 500MB
+    if (dbSizeMB > 500) {
+      console.log(
+        `⚠️ Database size (${dbSizeMB.toFixed(2)}MB) exceeds 500MB limit`
+      );
+      console.log("📋 Scheduling storage-based cleanup...");
+
+      await cleanupQueue.addToQueue({
+        name: "Storage Cleanup",
+        execute: async () => {
+          await performStorageCleanup();
+        },
+      });
+    }
+  } catch (error) {
+    console.error(`❌ Storage limit check failed: ${error.message}`);
+  }
+}
+
+// Perform storage-based cleanup (delete all except last 8 posts)
+async function performStorageCleanup() {
+  return new Promise(async (resolve, reject) => {
+    try {
+      console.log("🧹 Starting storage-based cleanup...");
+
+      await new Promise((resolveTransaction, rejectTransaction) => {
+        db.serialize(() => {
+          db.run("BEGIN TRANSACTION");
+
+          // Get all users
+          db.all(
+            "SELECT DISTINCT username FROM recent_posts_cache",
+            (err, users) => {
+              if (err) {
+                db.run("ROLLBACK");
+                rejectTransaction(err);
+                return;
+              }
+
+              let totalCacheRemoved = 0;
+              let totalProcessedRemoved = 0;
+              let completedUsers = 0;
+
+              if (users.length === 0) {
+                db.run("COMMIT");
+                resolveTransaction({ cacheRemoved: 0, processedRemoved: 0 });
+                return;
+              }
+
+              users.forEach((user) => {
+                // Keep only last 8 posts for each user
+                db.all(
+                  `SELECT shortcode FROM recent_posts_cache 
+                 WHERE username = ? 
+                 ORDER BY cached_at DESC LIMIT 8`,
+                  [user.username],
+                  (err, keepPosts) => {
+                    if (err) {
+                      db.run("ROLLBACK");
+                      rejectTransaction(err);
+                      return;
+                    }
+
+                    const keepShortcodes = keepPosts.map((p) => p.shortcode);
+
+                    if (keepShortcodes.length > 0) {
+                      const placeholders = keepShortcodes
+                        .map(() => "?")
+                        .join(",");
+                      db.run(
+                        `DELETE FROM recent_posts_cache 
+                       WHERE username = ? AND shortcode NOT IN (${placeholders})`,
+                        [user.username, ...keepShortcodes],
+                        function (err) {
+                          if (err) {
+                            db.run("ROLLBACK");
+                            rejectTransaction(err);
+                            return;
+                          }
+                          totalCacheRemoved += this.changes;
+                          console.log(
+                            `   🗑️ @${user.username}: Removed ${this.changes} old cache entries (storage cleanup)`
+                          );
+                        }
+                      );
+                    }
+
+                    // Keep only last 8 processed posts for each user
+                    db.all(
+                      `SELECT id FROM processed_posts 
+                     WHERE username = ? AND is_pinned = FALSE
+                     ORDER BY processed_at DESC LIMIT 8`,
+                      [user.username],
+                      (err, keepProcessedPosts) => {
+                        if (err) {
+                          db.run("ROLLBACK");
+                          rejectTransaction(err);
+                          return;
+                        }
+
+                        const keepIds = keepProcessedPosts.map((p) => p.id);
+
+                        if (keepIds.length > 0) {
+                          const placeholders = keepIds.map(() => "?").join(",");
+                          db.run(
+                            `DELETE FROM processed_posts 
+                           WHERE username = ? AND is_pinned = FALSE AND id NOT IN (${placeholders})`,
+                            [user.username, ...keepIds],
+                            function (err) {
+                              if (err) {
+                                db.run("ROLLBACK");
+                                rejectTransaction(err);
+                                return;
+                              }
+                              totalProcessedRemoved += this.changes;
+                              console.log(
+                                `   🗑️ @${user.username}: Removed ${this.changes} old processed posts (storage cleanup)`
+                              );
+                            }
+                          );
+                        }
+
+                        completedUsers++;
+                        if (completedUsers === users.length) {
+                          db.run("COMMIT");
+                          resolveTransaction({
+                            cacheRemoved: totalCacheRemoved,
+                            processedRemoved: totalProcessedRemoved,
+                          });
+                        }
+                      }
+                    );
+                  }
+                );
+              });
+            }
+          );
+        });
+      });
+
+      console.log(
+        `✅ Storage-based cleanup completed: ${totalCacheRemoved} cache entries, ${totalProcessedRemoved} processed posts removed`
+      );
+
+      // Update memory cache atomically
+      await updateMemoryCacheAfterCleanup();
+
+      // Run cache integrity check
+      console.log("🔍 Running post-storage-cleanup cache integrity check...");
+      await validateCacheIntegrity();
+
+      resolve({
+        cacheRemoved: totalCacheRemoved,
+        processedRemoved: totalProcessedRemoved,
+      });
+    } catch (error) {
+      console.error(`❌ Storage-based cleanup failed: ${error.message}`);
+      reject(error);
+    }
   });
 }
 
@@ -2919,7 +3380,7 @@ function updateLastCleanupDate(postsRemoved = 0, username = null) {
   });
 }
 
-// Check cache on app boot (disabled - only tracks 7 days)
+// Check cache on app boot and load existing cache data
 async function checkCacheOnBoot() {
   try {
     const lastCleanup = await getLastCleanupDate();
@@ -2938,9 +3399,219 @@ async function checkCacheOnBoot() {
       console.log("✅ Cache is up to date");
       console.log(`   Last cleanup: ${lastCleanup.toLocaleDateString()}`);
     }
+
+    // Load existing cache data into memory for faster access
+    await loadExistingCache();
   } catch (error) {
     console.log(`⚠️ Cache cleanup check failed: ${error.message}`);
     console.log("✅ Cache system initialized (first run)");
+  }
+}
+
+// Load existing cache data into memory
+async function loadExistingCache() {
+  try {
+    // Get all cached usernames
+    const cachedUsers = await new Promise((resolve, reject) => {
+      db.all(
+        "SELECT DISTINCT username FROM recent_posts_cache",
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        }
+      );
+    });
+
+    if (cachedUsers.length === 0) {
+      console.log("📊 No existing cache data found");
+      return;
+    }
+
+    console.log(`📊 Loading cache for ${cachedUsers.length} users...`);
+
+    let loadedUsers = 0;
+    let totalPosts = 0;
+
+    // Load cache for each user
+    for (const user of cachedUsers) {
+      const cachedPosts = await getCachedRecentPosts(user.username);
+      if (cachedPosts.length > 0) {
+        console.log(
+          `   📱 @${user.username}: ${cachedPosts.length} posts cached`
+        );
+
+        // Store in global cache for faster access
+        if (!global.postCache) {
+          global.postCache = {};
+        }
+        global.postCache[user.username] = cachedPosts;
+        loadedUsers++;
+        totalPosts += cachedPosts.length;
+      } else {
+        console.log(`   ⚠️ @${user.username}: 0 posts cached (empty cache)`);
+      }
+    }
+
+    console.log(
+      `✅ Cache loaded successfully (${loadedUsers} users, ${totalPosts} total posts)`
+    );
+
+    // Check if cache loading was successful
+    if (loadedUsers === 0 && cachedUsers.length > 0) {
+      console.log(
+        "⚠️ Cache loading resulted in 0 posts - attempting automatic reload..."
+      );
+      await retryCacheLoad();
+    }
+  } catch (error) {
+    console.error(`❌ Failed to load existing cache: ${error.message}`);
+    console.log("🔄 Attempting automatic cache reload...");
+    await retryCacheLoad();
+  }
+}
+
+// Automatic cache reload with retry logic
+async function retryCacheLoad() {
+  try {
+    console.log("🔄 Automatic cache reload attempt...");
+
+    // Clear any existing memory cache
+    if (global.postCache) {
+      global.postCache = {};
+      console.log("🧹 Cleared existing memory cache");
+    }
+
+    // Wait a moment for database to stabilize
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Force reload from database
+    const cachedUsers = await new Promise((resolve, reject) => {
+      db.all(
+        "SELECT DISTINCT username FROM recent_posts_cache",
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        }
+      );
+    });
+
+    if (cachedUsers.length === 0) {
+      console.log("📊 No cached users found in database during reload");
+      return;
+    }
+
+    console.log(`🔄 Reloading cache for ${cachedUsers.length} users...`);
+
+    let loadedUsers = 0;
+    let totalPosts = 0;
+
+    for (const user of cachedUsers) {
+      try {
+        // Force database query (bypass memory cache)
+        const cachedPosts = await new Promise((resolve, reject) => {
+          db.all(
+            "SELECT post_url, shortcode, is_pinned, post_order, cached_at FROM recent_posts_cache WHERE username = ? ORDER BY is_pinned DESC, post_order ASC",
+            [user.username],
+            (err, rows) => {
+              if (err) reject(err);
+              else resolve(rows || []);
+            }
+          );
+        });
+
+        if (cachedPosts.length > 0) {
+          console.log(
+            `   ✅ @${user.username}: ${cachedPosts.length} posts reloaded`
+          );
+
+          if (!global.postCache) {
+            global.postCache = {};
+          }
+          global.postCache[user.username] = cachedPosts;
+          loadedUsers++;
+          totalPosts += cachedPosts.length;
+        } else {
+          console.log(`   ⚠️ @${user.username}: Still 0 posts after reload`);
+        }
+      } catch (userError) {
+        console.error(
+          `   ❌ Failed to reload cache for @${user.username}: ${userError.message}`
+        );
+      }
+    }
+
+    if (loadedUsers > 0) {
+      console.log(
+        `✅ Automatic cache reload successful (${loadedUsers} users, ${totalPosts} posts)`
+      );
+    } else {
+      console.log("❌ Automatic cache reload failed - no posts loaded");
+    }
+  } catch (error) {
+    console.error(`❌ Automatic cache reload failed: ${error.message}`);
+  }
+}
+
+// Validate cache integrity and fix inconsistencies
+async function validateCacheIntegrity() {
+  try {
+    console.log("🔍 Validating cache integrity...");
+
+    // Get all cached users from database
+    const dbUsers = await new Promise((resolve, reject) => {
+      db.all(
+        "SELECT DISTINCT username FROM recent_posts_cache",
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        }
+      );
+    });
+
+    const memoryUsers = global.postCache ? Object.keys(global.postCache) : [];
+
+    console.log(
+      `📊 Database users: ${dbUsers.length}, Memory users: ${memoryUsers.length}`
+    );
+
+    // Check for users in database but not in memory
+    const missingInMemory = dbUsers.filter(
+      (dbUser) => !memoryUsers.includes(dbUser.username)
+    );
+
+    if (missingInMemory.length > 0) {
+      console.log(
+        `⚠️ Found ${missingInMemory.length} users missing from memory cache`
+      );
+      for (const user of missingInMemory) {
+        console.log(`   🔄 Loading @${user.username} into memory cache...`);
+        const cachedPosts = await getCachedRecentPosts(user.username);
+        if (cachedPosts.length > 0) {
+          console.log(
+            `   ✅ @${user.username}: ${cachedPosts.length} posts loaded`
+          );
+        }
+      }
+    }
+
+    // Check for users in memory but not in database (orphaned cache)
+    const orphanedInMemory = memoryUsers.filter(
+      (memUser) => !dbUsers.some((dbUser) => dbUser.username === memUser)
+    );
+
+    if (orphanedInMemory.length > 0) {
+      console.log(
+        `🧹 Found ${orphanedInMemory.length} orphaned users in memory cache`
+      );
+      for (const user of orphanedInMemory) {
+        console.log(`   🗑️ Removing @${user} from memory cache`);
+        delete global.postCache[user];
+      }
+    }
+
+    console.log("✅ Cache integrity validation completed");
+  } catch (error) {
+    console.error(`❌ Cache integrity validation failed: ${error.message}`);
   }
 }
 
@@ -2963,6 +3634,12 @@ function clearUserCache(username) {
           }
         );
       });
+
+      // Clear in-memory cache
+      if (global.postCache && global.postCache[username]) {
+        delete global.postCache[username];
+        console.log(`🗑️ Cleared in-memory cache for @${username}`);
+      }
 
       // Update cleanup log to prevent immediate re-cleanup
       await updateLastCleanupDate(result, username);
@@ -4238,6 +4915,9 @@ function scheduleNextPoll() {
   currentPollingTimeout = setTimeout(async () => {
     if (POLLING_ENABLED) {
       try {
+        // Check if cleanup operations are running and wait if needed
+        await cleanupQueue.waitForCompletion();
+
         // Check for new stories first, then posts
         await checkForNewStories();
         await checkForNewPosts();
@@ -4308,6 +4988,71 @@ app.get("/target", (req, res) => {
   });
 });
 
+// Get cache status
+app.get("/cache-status", async (req, res) => {
+  try {
+    const username = req.query.username || TARGET_USERNAME;
+
+    if (!username) {
+      return res.status(400).json({ error: "No username specified" });
+    }
+
+    const cachedPosts = await getCachedRecentPosts(username);
+    const memoryCache = global.postCache ? global.postCache[username] : null;
+
+    res.json({
+      username,
+      database_cache: {
+        count: cachedPosts.length,
+        posts: cachedPosts.slice(0, 5), // First 5 posts for preview
+      },
+      memory_cache: {
+        exists: !!memoryCache,
+        count: memoryCache ? memoryCache.length : 0,
+      },
+      global_cache_users: global.postCache ? Object.keys(global.postCache) : [],
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reload cache from database
+app.post("/cache-reload", async (req, res) => {
+  try {
+    console.log("🔄 Reloading cache from database...");
+    await loadExistingCache();
+
+    const cacheUsers = global.postCache ? Object.keys(global.postCache) : [];
+    res.json({
+      success: true,
+      message: "Cache reloaded successfully",
+      loaded_users: cacheUsers,
+      user_count: cacheUsers.length,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Validate cache integrity
+app.post("/cache-validate", async (req, res) => {
+  try {
+    console.log("🔍 Manual cache validation requested...");
+    await validateCacheIntegrity();
+
+    const cacheUsers = global.postCache ? Object.keys(global.postCache) : [];
+    res.json({
+      success: true,
+      message: "Cache validation completed",
+      memory_users: cacheUsers,
+      user_count: cacheUsers.length,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get request statistics
 app.get("/stats", (req, res) => {
   res.json(requestTracker.getStats());
@@ -4340,12 +5085,28 @@ app.get("/health", (req, res) => {
     },
     database: db ? "connected" : "disconnected",
     consecutiveFailures: healthCheck.consecutiveFailures,
+    browserPool: browserPool.getStats(),
+    circuitBreaker: circuitBreaker.getStatus(),
   };
 
   // Check if service is healthy
   if (healthCheck.consecutiveFailures >= healthCheck.maxFailures) {
     health.status = "unhealthy";
-    res.status(503);
+    return res.status(503).json(health);
+  }
+
+  // Check memory usage
+  const memUsage = process.memoryUsage();
+  if (memUsage.heapUsed > 500 * 1024 * 1024) {
+    // 500MB
+    health.status = "warning";
+    health.memoryWarning = "High memory usage detected";
+  }
+
+  // Check circuit breaker
+  if (circuitBreaker.state === "OPEN") {
+    health.status = "degraded";
+    health.circuitBreakerWarning = "Circuit breaker is open";
   }
 
   res.json(health);
@@ -5391,3 +6152,142 @@ app.get("/stories/processed/:username", async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
+
+// ===== BROWSER POOL MANAGEMENT =====
+const browserPool = {
+  browsers: [],
+  maxBrowsers: 2,
+  inUse: new Set(),
+
+  async getBrowser() {
+    // Return an available browser or create a new one
+    for (let browser of this.browsers) {
+      if (!this.inUse.has(browser)) {
+        this.inUse.add(browser);
+        return browser;
+      }
+    }
+
+    // Create new browser if under limit
+    if (this.browsers.length < this.maxBrowsers) {
+      const browser = await puppeteer.launch({
+        headless: "new",
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-accelerated-2d-canvas",
+          "--no-first-run",
+          "--no-zygote",
+          "--disable-gpu",
+          "--memory-pressure-off",
+          "--max_old_space_size=512",
+        ],
+      });
+
+      this.browsers.push(browser);
+      this.inUse.add(browser);
+      console.log(
+        `🔄 Created browser instance (${this.browsers.length}/${this.maxBrowsers})`
+      );
+      return browser;
+    }
+
+    // Wait for a browser to become available
+    return new Promise((resolve) => {
+      const checkInterval = setInterval(() => {
+        for (let browser of this.browsers) {
+          if (!this.inUse.has(browser)) {
+            this.inUse.add(browser);
+            clearInterval(checkInterval);
+            resolve(browser);
+            return;
+          }
+        }
+      }, 1000);
+    });
+  },
+
+  releaseBrowser(browser) {
+    this.inUse.delete(browser);
+  },
+
+  async cleanup() {
+    console.log(`🧹 Cleaning up ${this.browsers.length} browser instances...`);
+    for (let browser of this.browsers) {
+      try {
+        await browser.close();
+      } catch (error) {
+        console.error("Error closing browser:", error.message);
+      }
+    }
+    this.browsers = [];
+    this.inUse.clear();
+  },
+
+  getStats() {
+    return {
+      total: this.browsers.length,
+      inUse: this.inUse.size,
+      available: this.browsers.length - this.inUse.size,
+      maxBrowsers: this.maxBrowsers,
+    };
+  },
+};
+
+// ===== MEMORY MANAGEMENT =====
+
+// ===== CIRCUIT BREAKER PATTERN =====
+const circuitBreaker = {
+  failures: 0,
+  lastFailureTime: 0,
+  state: "CLOSED", // CLOSED, OPEN, HALF_OPEN
+  threshold: 5,
+  timeout: 60000, // 1 minute
+
+  async execute(operation) {
+    if (this.state === "OPEN") {
+      if (Date.now() - this.lastFailureTime > this.timeout) {
+        this.state = "HALF_OPEN";
+        console.log("🔄 Circuit breaker: Attempting to close...");
+      } else {
+        throw new Error("Circuit breaker is OPEN");
+      }
+    }
+
+    try {
+      const result = await operation();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  },
+
+  onSuccess() {
+    this.failures = 0;
+    this.state = "CLOSED";
+  },
+
+  onFailure() {
+    this.failures++;
+    this.lastFailureTime = Date.now();
+
+    if (this.failures >= this.threshold) {
+      this.state = "OPEN";
+      console.log("🚨 Circuit breaker: OPEN - too many failures");
+    }
+  },
+
+  getStatus() {
+    return {
+      state: this.state,
+      failures: this.failures,
+      threshold: this.threshold,
+      lastFailure: this.lastFailureTime,
+    };
+  },
+};
+
+// ===== BROWSER POOL MANAGEMENT =====
