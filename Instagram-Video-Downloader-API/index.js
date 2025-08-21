@@ -6,14 +6,15 @@ const FormData = require("form-data");
 const cheerio = require("cheerio");
 const cron = require("node-cron");
 const sqlite3 = require("sqlite3").verbose();
-const puppeteer = require("puppeteer");
+// const puppeteer = require("puppeteer"); // COMMENTED OUT DUE TO PUPPETEER ISSUES
 const readline = require("readline");
 const InstagramCarouselDownloader = require("./instagram-carousel-downloader");
 
 // Add fetch for internal API calls
 const fetch = require("node-fetch");
 
-// ===== INSTAGRAM SESSION MANAGEMENT =====
+// ===== INSTAGRAM SESSION MANAGEMENT ===== - COMMENTED OUT DUE TO PUPPETEER ISSUES
+/*
 class InstagramSession {
   constructor(username) {
     this.username = username;
@@ -113,8 +114,10 @@ class InstagramSession {
     console.log(`✅ [SESSION] Rate limit reset after successful operation`);
   }
 }
+*/
 
-// ===== FASTDL SESSION MANAGEMENT =====
+// ===== FASTDL SESSION MANAGEMENT ===== - COMMENTED OUT DUE TO PUPPETEER ISSUES
+/*
 class FastDlSession {
   constructor(username) {
     this.username = username;
@@ -324,13 +327,15 @@ async function cleanupAndExit(code) {
     currentPollingTimeout = null;
   }
 
-  // Clean up browser pool
+  // Clean up browser pool - COMMENTED OUT DUE TO PUPPETEER ISSUES
+  /*
   try {
     await browserPool.cleanup();
     console.log("✅ Browser pool cleaned up");
   } catch (error) {
     console.error("Error cleaning up browser pool:", error);
   }
+  */
 
   // Close database connections
   if (db) {
@@ -366,12 +371,14 @@ const memoryManager = {
         }
       }
 
-      // Clean up browser pool if too many instances
+      // Clean up browser pool if too many instances - COMMENTED OUT DUE TO PUPPETEER ISSUES
+      /*
       const browserStats = browserPool.getStats();
       if (browserStats.total > 1 && browserStats.inUse === 0) {
         console.log("🧹 Cleaning up unused browser instances...");
         await browserPool.cleanup();
       }
+      */
 
       // Validate cache integrity (every 4th cleanup = every 2 hours)
       const cleanupCount = Math.floor(
@@ -484,6 +491,7 @@ const healthCheck = {
     console.log("🏥 Health check system started");
   },
 };
+*/
 
 // ===== REQUEST TRACKING SYSTEM =====
 const requestTracker = {
@@ -1549,7 +1557,8 @@ async function sendVideoToTelegram(videoUrl, caption = "") {
   }
 }
 
-// Human-like browser automation with carousel interaction
+// Human-like browser automation with carousel interaction - COMMENTED OUT DUE TO PUPPETEER ISSUES
+/*
 async function scrapeInstagramBrowser(username) {
   let browser = null;
 
@@ -1884,6 +1893,7 @@ async function scrapeInstagramBrowser(username) {
     throw error;
   }
 }
+*/
 
 // Human-like delay function with smart adaptation
 async function humanDelay(min = 200, max = 1500) {
@@ -2723,7 +2733,8 @@ async function scrapeInstagramPosts(username, userAgent) {
       return postUrls; // Return URLs only, let main processing handle GraphQL
     }
 
-    // Fallback to browser automation
+    // Fallback to browser automation - COMMENTED OUT DUE TO PUPPETEER ISSUES
+    /*
     console.log(`🔄 Web Profile Info API failed, trying browser automation...`);
     let browserFailed = false;
     try {
@@ -2736,34 +2747,53 @@ async function scrapeInstagramPosts(username, userAgent) {
       browserFailed = true;
       console.log(`❌ Browser automation also failed: ${browserError.message}`);
     }
+    */
 
-    // Both API and browser automation failed - this is a critical issue
-    if (browserFailed) {
-      console.log(`🚨 CRITICAL: Both Instagram API and browser automation failed for @${username}`);
-      console.log(`🚨 This indicates a serious issue that needs immediate evaluation:`);
-      console.log(`   - Instagram may have blocked automated access`);
-      console.log(`   - Browser automation may not be properly configured`);
-      console.log(`   - Network connectivity issues may be present`);
-      console.log(`🚨 PROCESS EVALUATION REQUIRED - Check logs and system status`);
-    }
+    // API failed - browser automation is currently disabled due to Puppeteer issues
+    console.log(
+      `🚨 CRITICAL: Instagram API failed for @${username}`
+    );
+    console.log(
+      `🚨 This indicates a serious issue that needs immediate evaluation:`
+    );
+    console.log(`   - Instagram may have blocked automated access`);
+    console.log(`   - Browser automation is currently disabled due to Puppeteer issues`);
+    console.log(`   - Network connectivity issues may be present`);
+    console.log(
+      `🚨 PROCESS EVALUATION REQUIRED - Check logs and system status`
+    );
 
     // Final fallback: return cached data if available
-    console.log(`🔄 Attempting cache fallback due to complete API/browser failure...`);
+    console.log(
+      `🔄 Attempting cache fallback due to API failure (browser automation disabled)...`
+    );
     try {
       const cachedPosts = getCachedRecentPosts(username);
       if (cachedPosts && cachedPosts.length > 0) {
-        console.log(`📋 Using cached data for @${username} (${cachedPosts.length} posts)`);
-        console.log(`⚠️ WARNING: This is an emergency fallback - no new posts will be processed`);
-        console.log(`⚠️ System is operating in degraded mode - manual intervention may be required`);
+        console.log(
+          `📋 Using cached data for @${username} (${cachedPosts.length} posts)`
+        );
+        console.log(
+          `⚠️ WARNING: This is an emergency fallback - no new posts will be processed`
+        );
+        console.log(
+          `⚠️ System is operating in degraded mode - manual intervention may be required`
+        );
         return cachedPosts;
       }
     } catch (cacheError) {
       console.log(`❌ Cache fallback also failed: ${cacheError.message}`);
     }
 
-    console.log(`❌ COMPLETE FAILURE: No posts found for @${username} - all methods failed`);
-    console.log(`🚨 SYSTEM STATUS: Instagram scraping is completely non-functional`);
-    console.log(`🚨 IMMEDIATE ACTION REQUIRED: Check system configuration and Instagram access`);
+    console.log(
+      `❌ COMPLETE FAILURE: No posts found for @${username} - API failed and browser automation disabled`
+    );
+    console.log(
+      `🚨 SYSTEM STATUS: Instagram API scraping is non-functional, browser automation disabled`
+    );
+    console.log(
+      `🚨 IMMEDIATE ACTION REQUIRED: Check Instagram API access and consider re-enabling browser automation`
+    );
     return [];
   } catch (error) {
     console.error("Instagram scraping error:", error.message);
@@ -4012,7 +4042,8 @@ async function scrapeInstagramStoriesWithFastDl(session) {
   }
 }
 
-// Scrape Instagram stories using Puppeteer
+// Scrape Instagram stories using Puppeteer - COMMENTED OUT DUE TO PUPPETEER ISSUES
+/*
 async function scrapeInstagramStoriesWithPuppeteer(session) {
   try {
     console.log(
@@ -4349,6 +4380,7 @@ async function scrapeInstagramStoriesWithPuppeteer(session) {
     return [];
   }
 }
+*/
 
 // Fallback to individual processing if batch fails
 async function processIndividualPost(post, userAgent) {
@@ -5279,7 +5311,7 @@ app.get("/health", (req, res) => {
     },
     database: db ? "connected" : "disconnected",
     consecutiveFailures: healthCheck.consecutiveFailures,
-    browserPool: browserPool.getStats(),
+    browserPool: { total: 0, inUse: 0, available: 0, maxBrowsers: 0 }, // COMMENTED OUT DUE TO PUPPETEER ISSUES
     circuitBreaker: circuitBreaker.getStatus(),
   };
 
@@ -6347,7 +6379,186 @@ app.get("/stories/processed/:username", async (req, res) => {
   }
 });
 
-// ===== BROWSER POOL MANAGEMENT =====
+// Test Instagram API connectivity from Render
+app.get("/test-instagram-api", async (req, res) => {
+  try {
+    const { username = "instagram" } = req.query;
+    const testResults = {
+      timestamp: new Date().toISOString(),
+      server_ip: "Testing from Render...",
+      target_username: username,
+      tests: [],
+    };
+
+    console.log(`🔍 Testing Instagram API connectivity for @${username}`);
+
+    // Test 1: Basic HTTP request to Instagram
+    try {
+      const basicResponse = await axios.get(
+        `https://www.instagram.com/${username}/`,
+        {
+          timeout: 10000,
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          },
+        }
+      );
+      testResults.tests.push({
+        name: "Basic Instagram Page Access",
+        success: true,
+        status: basicResponse.status,
+        message: "Successfully accessed Instagram page",
+      });
+    } catch (error) {
+      testResults.tests.push({
+        name: "Basic Instagram Page Access",
+        success: false,
+        status: error.response?.status,
+        message: error.message,
+      });
+    }
+
+    // Test 2: Instagram API endpoint
+    try {
+      const apiResponse = await axios.get(
+        `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
+        {
+          timeout: 10000,
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            Accept: "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+            "X-IG-App-ID": "936619743392459",
+            "X-ASBD-ID": "129477",
+            "X-IG-WWW-Claim": "0",
+            "X-Requested-With": "XMLHttpRequest",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            Referer: "https://www.instagram.com/",
+            Origin: "https://www.instagram.com",
+          },
+        }
+      );
+      testResults.tests.push({
+        name: "Instagram API Endpoint",
+        success: true,
+        status: apiResponse.status,
+        message: "Successfully accessed Instagram API",
+        has_data: !!apiResponse.data?.data?.user,
+      });
+    } catch (error) {
+      testResults.tests.push({
+        name: "Instagram API Endpoint",
+        success: false,
+        status: error.response?.status,
+        message: error.message,
+        is_401: error.response?.status === 401,
+        is_403: error.response?.status === 403,
+        is_429: error.response?.status === 429,
+      });
+    }
+
+    // Test 3: Multiple user agents
+    const userAgents = [
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    ];
+
+    for (let i = 0; i < userAgents.length; i++) {
+      try {
+        const uaResponse = await axios.get(
+          `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
+          {
+            timeout: 10000,
+            headers: {
+              "User-Agent": userAgents[i],
+              Accept: "application/json",
+              "Accept-Language": "en-US,en;q=0.9",
+              "X-IG-App-ID": "936619743392459",
+              "X-ASBD-ID": "129477",
+              "X-IG-WWW-Claim": "0",
+              "X-Requested-With": "XMLHttpRequest",
+              "Sec-Fetch-Dest": "empty",
+              "Sec-Fetch-Mode": "cors",
+              "Sec-Fetch-Site": "same-origin",
+              Referer: "https://www.instagram.com/",
+              Origin: "https://www.instagram.com",
+            },
+          }
+        );
+        testResults.tests.push({
+          name: `User Agent Test ${i + 1} (${userAgents[i].substring(
+            0,
+            50
+          )}...)`,
+          success: true,
+          status: uaResponse.status,
+          message: "Success with this user agent",
+        });
+        break; // Stop if one works
+      } catch (error) {
+        testResults.tests.push({
+          name: `User Agent Test ${i + 1} (${userAgents[i].substring(
+            0,
+            50
+          )}...)`,
+          success: false,
+          status: error.response?.status,
+          message: error.message,
+          is_401: error.response?.status === 401,
+        });
+      }
+    }
+
+    // Test 4: Get server IP (if possible)
+    try {
+      const ipResponse = await axios.get("https://api.ipify.org?format=json", {
+        timeout: 5000,
+      });
+      testResults.server_ip = ipResponse.data.ip;
+    } catch (error) {
+      testResults.server_ip = "Could not determine IP";
+    }
+
+    // Summary
+    const successfulTests = testResults.tests.filter(
+      (test) => test.success
+    ).length;
+    const totalTests = testResults.tests.length;
+
+    testResults.summary = {
+      total_tests: totalTests,
+      successful_tests: successfulTests,
+      failed_tests: totalTests - successfulTests,
+      success_rate: `${((successfulTests / totalTests) * 100).toFixed(1)}%`,
+      is_blocked: testResults.tests.some((test) => test.is_401 || test.is_403),
+      is_rate_limited: testResults.tests.some((test) => test.is_429),
+    };
+
+    console.log(
+      `📊 Instagram API Test Results: ${successfulTests}/${totalTests} successful`
+    );
+
+    res.json({
+      success: true,
+      data: testResults,
+    });
+  } catch (error) {
+    console.error("Instagram API test error:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Test failed",
+      message: error.message,
+    });
+  }
+});
+
+// ===== BROWSER POOL MANAGEMENT ===== - COMMENTED OUT DUE TO PUPPETEER ISSUES
+/*
 const browserPool = {
   browsers: [],
   maxBrowsers: 2,
@@ -6462,6 +6673,7 @@ const browserPool = {
     };
   },
 };
+*/
 
 // ===== MEMORY MANAGEMENT =====
 
