@@ -331,6 +331,96 @@ class MongoDBManager {
     }
   }
 
+  // Story processing functions
+  async checkStoryProcessed(username, storyId) {
+    try {
+      if (!this.isConnected) return false;
+
+      const collection = this.db.collection("processed_stories");
+      const story = await collection.findOne({ username, story_id: storyId });
+
+      return !!story;
+    } catch (error) {
+      console.error(
+        `❌ Failed to check if story ${storyId} is processed:`,
+        error.message
+      );
+      return false;
+    }
+  }
+
+  async markStoryProcessed(username, storyUrl, storyType, storyId) {
+    try {
+      if (!this.isConnected) return;
+
+      const collection = this.db.collection("processed_stories");
+      const id = `${username}_${storyId}`;
+
+      await collection.updateOne(
+        { id },
+        {
+          $set: {
+            id,
+            username,
+            story_url: storyUrl,
+            story_type: storyType,
+            story_id: storyId,
+            processed_at: new Date().toISOString(),
+          },
+        },
+        { upsert: true }
+      );
+
+      console.log(
+        `✅ Story ${storyId} marked as processed for @${username} (MongoDB)`
+      );
+    } catch (error) {
+      console.error(
+        `❌ Failed to mark story ${storyId} as processed:`,
+        error.message
+      );
+    }
+  }
+
+  async updateStoriesCache(username, stories) {
+    try {
+      if (!this.isConnected) return;
+
+      const collection = this.db.collection("recent_stories_cache");
+
+      // Remove old cache entries for this user
+      await collection.deleteMany({ username });
+
+      if (stories.length === 0) {
+        console.log(`📊 Stories cache cleared for @${username}`);
+        return;
+      }
+
+      // Prepare new cache entries
+      const cacheEntries = stories.map((story) => ({
+        username,
+        story_url: story.url,
+        story_id: story.storyId,
+        story_type: story.storyType,
+        cached_at: new Date().toISOString(),
+      }));
+
+      // Insert new cache entries
+      if (cacheEntries.length > 0) {
+        await collection.insertMany(cacheEntries);
+      }
+
+      console.log(
+        `✅ Stories cache updated for @${username} (${stories.length} entries) (MongoDB)`
+      );
+    } catch (error) {
+      console.error(
+        `❌ Failed to update stories cache for @${username}:`,
+        error.message
+      );
+    }
+  }
+
   // Get database stats
   async getStats() {
     try {
@@ -351,6 +441,7 @@ class MongoDBManager {
         "recent_posts_cache",
         "processed_posts",
         "processed_stories",
+        "recent_stories_cache",
       ];
 
       for (const collectionName of collections) {

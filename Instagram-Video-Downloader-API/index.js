@@ -6272,50 +6272,82 @@ function parseStoriesFromJson(jsonData, username) {
 }
 
 // Check if a story was already processed
-function checkStoryProcessed(username, storyId) {
-  return new Promise((resolve, reject) => {
-    console.log(`🔍 [DB] Checking if story ${storyId} exists for @${username}`);
-    db.get(
-      "SELECT id FROM processed_stories WHERE username = ? AND story_id = ?",
-      [username, storyId],
-      (err, row) => {
-        if (err) {
-          console.error("Database error checking story:", err);
-          reject(err);
-        } else {
-          const exists = !!row;
-          console.log(
-            `🔍 [DB] Story ${storyId} exists: ${exists} (row: ${JSON.stringify(
-              row
-            )})`
-          );
-          resolve(exists);
+async function checkStoryProcessed(username, storyId) {
+  console.log(`🔍 [DB] Checking if story ${storyId} exists for @${username}`);
+  
+  // Use MongoDB if available, otherwise fallback to SQLite
+  if (mongoManager && mongoManager.isConnected) {
+    try {
+      const exists = await mongoManager.checkStoryProcessed(username, storyId);
+      console.log(`🔍 [DB] Story ${storyId} exists: ${exists} (MongoDB)`);
+      return exists;
+    } catch (error) {
+      console.error(`❌ MongoDB story check failed: ${error.message}`);
+      // Fallback to SQLite
+    }
+  }
+
+  // Fallback to SQLite
+  if (db) {
+    return new Promise((resolve, reject) => {
+      db.get(
+        "SELECT id FROM processed_stories WHERE username = ? AND story_id = ?",
+        [username, storyId],
+        (err, row) => {
+          if (err) {
+            console.error("Database error checking story:", err);
+            reject(err);
+          } else {
+            const exists = !!row;
+            console.log(
+              `🔍 [DB] Story ${storyId} exists: ${exists} (row: ${JSON.stringify(
+                row
+              )}) (SQLite)`
+            );
+            resolve(exists);
+          }
         }
-      }
-    );
-  });
+      );
+    });
+  }
+
+  return false;
 }
 
 // Mark a story as processed
-function markStoryProcessed(username, storyUrl, storyType, storyId) {
-  return new Promise((resolve, reject) => {
-    const id = `${username}_${storyId}`;
-    db.run(
-      "INSERT OR REPLACE INTO processed_stories (id, username, story_url, story_type, story_id) VALUES (?, ?, ?, ?, ?)",
-      [id, username, storyUrl, storyType, storyId],
-      function (err) {
-        if (err) {
-          console.error("Database error marking story processed:", err);
-          reject(err);
-        } else {
-          console.log(
-            `✅ Story ${storyId} marked as processed for @${username}`
-          );
-          resolve();
+async function markStoryProcessed(username, storyUrl, storyType, storyId) {
+  // Use MongoDB if available, otherwise fallback to SQLite
+  if (mongoManager && mongoManager.isConnected) {
+    try {
+      await mongoManager.markStoryProcessed(username, storyUrl, storyType, storyId);
+      return;
+    } catch (error) {
+      console.error(`❌ MongoDB story marking failed: ${error.message}`);
+      // Fallback to SQLite
+    }
+  }
+
+  // Fallback to SQLite
+  if (db) {
+    return new Promise((resolve, reject) => {
+      const id = `${username}_${storyId}`;
+      db.run(
+        "INSERT OR REPLACE INTO processed_stories (id, username, story_url, story_type, story_id) VALUES (?, ?, ?, ?, ?)",
+        [id, username, storyUrl, storyType, storyId],
+        function (err) {
+          if (err) {
+            console.error("Database error marking story processed:", err);
+            reject(err);
+          } else {
+            console.log(
+              `✅ Story ${storyId} marked as processed for @${username} (SQLite)`
+            );
+            resolve();
+          }
         }
-      }
-    );
-  });
+      );
+    });
+  }
 }
 
 // Update stories cache
