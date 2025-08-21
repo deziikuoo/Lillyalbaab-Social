@@ -850,8 +850,6 @@ function initializeSQLiteTables() {
   }
 }
 
-
-
 // User-Agent rotation for bot evasion
 const userAgents = [
   // Chrome (Desktop)

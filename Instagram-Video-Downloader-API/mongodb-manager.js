@@ -9,29 +9,70 @@ class MongoDBManager {
     // MongoDB connection string
     this.connectionString =
       process.env.MONGODB_URI ||
-      "mongodb+srv://ifdawanprintqualified14:oGTyQTIU0UQ8R5Zu@tylasocial.j6cgdfx.mongodb.net/?retryWrites=true&w=majority&appName=tylasocial";
+      "mongodb+srv://ifdawanprintqualified14:oGTyQTIU0UQ8R5Zu@tylasocial.j6cgdfx.mongodb.net/?retryWrites=true&w=majority&appName=tylasocial&ssl=true&tls=true&tlsAllowInvalidCertificates=true";
     this.dbName = "tylasocial";
   }
 
   async connect() {
-    try {
-      console.log("🔌 Connecting to MongoDB...");
-      this.client = new MongoClient(this.connectionString);
-      await this.client.connect();
+    const maxRetries = 3;
+    let attempt = 0;
 
-      this.db = this.client.db(this.dbName);
-      this.isConnected = true;
+    while (attempt < maxRetries) {
+      try {
+        attempt++;
+        console.log(`🔌 Connecting to MongoDB... (attempt ${attempt}/${maxRetries})`);
+        
+        // MongoDB connection options to handle SSL/TLS issues
+        const options = {
+          ssl: true,
+          sslValidate: false, // Disable SSL certificate validation
+          tls: true,
+          tlsAllowInvalidCertificates: true, // Allow invalid certificates
+          tlsAllowInvalidHostnames: true, // Allow invalid hostnames
+          retryWrites: true,
+          w: 'majority',
+          maxPoolSize: 10,
+          serverSelectionTimeoutMS: 10000, // Increased timeout
+          socketTimeoutMS: 45000,
+          connectTimeoutMS: 10000, // Connection timeout
+        };
 
-      console.log("✅ MongoDB connected successfully");
+        this.client = new MongoClient(this.connectionString, options);
+        await this.client.connect();
 
-      // Initialize collections
-      await this.initializeCollections();
+        // Test the connection
+        await this.client.db("admin").command({ ping: 1 });
 
-      return true;
-    } catch (error) {
-      console.error("❌ MongoDB connection failed:", error.message);
-      this.isConnected = false;
-      return false;
+        this.db = this.client.db(this.dbName);
+        this.isConnected = true;
+
+        console.log("✅ MongoDB connected successfully");
+
+        // Initialize collections
+        await this.initializeCollections();
+
+        return true;
+      } catch (error) {
+        console.error(`❌ MongoDB connection attempt ${attempt} failed:`, error.message);
+        
+        if (this.client) {
+          try {
+            await this.client.close();
+          } catch (closeError) {
+            console.log("⚠️ Error closing MongoDB client:", closeError.message);
+          }
+        }
+        
+        this.isConnected = false;
+        
+        if (attempt < maxRetries) {
+          console.log(`🔄 Retrying MongoDB connection in 2 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } else {
+          console.error("❌ All MongoDB connection attempts failed");
+          return false;
+        }
+      }
     }
   }
 
