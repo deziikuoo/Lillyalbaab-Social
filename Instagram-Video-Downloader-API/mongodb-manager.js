@@ -9,7 +9,7 @@ class MongoDBManager {
     // MongoDB connection string
     this.connectionString =
       process.env.MONGODB_URI ||
-      "mongodb+srv://ifdawanprintqualified14:oGTyQTIU0UQ8R5Zu@tylasocial.j6cgdfx.mongodb.net/?retryWrites=true&w=majority&appName=tylasocial";
+      "mongodb+srv://ifdawanprintqualified14:oGTyQTIU0UQ8R5Zu@tylasocial.j6cgdfx.mongodb.net/tylasocial?retryWrites=true&w=majority&appName=tylasocial&tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true";
     this.dbName = "tylasocial";
   }
 
@@ -24,11 +24,11 @@ class MongoDBManager {
           `🔌 Connecting to MongoDB... (attempt ${attempt}/${maxRetries})`
         );
 
-        // MongoDB connection options to handle SSL/TLS issues
+        // MongoDB connection options with TLS
         const options = {
           tls: true,
-          tlsAllowInvalidCertificates: true, // Allow invalid certificates
-          tlsAllowInvalidHostnames: true, // Allow invalid hostnames
+          tlsAllowInvalidCertificates: true,
+          tlsAllowInvalidHostnames: true,
           retryWrites: true,
           w: "majority",
           maxPoolSize: 10,
