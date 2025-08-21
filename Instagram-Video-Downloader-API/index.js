@@ -5063,9 +5063,6 @@ async function checkForNewPosts(force = false) {
     // Always print request statistics after each polling run
     requestTracker.printStats();
 
-    // Reset activity counter for next poll cycle
-    activityTracker.resetActivityCounter();
-
     console.log("");
   } catch (error) {
     console.error("Polling error:", error.message);
@@ -5107,6 +5104,10 @@ function scheduleNextPoll() {
         // Check for new stories first, then posts
         await checkForNewStories();
         await checkForNewPosts();
+        
+        // Reset activity counter for next poll cycle
+        activityTracker.resetActivityCounter();
+        
         scheduleNextPoll(); // Schedule the next poll
       } catch (error) {
         console.error("❌ Polling cycle failed:", error);
@@ -5122,6 +5123,10 @@ function scheduleNextPoll() {
             try {
               await checkForNewStories();
               await checkForNewPosts();
+              
+              // Reset activity counter for next poll cycle
+              activityTracker.resetActivityCounter();
+              
               scheduleNextPoll();
             } catch (retryError) {
               console.error("❌ Polling retry failed:", retryError);

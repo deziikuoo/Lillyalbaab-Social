@@ -1834,6 +1834,10 @@ async def execute_poll_cycle():
         try:
             # Check for new stories
             await check_for_new_stories()
+            
+            # Reset activity counter for next poll cycle
+            activity_tracker.reset_activity_counter()
+            
             await schedule_next_poll()  # Schedule the next poll
         except Exception as error:
             logger.error(f'❌ Polling cycle failed: {error}')
@@ -1932,9 +1936,6 @@ async def check_for_new_stories(force=False):
         logger.info('Polling check completed')
         # Always print request statistics after each polling run
         request_tracker.print_stats()
-        
-        # Reset activity counter for next poll cycle
-        activity_tracker.reset_activity_counter()
         
         logger.info('')
         
