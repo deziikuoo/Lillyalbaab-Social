@@ -1,15 +1,18 @@
 const { MongoClient } = require("mongodb");
 
+// Set Node.js TLS configuration to handle SSL issues
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
 class MongoDBManager {
   constructor() {
     this.client = null;
     this.db = null;
     this.isConnected = false;
 
-    // MongoDB connection string
+    // MongoDB connection string - simplified
     this.connectionString =
       process.env.MONGODB_URI ||
-      "mongodb+srv://ifdawanprintqualified14:oGTyQTIU0UQ8R5Zu@tylasocial.j6cgdfx.mongodb.net/tylasocial?retryWrites=true&w=majority&appName=tylasocial&tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true";
+      "mongodb+srv://ifdawanprintqualified14:oGTyQTIU0UQ8R5Zu@tylasocial.j6cgdfx.mongodb.net/tylasocial?retryWrites=true&w=majority&appName=tylasocial";
     this.dbName = "tylasocial";
   }
 
@@ -24,17 +27,15 @@ class MongoDBManager {
           `🔌 Connecting to MongoDB... (attempt ${attempt}/${maxRetries})`
         );
 
-        // MongoDB connection options with TLS
+        // MongoDB connection options - minimal configuration
         const options = {
-          tls: true,
-          tlsAllowInvalidCertificates: true,
-          tlsAllowInvalidHostnames: true,
           retryWrites: true,
           w: "majority",
-          maxPoolSize: 10,
-          serverSelectionTimeoutMS: 10000, // Increased timeout
-          socketTimeoutMS: 45000,
-          connectTimeoutMS: 10000, // Connection timeout
+          maxPoolSize: 5,
+          serverSelectionTimeoutMS: 15000,
+          socketTimeoutMS: 30000,
+          connectTimeoutMS: 15000,
+          // Try without explicit TLS settings
         };
 
         this.client = new MongoClient(this.connectionString, options);
