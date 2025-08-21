@@ -6,6 +6,7 @@ const FormData = require("form-data");
 const cheerio = require("cheerio");
 const cron = require("node-cron");
 const sqlite3 = require("sqlite3").verbose();
+const MongoDBManager = require("./mongodb-manager");
 // const puppeteer = require("puppeteer"); // COMMENTED OUT DUE TO PUPPETEER ISSUES
 const readline = require("readline");
 const InstagramCarouselDownloader = require("./instagram-carousel-downloader");
@@ -749,38 +750,27 @@ if (!fs.existsSync(DOWNLOADS_DIR)) {
   console.log(`📁 Created downloads directory: ${DOWNLOADS_DIR}`);
 }
 
-// Initialize database with error handling
-let db;
+// Initialize MongoDB database
+let mongoManager;
 try {
-  db = new sqlite3.Database(dbPath);
-  console.log(`✅ Database initialized at: ${dbPath}`);
-} catch (error) {
-  console.error(`❌ Database initialization failed: ${error.message}`);
-  console.log(`🔧 Attempting to create database directory...`);
-
-  // Try to create the database directory
-  const dbDir = path.dirname(dbPath);
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-    console.log(`📁 Created database directory: ${dbDir}`);
-  }
-
-  // Try again
-  try {
-    db = new sqlite3.Database(dbPath);
-    console.log(
-      `✅ Database initialized successfully after directory creation`
-    );
-  } catch (retryError) {
-    console.error(
-      `❌ Database initialization still failed: ${retryError.message}`
-    );
-    console.log(`🔄 Falling back to local database...`);
+  mongoManager = new MongoDBManager();
+  const connected = await mongoManager.connect();
+  if (connected) {
+    console.log(`✅ MongoDB database connected successfully`);
+  } else {
+    console.log(`⚠️ MongoDB connection failed, falling back to SQLite`);
+    // Fallback to SQLite if MongoDB fails
     db = new sqlite3.Database("./instagram_tracker.db");
+    console.log(`✅ SQLite fallback database initialized`);
   }
+} catch (error) {
+  console.error(`❌ MongoDB initialization failed: ${error.message}`);
+  console.log(`🔄 Falling back to SQLite database...`);
+  db = new sqlite3.Database("./instagram_tracker.db");
+  console.log(`✅ SQLite fallback database initialized`);
 }
 
-// Initialize database
+// Initialize SQLite database (fallback only)
 if (db) {
   db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS processed_posts (
@@ -2981,164 +2971,197 @@ function markPostAsProcessed(
 
 // Cache functions for recent posts
 // Get cached recent posts for a username (with in-memory cache)
-function getCachedRecentPosts(username) {
-  return new Promise((resolve, reject) => {
-    // First check in-memory cache for faster access
-    if (global.postCache && global.postCache[username]) {
-      console.log(
-        `📊 Using in-memory cache for @${username} (${global.postCache[username].length} posts)`
-      );
-      resolve(global.postCache[username]);
-      return;
-    }
-
-    // Fallback to database
-    db.all(
-      `
-      SELECT post_url, shortcode, is_pinned, post_order, cached_at 
-      FROM recent_posts_cache 
-      WHERE username = ? 
-      ORDER BY is_pinned DESC, post_order ASC
-    `,
-      [username],
-      (err, rows) => {
-        if (err) reject(err);
-        else {
-          const cachedPosts = rows || [];
-
-          // Update in-memory cache
-          if (!global.postCache) {
-            global.postCache = {};
-          }
-          global.postCache[username] = cachedPosts;
-
-          resolve(cachedPosts);
-        }
-      }
+async function getCachedRecentPosts(username) {
+  // First check in-memory cache for faster access
+  if (global.postCache && global.postCache[username]) {
+    console.log(
+      `📊 Using in-memory cache for @${username} (${global.postCache[username].length} posts)`
     );
-  });
+    return global.postCache[username];
+  }
+
+  // Use MongoDB if available, otherwise fallback to SQLite
+  if (mongoManager && mongoManager.isConnected) {
+    try {
+      const cachedPosts = await mongoManager.getCachedRecentPosts(username);
+      
+      // Update in-memory cache
+      if (!global.postCache) {
+        global.postCache = {};
+      }
+      global.postCache[username] = cachedPosts;
+
+      return cachedPosts;
+    } catch (error) {
+      console.error(`❌ MongoDB cache retrieval failed: ${error.message}`);
+      // Fallback to SQLite
+    }
+  }
+
+  // Fallback to SQLite
+  if (db) {
+    return new Promise((resolve, reject) => {
+      db.all(
+        `
+        SELECT post_url, shortcode, is_pinned, post_order, cached_at 
+        FROM recent_posts_cache 
+        WHERE username = ? 
+        ORDER BY is_pinned DESC, post_order ASC
+      `,
+        [username],
+        (err, rows) => {
+          if (err) reject(err);
+          else {
+            const cachedPosts = rows || [];
+
+            // Update in-memory cache
+            if (!global.postCache) {
+              global.postCache = {};
+            }
+            global.postCache[username] = cachedPosts;
+
+            resolve(cachedPosts);
+          }
+        }
+      );
+    });
+  }
+
+  return [];
 }
 
 // Update cache with new recent posts
-function updateRecentPostsCache(username, posts) {
-  return new Promise((resolve, reject) => {
-    // First, remove old cache entries for this user
-    db.run(
-      "DELETE FROM recent_posts_cache WHERE username = ?",
-      [username],
-      function (err) {
-        if (err) {
-          reject(err);
-          return;
-        }
-
-        // Then insert new posts
-        const stmt = db.prepare(`
-        INSERT INTO recent_posts_cache 
-        (username, post_url, shortcode, is_pinned, post_order, cached_at) 
-        VALUES (?, ?, ?, ?, ?, ?)
-      `);
-
-        let completed = 0;
-        const total = posts.length;
-
-        if (total === 0) {
-          resolve();
-          return;
-        }
-
-        posts.forEach((post, index) => {
-          const shortcode =
-            post.shortcode || post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2];
-          const isPinned = post.is_pinned || false;
-          const postOrder = index + 1;
-          const now = new Date().toISOString();
-
-          stmt.run(
-            [username, post.url, shortcode, isPinned, postOrder, now],
-            function (err) {
-              if (err) {
-                console.log(
-                  `❌ Cache update error for ${shortcode}: ${err.message}`
-                );
-              }
-              completed++;
-              if (completed === total) {
-                stmt.finalize();
-
-                // Update in-memory cache
-                if (!global.postCache) {
-                  global.postCache = {};
-                }
-                global.postCache[username] = posts.map((post, idx) => ({
-                  post_url: post.url,
-                  shortcode:
-                    post.shortcode ||
-                    post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2],
-                  is_pinned: post.is_pinned || false,
-                  post_order: idx + 1,
-                  cached_at: now,
-                }));
-
-                console.log(
-                  `✅ Updated cache with ${total} posts for @${username} (memory + database)`
-                );
-                
-                // Debug: Verify cache was actually written to database
-                setTimeout(async () => {
-                  try {
-                    const verifyCount = await new Promise((resolve, reject) => {
-                      db.get(
-                        "SELECT COUNT(*) as count FROM recent_posts_cache WHERE username = ?",
-                        [username],
-                        (err, row) => {
-                          if (err) reject(err);
-                          else resolve(row ? row.count : 0);
-                        }
-                      );
-                    });
-                    console.log(`🔍 Cache verification: ${verifyCount} posts now in database for @${username}`);
-                  } catch (error) {
-                    console.error(`❌ Cache verification failed: ${error.message}`);
-                  }
-                }, 1000);
-                resolve();
-              }
-            }
-          );
-        });
+async function updateRecentPostsCache(username, posts) {
+  // Use MongoDB if available, otherwise fallback to SQLite
+  if (mongoManager && mongoManager.isConnected) {
+    try {
+      await mongoManager.updateRecentPostsCache(username, posts);
+      
+      // Update in-memory cache
+      if (!global.postCache) {
+        global.postCache = {};
       }
-    );
-  });
+      global.postCache[username] = posts.map((post, idx) => ({
+        post_url: post.url,
+        shortcode:
+          post.shortcode ||
+          post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2],
+        is_pinned: post.is_pinned || false,
+        post_order: idx + 1,
+        cached_at: new Date().toISOString(),
+      }));
+
+      console.log(
+        `✅ Updated MongoDB cache with ${posts.length} posts for @${username} (memory + database)`
+      );
+      return;
+    } catch (error) {
+      console.error(`❌ MongoDB cache update failed: ${error.message}`);
+      // Fallback to SQLite
+    }
+  }
+
+  // Fallback to SQLite
+  if (db) {
+    return new Promise((resolve, reject) => {
+      // First, remove old cache entries for this user
+      db.run(
+        "DELETE FROM recent_posts_cache WHERE username = ?",
+        [username],
+        function (err) {
+          if (err) {
+            reject(err);
+            return;
+          }
+
+          // Then insert new posts
+          const stmt = db.prepare(`
+          INSERT INTO recent_posts_cache 
+          (username, post_url, shortcode, is_pinned, post_order, cached_at) 
+          VALUES (?, ?, ?, ?, ?, ?)
+        `);
+
+          let completed = 0;
+          const total = posts.length;
+
+          if (total === 0) {
+            resolve();
+            return;
+          }
+
+          posts.forEach((post, index) => {
+            const shortcode =
+              post.shortcode || post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2];
+            const isPinned = post.is_pinned || false;
+            const postOrder = index + 1;
+            const now = new Date().toISOString();
+
+            stmt.run(
+              [username, post.url, shortcode, isPinned, postOrder, now],
+              function (err) {
+                if (err) {
+                  console.log(
+                    `❌ Cache update error for ${shortcode}: ${err.message}`
+                  );
+                }
+                completed++;
+                if (completed === total) {
+                  stmt.finalize();
+
+                  // Update in-memory cache
+                  if (!global.postCache) {
+                    global.postCache = {};
+                  }
+                  global.postCache[username] = posts.map((post, idx) => ({
+                    post_url: post.url,
+                    shortcode:
+                      post.shortcode ||
+                      post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2],
+                    is_pinned: post.is_pinned || false,
+                    post_order: idx + 1,
+                    cached_at: now,
+                  }));
+
+                  console.log(
+                    `✅ Updated SQLite cache with ${total} posts for @${username} (memory + database)`
+                  );
+                  resolve();
+                }
+              }
+            );
+          });
+        }
+      });
+    });
+  }
 }
 
 // Find new posts not in cache
-function findNewPosts(username, fetchedPosts) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const cachedPosts = await getCachedRecentPosts(username);
-      const cachedShortcodes = new Set(cachedPosts.map((p) => p.shortcode));
+async function findNewPosts(username, fetchedPosts) {
+  try {
+    const cachedPosts = await getCachedRecentPosts(username);
+    const cachedShortcodes = new Set(cachedPosts.map((p) => p.shortcode));
 
-      // Debug: Log cache details
-      console.log(`🔍 Cache debug for @${username}:`);
-      console.log(`   - Fetched posts: ${fetchedPosts.length}`);
-      console.log(`   - Cached posts: ${cachedPosts.length}`);
-      console.log(`   - Cached shortcodes: ${Array.from(cachedShortcodes).join(', ')}`);
+    // Debug: Log cache details
+    console.log(`🔍 Cache debug for @${username}:`);
+    console.log(`   - Fetched posts: ${fetchedPosts.length}`);
+    console.log(`   - Cached posts: ${cachedPosts.length}`);
+    console.log(`   - Cached shortcodes: ${Array.from(cachedShortcodes).join(', ')}`);
 
-      const newPosts = fetchedPosts.filter((post) => {
-        const shortcode =
-          post.shortcode || post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2];
-        return shortcode && !cachedShortcodes.has(shortcode);
-      });
+    const newPosts = fetchedPosts.filter((post) => {
+      const shortcode =
+        post.shortcode || post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2];
+      return shortcode && !cachedShortcodes.has(shortcode);
+    });
 
-      console.log(
-        `📊 Cache comparison: ${fetchedPosts.length} fetched, ${cachedPosts.length} cached, ${newPosts.length} new`
-      );
-      resolve(newPosts);
-    } catch (error) {
-      reject(error);
-    }
-  });
+    console.log(
+      `📊 Cache comparison: ${fetchedPosts.length} fetched, ${cachedPosts.length} cached, ${newPosts.length} new`
+    );
+    return newPosts;
+  } catch (error) {
+    console.error(`❌ Error finding new posts: ${error.message}`);
+    return [];
+  }
 }
 
 // Cleanup queue management
