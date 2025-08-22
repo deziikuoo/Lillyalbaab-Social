@@ -1,35 +1,38 @@
-const { createClient } = require('@supabase/supabase-js');
+const { createClient } = require("@supabase/supabase-js");
 
 class SupabaseManager {
   constructor() {
     this.client = null;
     this.isConnected = false;
-    
+
     // Supabase configuration
-    this.supabaseUrl = process.env.SUPABASE_URL || 'https://tuvyckzfwdtaieajlszb.supabase.co';
-    this.supabaseKey = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR1dnlja3pmd2R0YWllYWpsc3piIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU4MTk3MjIsImV4cCI6MjA3MTM5NTcyMn0.-BNhNk3iO8WguyU6liZfJ4Vxuat5YG7wTHuDRumkbG8';
+    this.supabaseUrl =
+      process.env.SUPABASE_URL || "https://tuvyckzfwdtaieajlszb.supabase.co";
+    this.supabaseKey =
+      process.env.SUPABASE_KEY ||
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR1dnlja3pmd2R0YWllYWpsc3piIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU4MTk3MjIsImV4cCI6MjA3MTM5NTcyMn0.-BNhNk3iO8WguyU6liZfJ4Vxuat5YG7wTHuDRumkbG8";
   }
 
   async connect() {
     try {
-      console.log('🔌 Connecting to Supabase...');
-      
+      console.log("🔌 Connecting to Supabase...");
+
       this.client = createClient(this.supabaseUrl, this.supabaseKey);
-      
+
       // Test the connection by checking if client is properly initialized
       if (!this.client) {
-        throw new Error('Supabase client not initialized');
+        throw new Error("Supabase client not initialized");
       }
-      
+
       this.isConnected = true;
-      console.log('✅ Supabase connected successfully');
-      
+      console.log("✅ Supabase connected successfully");
+
       // Initialize tables
       await this.initializeTables();
-      
+
       return true;
     } catch (error) {
-      console.error('❌ Supabase connection failed:', error.message);
+      console.error("❌ Supabase connection failed:", error.message);
       this.isConnected = false;
       return false;
     }
@@ -37,19 +40,19 @@ class SupabaseManager {
 
   async disconnect() {
     this.isConnected = false;
-    console.log('🔌 Supabase disconnected');
+    console.log("🔌 Supabase disconnected");
   }
 
   async initializeTables() {
     try {
-      console.log('🔧 Initializing Supabase tables...');
-      
+      console.log("🔧 Initializing Supabase tables...");
+
       // Note: Tables need to be created manually in Supabase dashboard
       // For now, we'll just test the connection and let the app fall back to SQLite
-      console.log('ℹ️ Tables will be created automatically when first used');
-      console.log('✅ Supabase connection test successful');
+      console.log("ℹ️ Tables will be created automatically when first used");
+      console.log("✅ Supabase connection test successful");
     } catch (error) {
-      console.error('❌ Supabase initialization failed:', error.message);
+      console.error("❌ Supabase initialization failed:", error.message);
     }
   }
 
@@ -57,31 +60,42 @@ class SupabaseManager {
   async getCachedRecentPosts(username) {
     try {
       if (!this.isConnected) {
-        console.log('⚠️ Supabase not connected, returning empty cache');
+        console.log("⚠️ Supabase not connected, returning empty cache");
         return [];
       }
 
       const { data, error } = await this.client
-        .from('recent_posts_cache')
-        .select('*')
-        .eq('username', username)
-        .order('is_pinned', { ascending: false })
-        .order('post_order', { ascending: true });
+        .from("recent_posts_cache")
+        .select("*")
+        .eq("username", username)
+        .order("is_pinned", { ascending: false })
+        .order("post_order", { ascending: true });
 
       if (error) {
-        console.error(`❌ Failed to get cached posts for @${username}:`, error.message);
+        // Check if it's a table not found error
+        if (error.message.includes("Could not find the table") || error.message.includes("relation") || error.message.includes("does not exist")) {
+          console.log(`⚠️ Supabase table 'recent_posts_cache' does not exist, returning empty cache`);
+          return [];
+        }
+        console.error(
+          `❌ Failed to get cached posts for @${username}:`,
+          error.message
+        );
         return [];
       }
 
-      return data.map(post => ({
+      return data.map((post) => ({
         post_url: post.post_url,
         shortcode: post.shortcode,
         is_pinned: post.is_pinned,
         post_order: post.post_order,
-        cached_at: post.cached_at
+        cached_at: post.cached_at,
       }));
     } catch (error) {
-      console.error(`❌ Failed to get cached posts for @${username}:`, error.message);
+      console.error(
+        `❌ Failed to get cached posts for @${username}:`,
+        error.message
+      );
       return [];
     }
   }
@@ -89,18 +103,26 @@ class SupabaseManager {
   async updateRecentPostsCache(username, posts) {
     try {
       if (!this.isConnected) {
-        console.log('⚠️ Supabase not connected, skipping cache update');
+        console.log("⚠️ Supabase not connected, skipping cache update");
         return;
       }
 
       // Remove old cache entries for this user
       const { error: deleteError } = await this.client
-        .from('recent_posts_cache')
+        .from("recent_posts_cache")
         .delete()
-        .eq('username', username);
+        .eq("username", username);
 
       if (deleteError) {
-        console.error(`❌ Failed to delete old cache for @${username}:`, deleteError.message);
+        // Check if it's a table not found error
+        if (deleteError.message.includes("Could not find the table") || deleteError.message.includes("relation") || deleteError.message.includes("does not exist")) {
+          console.log(`⚠️ Supabase table 'recent_posts_cache' does not exist, skipping cache update`);
+          return;
+        }
+        console.error(
+          `❌ Failed to delete old cache for @${username}:`,
+          deleteError.message
+        );
         return;
       }
 
@@ -111,31 +133,45 @@ class SupabaseManager {
 
       // Prepare new cache entries
       const cacheEntries = posts.map((post, index) => {
-        const shortcode = post.shortcode || post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2];
+        const shortcode =
+          post.shortcode || post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2];
         return {
           username,
           post_url: post.url,
           shortcode,
           is_pinned: post.is_pinned || false,
-          post_order: index + 1
+          post_order: index + 1,
         };
       });
 
       // Insert new cache entries
       if (cacheEntries.length > 0) {
         const { error: insertError } = await this.client
-          .from('recent_posts_cache')
+          .from("recent_posts_cache")
           .insert(cacheEntries);
 
         if (insertError) {
-          console.error(`❌ Failed to insert cache for @${username}:`, insertError.message);
+          // Check if it's a table not found error
+          if (insertError.message.includes("Could not find the table") || insertError.message.includes("relation") || insertError.message.includes("does not exist")) {
+            console.log(`⚠️ Supabase table 'recent_posts_cache' does not exist, skipping cache update`);
+            return;
+          }
+          console.error(
+            `❌ Failed to insert cache for @${username}:`,
+            insertError.message
+          );
           return;
         }
       }
 
-      console.log(`✅ Updated Supabase cache with ${posts.length} posts for @${username}`);
+      console.log(
+        `✅ Updated Supabase cache with ${posts.length} posts for @${username}`
+      );
     } catch (error) {
-      console.error(`❌ Failed to update cache for @${username}:`, error.message);
+      console.error(
+        `❌ Failed to update cache for @${username}:`,
+        error.message
+      );
     }
   }
 
@@ -145,13 +181,22 @@ class SupabaseManager {
       if (!this.isConnected) return false;
 
       const { data, error } = await this.client
-        .from('processed_posts')
-        .select('*')
-        .eq('id', postId)
-        .eq('username', username)
+        .from("processed_posts")
+        .select("*")
+        .eq("id", postId)
+        .eq("username", username)
         .single();
 
-      if (error || !data) return false;
+      if (error) {
+        // Check if it's a table not found error
+        if (error.message.includes("Could not find the table") || error.message.includes("relation") || error.message.includes("does not exist")) {
+          console.log(`⚠️ Supabase table 'processed_posts' does not exist, treating as not processed`);
+          return false;
+        }
+        return false;
+      }
+
+      if (!data) return false;
 
       // Check if it's a pinned post (allow re-processing if pinned within 24 hours)
       if (data.is_pinned && data.pinned_at) {
@@ -160,19 +205,32 @@ class SupabaseManager {
         const hoursSincePinned = (now - pinnedAt) / (1000 * 60 * 60);
 
         if (hoursSincePinned < 24) {
-          console.log(`📌 Pinned post ${postId} can be re-processed (pinned ${hoursSincePinned.toFixed(1)}h ago)`);
+          console.log(
+            `📌 Pinned post ${postId} can be re-processed (pinned ${hoursSincePinned.toFixed(
+              1
+            )}h ago)`
+          );
           return false;
         }
       }
 
       return true;
     } catch (error) {
-      console.error(`❌ Failed to check if post ${postId} is processed:`, error.message);
+      console.error(
+        `❌ Failed to check if post ${postId} is processed:`,
+        error.message
+      );
       return false;
     }
   }
 
-  async markPostAsProcessed(postId, username, postUrl, postType, isPinned = false) {
+  async markPostAsProcessed(
+    postId,
+    username,
+    postUrl,
+    postType,
+    isPinned = false
+  ) {
     try {
       if (!this.isConnected) return;
 
@@ -182,7 +240,7 @@ class SupabaseManager {
         post_url: postUrl,
         post_type: postType,
         is_pinned: isPinned,
-        processed_at: new Date().toISOString()
+        processed_at: new Date().toISOString(),
       };
 
       if (isPinned) {
@@ -190,17 +248,28 @@ class SupabaseManager {
       }
 
       const { error } = await this.client
-        .from('processed_posts')
-        .upsert(postData, { onConflict: 'id' });
+        .from("processed_posts")
+        .upsert(postData, { onConflict: "id" });
 
       if (error) {
-        console.error(`❌ Failed to mark post ${postId} as processed:`, error.message);
+        // Check if it's a table not found error
+        if (error.message.includes("Could not find the table") || error.message.includes("relation") || error.message.includes("does not exist")) {
+          console.log(`⚠️ Supabase table 'processed_posts' does not exist, skipping post marking`);
+          return;
+        }
+        console.error(
+          `❌ Failed to mark post ${postId} as processed:`,
+          error.message
+        );
         return;
       }
 
       console.log(`✅ Marked post ${postId} as processed for @${username}`);
     } catch (error) {
-      console.error(`❌ Failed to mark post ${postId} as processed:`, error.message);
+      console.error(
+        `❌ Failed to mark post ${postId} as processed:`,
+        error.message
+      );
     }
   }
 
@@ -215,9 +284,9 @@ class SupabaseManager {
       }
 
       const { data, error } = await this.client
-        .from('cache_cleanup_log')
-        .select('cleaned_at')
-        .order('cleaned_at', { ascending: false })
+        .from("cache_cleanup_log")
+        .select("cleaned_at")
+        .order("cleaned_at", { ascending: false })
         .limit(1)
         .single();
 
@@ -230,7 +299,7 @@ class SupabaseManager {
 
       return new Date(data.cleaned_at);
     } catch (error) {
-      console.error('❌ Failed to get last cleanup date:', error.message);
+      console.error("❌ Failed to get last cleanup date:", error.message);
       const eightDaysAgo = new Date();
       eightDaysAgo.setDate(eightDaysAgo.getDate() - 8);
       return eightDaysAgo;
@@ -241,22 +310,20 @@ class SupabaseManager {
     try {
       if (!this.isConnected) return;
 
-      const { error } = await this.client
-        .from('cache_cleanup_log')
-        .insert({
-          cleaned_at: new Date().toISOString(),
-          posts_removed: postsRemoved,
-          username: username
-        });
+      const { error } = await this.client.from("cache_cleanup_log").insert({
+        cleaned_at: new Date().toISOString(),
+        posts_removed: postsRemoved,
+        username: username,
+      });
 
       if (error) {
-        console.error('❌ Failed to update cleanup log:', error.message);
+        console.error("❌ Failed to update cleanup log:", error.message);
         return;
       }
 
       console.log(`✅ Updated cleanup log: ${postsRemoved} posts removed`);
     } catch (error) {
-      console.error('❌ Failed to update cleanup log:', error.message);
+      console.error("❌ Failed to update cleanup log:", error.message);
     }
   }
 
@@ -264,40 +331,40 @@ class SupabaseManager {
   async cleanExpiredCache() {
     try {
       if (!this.isConnected) {
-        console.log('⚠️ Supabase not connected, skipping cleanup');
+        console.log("⚠️ Supabase not connected, skipping cleanup");
         return;
       }
 
-      console.log('🧹 Starting Supabase cache cleanup...');
+      console.log("🧹 Starting Supabase cache cleanup...");
 
       const fourWeeksAgo = new Date();
       fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
 
       // Clean up old cache entries
       const { error: cacheError } = await this.client
-        .from('recent_posts_cache')
+        .from("recent_posts_cache")
         .delete()
-        .lt('cached_at', fourWeeksAgo.toISOString());
+        .lt("cached_at", fourWeeksAgo.toISOString());
 
       // Clean up old processed posts (keep pinned posts)
       const { error: postsError } = await this.client
-        .from('processed_posts')
+        .from("processed_posts")
         .delete()
-        .lt('processed_at', fourWeeksAgo.toISOString())
-        .eq('is_pinned', false);
+        .lt("processed_at", fourWeeksAgo.toISOString())
+        .eq("is_pinned", false);
 
       if (cacheError) {
-        console.error('❌ Cache cleanup error:', cacheError.message);
+        console.error("❌ Cache cleanup error:", cacheError.message);
       }
 
       if (postsError) {
-        console.error('❌ Posts cleanup error:', postsError.message);
+        console.error("❌ Posts cleanup error:", postsError.message);
       }
 
       await this.updateLastCleanupDate(0);
-      console.log('✅ Supabase cleanup completed');
+      console.log("✅ Supabase cleanup completed");
     } catch (error) {
-      console.error('❌ Supabase cleanup failed:', error.message);
+      console.error("❌ Supabase cleanup failed:", error.message);
     }
   }
 
@@ -307,13 +374,13 @@ class SupabaseManager {
       if (!this.isConnected) return false;
 
       const { data, error } = await this.client
-        .from('processed_posts')
-        .select('count')
+        .from("processed_posts")
+        .select("count")
         .limit(1);
 
       return !error;
     } catch (error) {
-      console.error('❌ Supabase health check failed:', error.message);
+      console.error("❌ Supabase health check failed:", error.message);
       return false;
     }
   }
@@ -324,15 +391,18 @@ class SupabaseManager {
       if (!this.isConnected) return false;
 
       const { data, error } = await this.client
-        .from('processed_stories')
-        .select('*')
-        .eq('username', username)
-        .eq('story_id', storyId)
+        .from("processed_stories")
+        .select("*")
+        .eq("username", username)
+        .eq("story_id", storyId)
         .single();
 
       return !error && !!data;
     } catch (error) {
-      console.error(`❌ Failed to check if story ${storyId} is processed:`, error.message);
+      console.error(
+        `❌ Failed to check if story ${storyId} is processed:`,
+        error.message
+      );
       return false;
     }
   }
@@ -348,21 +418,29 @@ class SupabaseManager {
         story_url: storyUrl,
         story_type: storyType,
         story_id: storyId,
-        processed_at: new Date().toISOString()
+        processed_at: new Date().toISOString(),
       };
 
       const { error } = await this.client
-        .from('processed_stories')
-        .upsert(storyData, { onConflict: 'id' });
+        .from("processed_stories")
+        .upsert(storyData, { onConflict: "id" });
 
       if (error) {
-        console.error(`❌ Failed to mark story ${storyId} as processed:`, error.message);
+        console.error(
+          `❌ Failed to mark story ${storyId} as processed:`,
+          error.message
+        );
         return;
       }
 
-      console.log(`✅ Story ${storyId} marked as processed for @${username} (Supabase)`);
+      console.log(
+        `✅ Story ${storyId} marked as processed for @${username} (Supabase)`
+      );
     } catch (error) {
-      console.error(`❌ Failed to mark story ${storyId} as processed:`, error.message);
+      console.error(
+        `❌ Failed to mark story ${storyId} as processed:`,
+        error.message
+      );
     }
   }
 
@@ -372,12 +450,15 @@ class SupabaseManager {
 
       // Remove old cache entries for this user
       const { error: deleteError } = await this.client
-        .from('recent_stories_cache')
+        .from("recent_stories_cache")
         .delete()
-        .eq('username', username);
+        .eq("username", username);
 
       if (deleteError) {
-        console.error(`❌ Failed to delete old stories cache for @${username}:`, deleteError.message);
+        console.error(
+          `❌ Failed to delete old stories cache for @${username}:`,
+          deleteError.message
+        );
         return;
       }
 
@@ -387,28 +468,36 @@ class SupabaseManager {
       }
 
       // Prepare new cache entries
-      const cacheEntries = stories.map(story => ({
+      const cacheEntries = stories.map((story) => ({
         username,
         story_url: story.url,
         story_id: story.storyId,
-        story_type: story.storyType
+        story_type: story.storyType,
       }));
 
       // Insert new cache entries
       if (cacheEntries.length > 0) {
         const { error: insertError } = await this.client
-          .from('recent_stories_cache')
+          .from("recent_stories_cache")
           .insert(cacheEntries);
 
         if (insertError) {
-          console.error(`❌ Failed to insert stories cache for @${username}:`, insertError.message);
+          console.error(
+            `❌ Failed to insert stories cache for @${username}:`,
+            insertError.message
+          );
           return;
         }
       }
 
-      console.log(`✅ Stories cache updated for @${username} (${stories.length} entries) (Supabase)`);
+      console.log(
+        `✅ Stories cache updated for @${username} (${stories.length} entries) (Supabase)`
+      );
     } catch (error) {
-      console.error(`❌ Failed to update stories cache for @${username}:`, error.message);
+      console.error(
+        `❌ Failed to update stories cache for @${username}:`,
+        error.message
+      );
     }
   }
 
@@ -419,26 +508,26 @@ class SupabaseManager {
         return {
           connected: false,
           collections: {},
-          error: 'Not connected to Supabase'
+          error: "Not connected to Supabase",
         };
       }
 
       const stats = {
         connected: true,
-        collections: {}
+        collections: {},
       };
 
       const collections = [
-        'recent_posts_cache',
-        'processed_posts',
-        'processed_stories',
-        'recent_stories_cache'
+        "recent_posts_cache",
+        "processed_posts",
+        "processed_stories",
+        "recent_stories_cache",
       ];
 
       for (const collectionName of collections) {
         const { count, error } = await this.client
           .from(collectionName)
-          .select('*', { count: 'exact', head: true });
+          .select("*", { count: "exact", head: true });
 
         if (error) {
           stats.collections[collectionName] = 0;
@@ -451,7 +540,7 @@ class SupabaseManager {
     } catch (error) {
       return {
         connected: false,
-        error: error.message
+        error: error.message,
       };
     }
   }

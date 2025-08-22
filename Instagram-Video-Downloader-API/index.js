@@ -761,6 +761,10 @@ async function initializeDatabases() {
     const connected = await supabaseManager.connect();
     if (connected) {
       console.log(`✅ Supabase database connected successfully`);
+      // Always initialize SQLite as fallback
+      db = new sqlite3.Database(dbPath);
+      console.log(`✅ SQLite fallback database initialized`);
+      initializeSQLiteTables();
     } else {
       console.log(`⚠️ Supabase connection failed, falling back to SQLite`);
       // Fallback to SQLite if Supabase fails
