@@ -6,7 +6,7 @@ const FormData = require("form-data");
 const cheerio = require("cheerio");
 const cron = require("node-cron");
 const sqlite3 = require("sqlite3").verbose();
-const MongoDBManager = require("./mongodb-manager");
+const SupabaseManager = require("./supabase-manager");
 // const puppeteer = require("puppeteer"); // COMMENTED OUT DUE TO PUPPETEER ISSUES
 const readline = require("readline");
 const InstagramCarouselDownloader = require("./instagram-carousel-downloader");
@@ -750,26 +750,26 @@ if (!fs.existsSync(DOWNLOADS_DIR)) {
   console.log(`📁 Created downloads directory: ${DOWNLOADS_DIR}`);
 }
 
-// Initialize MongoDB database
-let mongoManager;
+// Initialize Supabase database
+let supabaseManager;
 let db; // Declare db variable at top level
 
-// Initialize databases (MongoDB with SQLite fallback)
+// Initialize databases (Supabase with SQLite fallback)
 async function initializeDatabases() {
   try {
-    mongoManager = new MongoDBManager();
-    const connected = await mongoManager.connect();
+    supabaseManager = new SupabaseManager();
+    const connected = await supabaseManager.connect();
     if (connected) {
-      console.log(`✅ MongoDB database connected successfully`);
+      console.log(`✅ Supabase database connected successfully`);
     } else {
-      console.log(`⚠️ MongoDB connection failed, falling back to SQLite`);
-      // Fallback to SQLite if MongoDB fails
+      console.log(`⚠️ Supabase connection failed, falling back to SQLite`);
+      // Fallback to SQLite if Supabase fails
       db = new sqlite3.Database(dbPath);
       console.log(`✅ SQLite fallback database initialized`);
       initializeSQLiteTables();
     }
   } catch (error) {
-    console.error(`❌ MongoDB initialization failed: ${error.message}`);
+    console.error(`❌ Supabase initialization failed: ${error.message}`);
     console.log(`🔄 Falling back to SQLite database...`);
     db = new sqlite3.Database(dbPath);
     console.log(`✅ SQLite fallback database initialized`);
@@ -2889,13 +2889,13 @@ async function scrapeWithWebProfileInfo(username, userAgent) {
 
 // Check if post was already processed (excluding pinned posts from recent checks)
 async function isPostProcessed(postId, username) {
-  // Use MongoDB if available, otherwise fallback to SQLite
-  if (mongoManager && mongoManager.isConnected) {
+  // Use Supabase if available, otherwise fallback to SQLite
+  if (supabaseManager && supabaseManager.isConnected) {
     try {
-      return await mongoManager.isPostProcessed(postId, username);
+      return await supabaseManager.isPostProcessed(postId, username);
     } catch (error) {
       console.error(
-        `❌ MongoDB post processing check failed: ${error.message}`
+        `❌ Supabase post processing check failed: ${error.message}`
       );
       // Fallback to SQLite
     }
@@ -2961,10 +2961,10 @@ async function markPostAsProcessed(
   postType,
   isPinned = false
 ) {
-  // Use MongoDB if available, otherwise fallback to SQLite
-  if (mongoManager && mongoManager.isConnected) {
+  // Use Supabase if available, otherwise fallback to SQLite
+  if (supabaseManager && supabaseManager.isConnected) {
     try {
-      await mongoManager.markPostAsProcessed(
+      await supabaseManager.markPostAsProcessed(
         postId,
         username,
         postUrl,
@@ -2973,7 +2973,7 @@ async function markPostAsProcessed(
       );
       return true;
     } catch (error) {
-      console.error(`❌ MongoDB post marking failed: ${error.message}`);
+      console.error(`❌ Supabase post marking failed: ${error.message}`);
       // Fallback to SQLite
     }
   }
@@ -3030,10 +3030,10 @@ async function getCachedRecentPosts(username) {
     return global.postCache[username];
   }
 
-  // Use MongoDB if available, otherwise fallback to SQLite
-  if (mongoManager && mongoManager.isConnected) {
+  // Use Supabase if available, otherwise fallback to SQLite
+  if (supabaseManager && supabaseManager.isConnected) {
     try {
-      const cachedPosts = await mongoManager.getCachedRecentPosts(username);
+      const cachedPosts = await supabaseManager.getCachedRecentPosts(username);
 
       // Update in-memory cache
       if (!global.postCache) {
@@ -3043,7 +3043,7 @@ async function getCachedRecentPosts(username) {
 
       return cachedPosts;
     } catch (error) {
-      console.error(`❌ MongoDB cache retrieval failed: ${error.message}`);
+      console.error(`❌ Supabase cache retrieval failed: ${error.message}`);
       // Fallback to SQLite
     }
   }
@@ -3082,10 +3082,10 @@ async function getCachedRecentPosts(username) {
 
 // Update cache with new recent posts
 async function updateRecentPostsCache(username, posts) {
-  // Use MongoDB if available, otherwise fallback to SQLite
-  if (mongoManager && mongoManager.isConnected) {
+  // Use Supabase if available, otherwise fallback to SQLite
+  if (supabaseManager && supabaseManager.isConnected) {
     try {
-      await mongoManager.updateRecentPostsCache(username, posts);
+      await supabaseManager.updateRecentPostsCache(username, posts);
 
       // Update in-memory cache
       if (!global.postCache) {
@@ -3101,11 +3101,11 @@ async function updateRecentPostsCache(username, posts) {
       }));
 
       console.log(
-        `✅ Updated MongoDB cache with ${posts.length} posts for @${username} (memory + database)`
+        `✅ Updated Supabase cache with ${posts.length} posts for @${username} (memory + database)`
       );
       return;
     } catch (error) {
-      console.error(`❌ MongoDB cache update failed: ${error.message}`);
+      console.error(`❌ Supabase cache update failed: ${error.message}`);
       // Fallback to SQLite
     }
   }
@@ -3288,11 +3288,11 @@ async function cleanExpiredCache() {
   try {
     console.log("🧹 Starting enhanced cache cleanup...");
 
-    // Use MongoDB if available, otherwise fallback to SQLite
-    if (mongoManager && mongoManager.isConnected) {
+    // Use Supabase if available, otherwise fallback to SQLite
+    if (supabaseManager && supabaseManager.isConnected) {
       try {
-        console.log("🧹 Using MongoDB for cache cleanup...");
-        await mongoManager.cleanExpiredCache();
+        console.log("🧹 Using Supabase for cache cleanup...");
+        await supabaseManager.cleanExpiredCache();
 
         // Update memory cache atomically
         await updateMemoryCacheAfterCleanup();
@@ -3301,9 +3301,9 @@ async function cleanExpiredCache() {
         console.log("🔍 Running post-cleanup cache integrity check...");
         await validateCacheIntegrity();
 
-        return { cacheRemoved: 0, processedRemoved: 0 }; // MongoDB manager handles the counts
+        return { cacheRemoved: 0, processedRemoved: 0 }; // Supabase manager handles the counts
       } catch (error) {
-        console.error(`❌ MongoDB cache cleanup failed: ${error.message}`);
+        console.error(`❌ Supabase cache cleanup failed: ${error.message}`);
         console.log("🔄 Falling back to SQLite...");
         // Continue to SQLite fallback
       }
@@ -3687,12 +3687,12 @@ async function performStorageCleanup() {
 
 // Get last cleanup date
 async function getLastCleanupDate() {
-  // Use MongoDB if available, otherwise fallback to SQLite
-  if (mongoManager && mongoManager.isConnected) {
+  // Use Supabase if available, otherwise fallback to SQLite
+  if (supabaseManager && supabaseManager.isConnected) {
     try {
-      return await mongoManager.getLastCleanupDate();
+      return await supabaseManager.getLastCleanupDate();
     } catch (error) {
-      console.error(`❌ MongoDB cleanup date check failed: ${error.message}`);
+      console.error(`❌ Supabase cleanup date check failed: ${error.message}`);
       // Fallback to SQLite
     }
   }
@@ -3726,13 +3726,13 @@ async function getLastCleanupDate() {
 
 // Update last cleanup date
 async function updateLastCleanupDate(postsRemoved = 0, username = null) {
-  // Use MongoDB if available, otherwise fallback to SQLite
-  if (mongoManager && mongoManager.isConnected) {
+  // Use Supabase if available, otherwise fallback to SQLite
+  if (supabaseManager && supabaseManager.isConnected) {
     try {
-      await mongoManager.updateLastCleanupDate(postsRemoved, username);
+      await supabaseManager.updateLastCleanupDate(postsRemoved, username);
       return true;
     } catch (error) {
-      console.error(`❌ MongoDB cleanup date update failed: ${error.message}`);
+      console.error(`❌ Supabase cleanup date update failed: ${error.message}`);
       // Fallback to SQLite
     }
   }
@@ -3788,39 +3788,53 @@ async function checkCacheOnBoot() {
 // Load existing cache data into memory
 async function loadExistingCache() {
   try {
-    // Use MongoDB if available, otherwise fallback to SQLite
-    if (mongoManager && mongoManager.isConnected) {
-      console.log("📊 Loading cache from MongoDB...");
+    // Use Supabase if available, otherwise fallback to SQLite
+    if (supabaseManager && supabaseManager.isConnected) {
+      console.log("📊 Loading cache from Supabase...");
 
       try {
-        // Get MongoDB stats to check cache status
-        const stats = await mongoManager.getStats();
-        console.log(`📊 MongoDB collections:`, stats.collections);
+        // Get Supabase stats to check cache status
+        const stats = await supabaseManager.getStats();
+        console.log(`📊 Supabase collections:`, stats.collections);
 
-        // Get all cached usernames from MongoDB
-        const collection = mongoManager.db.collection("recent_posts_cache");
-        const cachedUsers = await collection.distinct("username");
+        // Get all cached usernames from Supabase
+        const { data: cachedUsers, error } = await supabaseManager.client
+          .from("recent_posts_cache")
+          .select("username")
+          .order("username");
 
-        console.log(`📊 Found ${cachedUsers.length} cached users in MongoDB`);
+        if (error) {
+          console.error(
+            `❌ Failed to get cached users from Supabase: ${error.message}`
+          );
+          return;
+        }
 
-        if (cachedUsers.length === 0) {
-          console.log("📊 No existing cache data found in MongoDB");
+        const uniqueUsernames = [
+          ...new Set(cachedUsers.map((u) => u.username)),
+        ];
+        console.log(
+          `📊 Found ${uniqueUsernames.length} cached users in Supabase`
+        );
+
+        if (uniqueUsernames.length === 0) {
+          console.log("📊 No existing cache data found in Supabase");
           return;
         }
 
         console.log(
-          `📊 Loading cache for ${cachedUsers.length} users from MongoDB...`
+          `📊 Loading cache for ${uniqueUsernames.length} users from Supabase...`
         );
 
         let loadedUsers = 0;
         let totalPosts = 0;
 
         // Load cache for each user
-        for (const username of cachedUsers) {
+        for (const username of uniqueUsernames) {
           const cachedPosts = await getCachedRecentPosts(username);
           if (cachedPosts.length > 0) {
             console.log(
-              `   📱 @${username}: ${cachedPosts.length} posts cached (MongoDB)`
+              `   📱 @${username}: ${cachedPosts.length} posts cached (Supabase)`
             );
 
             // Store in global cache for faster access
@@ -3836,20 +3850,20 @@ async function loadExistingCache() {
         }
 
         console.log(
-          `✅ MongoDB cache loaded successfully (${loadedUsers} users, ${totalPosts} total posts)`
+          `✅ Supabase cache loaded successfully (${loadedUsers} users, ${totalPosts} total posts)`
         );
 
         // Check if cache loading was successful
-        if (loadedUsers === 0 && cachedUsers.length > 0) {
+        if (loadedUsers === 0 && uniqueUsernames.length > 0) {
           console.log(
-            "⚠️ MongoDB cache loading resulted in 0 posts - attempting automatic reload..."
+            "⚠️ Supabase cache loading resulted in 0 posts - attempting automatic reload..."
           );
           await retryCacheLoad();
         }
 
-        return; // Successfully loaded from MongoDB
+        return; // Successfully loaded from Supabase
       } catch (error) {
-        console.error(`❌ MongoDB cache loading failed: ${error.message}`);
+        console.error(`❌ Supabase cache loading failed: ${error.message}`);
         console.log("🔄 Falling back to SQLite...");
         // Continue to SQLite fallback
       }
@@ -4015,22 +4029,24 @@ async function retryCacheLoad() {
     // Wait a moment for database to stabilize
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    // Use MongoDB if available, otherwise fallback to SQLite
-    if (mongoManager && mongoManager.isConnected) {
+    // Use Supabase if available, otherwise fallback to SQLite
+    if (supabaseManager && supabaseManager.isConnected) {
       try {
-        console.log("🔄 Attempting MongoDB cache reload...");
+        console.log("🔄 Attempting Supabase cache reload...");
 
-        // Force reload from MongoDB
-        const collection = mongoManager.db.collection("recent_posts_cache");
-        const cachedUsers = await collection.distinct("username");
+        // Force reload from Supabase
+        const { data: cachedUsers, error } = await supabaseManager.client
+          .from("recent_posts_cache")
+          .select("username")
+          .order("username");
 
         if (cachedUsers.length === 0) {
-          console.log("📊 No cached users found in MongoDB during reload");
+          console.log("📊 No cached users found in Supabase during reload");
           return;
         }
 
         console.log(
-          `🔄 Reloading cache for ${cachedUsers.length} users from MongoDB...`
+          `🔄 Reloading cache for ${cachedUsers.length} users from Supabase...`
         );
 
         let loadedUsers = 0;
@@ -4038,7 +4054,7 @@ async function retryCacheLoad() {
 
         for (const username of cachedUsers) {
           try {
-            // Force MongoDB query (bypass memory cache)
+            // Force Supabase query (bypass memory cache)
             const cachedPosts = await collection
               .find({ username })
               .sort({ is_pinned: -1, post_order: 1 })
@@ -4046,7 +4062,7 @@ async function retryCacheLoad() {
 
             if (cachedPosts.length > 0) {
               console.log(
-                `   ✅ @${username}: ${cachedPosts.length} posts reloaded (MongoDB)`
+                `   ✅ @${username}: ${cachedPosts.length} posts reloaded (Supabase)`
               );
 
               if (!global.postCache) {
@@ -4073,17 +4089,17 @@ async function retryCacheLoad() {
 
         if (loadedUsers > 0) {
           console.log(
-            `✅ Automatic MongoDB cache reload successful (${loadedUsers} users, ${totalPosts} posts)`
+            `✅ Automatic Supabase cache reload successful (${loadedUsers} users, ${totalPosts} posts)`
           );
         } else {
           console.log(
-            "❌ Automatic MongoDB cache reload failed - no posts loaded"
+            "❌ Automatic Supabase cache reload failed - no posts loaded"
           );
         }
 
-        return; // Successfully reloaded from MongoDB
+        return; // Successfully reloaded from Supabase
       } catch (error) {
-        console.error(`❌ MongoDB cache reload failed: ${error.message}`);
+        console.error(`❌ Supabase cache reload failed: ${error.message}`);
         console.log("🔄 Falling back to SQLite...");
         // Continue to SQLite fallback
       }
@@ -6541,14 +6557,17 @@ function parseStoriesFromJson(jsonData, username) {
 async function checkStoryProcessed(username, storyId) {
   console.log(`🔍 [DB] Checking if story ${storyId} exists for @${username}`);
 
-  // Use MongoDB if available, otherwise fallback to SQLite
-  if (mongoManager && mongoManager.isConnected) {
+  // Use Supabase if available, otherwise fallback to SQLite
+  if (supabaseManager && supabaseManager.isConnected) {
     try {
-      const exists = await mongoManager.checkStoryProcessed(username, storyId);
-      console.log(`🔍 [DB] Story ${storyId} exists: ${exists} (MongoDB)`);
+      const exists = await supabaseManager.checkStoryProcessed(
+        username,
+        storyId
+      );
+      console.log(`🔍 [DB] Story ${storyId} exists: ${exists} (Supabase)`);
       return exists;
     } catch (error) {
-      console.error(`❌ MongoDB story check failed: ${error.message}`);
+      console.error(`❌ Supabase story check failed: ${error.message}`);
       // Fallback to SQLite
     }
   }
@@ -6582,10 +6601,10 @@ async function checkStoryProcessed(username, storyId) {
 
 // Mark a story as processed
 async function markStoryProcessed(username, storyUrl, storyType, storyId) {
-  // Use MongoDB if available, otherwise fallback to SQLite
-  if (mongoManager && mongoManager.isConnected) {
+  // Use Supabase if available, otherwise fallback to SQLite
+  if (supabaseManager && supabaseManager.isConnected) {
     try {
-      await mongoManager.markStoryProcessed(
+      await supabaseManager.markStoryProcessed(
         username,
         storyUrl,
         storyType,
@@ -6593,7 +6612,7 @@ async function markStoryProcessed(username, storyUrl, storyType, storyId) {
       );
       return;
     } catch (error) {
-      console.error(`❌ MongoDB story marking failed: ${error.message}`);
+      console.error(`❌ Supabase story marking failed: ${error.message}`);
       // Fallback to SQLite
     }
   }
