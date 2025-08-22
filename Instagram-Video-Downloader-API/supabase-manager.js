@@ -46,10 +46,10 @@ class SupabaseManager {
   async initializeTables() {
     try {
       console.log("🔧 Initializing Supabase tables...");
-
+      
       // Note: Tables need to be created manually in Supabase dashboard
-      // For now, we'll just test the connection and let the app fall back to SQLite
-      console.log("ℹ️ Tables will be created automatically when first used");
+      // See supabase-tables.sql file for the SQL commands to run
+      console.log("ℹ️ Tables will be created manually using supabase-tables.sql");
       console.log("✅ Supabase connection test successful");
     } catch (error) {
       console.error("❌ Supabase initialization failed:", error.message);
@@ -73,8 +73,14 @@ class SupabaseManager {
 
       if (error) {
         // Check if it's a table not found error
-        if (error.message.includes("Could not find the table") || error.message.includes("relation") || error.message.includes("does not exist")) {
-          console.log(`⚠️ Supabase table 'recent_posts_cache' does not exist, returning empty cache`);
+        if (
+          error.message.includes("Could not find the table") ||
+          error.message.includes("relation") ||
+          error.message.includes("does not exist")
+        ) {
+          console.log(
+            `⚠️ Supabase table 'recent_posts_cache' does not exist, returning empty cache`
+          );
           return [];
         }
         console.error(
@@ -115,8 +121,14 @@ class SupabaseManager {
 
       if (deleteError) {
         // Check if it's a table not found error
-        if (deleteError.message.includes("Could not find the table") || deleteError.message.includes("relation") || deleteError.message.includes("does not exist")) {
-          console.log(`⚠️ Supabase table 'recent_posts_cache' does not exist, skipping cache update`);
+        if (
+          deleteError.message.includes("Could not find the table") ||
+          deleteError.message.includes("relation") ||
+          deleteError.message.includes("does not exist")
+        ) {
+          console.log(
+            `⚠️ Supabase table 'recent_posts_cache' does not exist, skipping cache update`
+          );
           return;
         }
         console.error(
@@ -152,8 +164,14 @@ class SupabaseManager {
 
         if (insertError) {
           // Check if it's a table not found error
-          if (insertError.message.includes("Could not find the table") || insertError.message.includes("relation") || insertError.message.includes("does not exist")) {
-            console.log(`⚠️ Supabase table 'recent_posts_cache' does not exist, skipping cache update`);
+          if (
+            insertError.message.includes("Could not find the table") ||
+            insertError.message.includes("relation") ||
+            insertError.message.includes("does not exist")
+          ) {
+            console.log(
+              `⚠️ Supabase table 'recent_posts_cache' does not exist, skipping cache update`
+            );
             return;
           }
           console.error(
@@ -189,8 +207,14 @@ class SupabaseManager {
 
       if (error) {
         // Check if it's a table not found error
-        if (error.message.includes("Could not find the table") || error.message.includes("relation") || error.message.includes("does not exist")) {
-          console.log(`⚠️ Supabase table 'processed_posts' does not exist, treating as not processed`);
+        if (
+          error.message.includes("Could not find the table") ||
+          error.message.includes("relation") ||
+          error.message.includes("does not exist")
+        ) {
+          console.log(
+            `⚠️ Supabase table 'processed_posts' does not exist, treating as not processed`
+          );
           return false;
         }
         return false;
@@ -253,8 +277,14 @@ class SupabaseManager {
 
       if (error) {
         // Check if it's a table not found error
-        if (error.message.includes("Could not find the table") || error.message.includes("relation") || error.message.includes("does not exist")) {
-          console.log(`⚠️ Supabase table 'processed_posts' does not exist, skipping post marking`);
+        if (
+          error.message.includes("Could not find the table") ||
+          error.message.includes("relation") ||
+          error.message.includes("does not exist")
+        ) {
+          console.log(
+            `⚠️ Supabase table 'processed_posts' does not exist, skipping post marking`
+          );
           return;
         }
         console.error(
