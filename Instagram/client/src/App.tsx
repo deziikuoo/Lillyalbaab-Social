@@ -10,7 +10,7 @@ const INSTAGRAM_API_BASE = import.meta.env.PROD
 
 // Snapchat API base URL - use FastAPI service on port 8000
 const SNAPCHAT_API_BASE = import.meta.env.PROD
-  ? "https://tyla-social.onrender.com" // Render backend for production
+  ? "https://tyla-social.vercel.app" // Use Vercel for Snapchat endpoints too
   : "http://localhost:8000"; // FastAPI service for development
 
 // Debug: Log the API URL being used
