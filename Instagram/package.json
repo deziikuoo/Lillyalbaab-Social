@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "build": "echo 'No build step required for Node.js backend'",
     "start:ig": "node index.js",
     "start:snap": "cd ../Snapchat-Service && .\\venv\\Scripts\\uvicorn.exe server.main:app --reload --port 8000",
     "start:frontend": "cd client && npm run dev",
