@@ -1,5 +1,95 @@
-// Direct API calls to Python service (bypassing Node.js proxy for manual operations)
-export const SNAP_BASE: string = "http://localhost:8000";
+// Snapchat API base URL with environment-aware configuration and fallbacks
+export const SNAP_BASE: string = import.meta.env.PROD
+  ? "https://tyla-social.vercel.app" // Production: Use Vercel proxy endpoints
+  : "http://localhost:8000"; // Development: Direct Python service
+
+// Fallback URLs for graceful degradation
+const FALLBACK_URLS = {
+  development: ["http://localhost:8000", "http://localhost:3000"],
+  production: [
+    "https://tyla-social.vercel.app",
+    "https://tyla-social.onrender.com",
+  ],
+};
+
+// Enhanced error handling with retry logic
+const fetchWithFallback = async (
+  url: string,
+  options: RequestInit = {},
+  maxRetries: number = 2
+): Promise<Response> => {
+  const fallbackUrls = import.meta.env.PROD
+    ? FALLBACK_URLS.production
+    : FALLBACK_URLS.development;
+
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const currentUrl =
+      attempt === 0
+        ? url
+        : fallbackUrls[attempt - 1] + url.replace(SNAP_BASE, "");
+
+    try {
+      logInfo(
+        "snapchat.api",
+        "fetchWithFallback",
+        25,
+        `🔄 Attempt ${attempt + 1}: ${currentUrl}`
+      );
+
+      const response = await fetch(currentUrl, {
+        ...options,
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (response.ok) {
+        logInfo(
+          "snapchat.api",
+          "fetchWithFallback",
+          35,
+          `✅ Success on attempt ${attempt + 1}`
+        );
+        return response;
+      }
+
+      // If not ok but we have more attempts, continue to fallback
+      if (attempt < maxRetries) {
+        logInfo(
+          "snapchat.api",
+          "fetchWithFallback",
+          41,
+          `⚠️ Attempt ${attempt + 1} failed (${
+            response.status
+          }), trying fallback`
+        );
+        continue;
+      }
+
+      return response; // Return the last response even if not ok
+    } catch (error) {
+      lastError = error as Error;
+      logError(
+        "snapchat.api",
+        "fetchWithFallback",
+        48,
+        `❌ Attempt ${attempt + 1} error: ${lastError.message}`
+      );
+
+      if (attempt < maxRetries) {
+        logInfo(
+          "snapchat.api",
+          "fetchWithFallback",
+          51,
+          `🔄 Trying fallback URL...`
+        );
+        continue;
+      }
+    }
+  }
+
+  throw lastError || new Error("All API endpoints failed");
+};
 
 // Unified logging format (same as Python loguru)
 const getTimestamp = () => {
