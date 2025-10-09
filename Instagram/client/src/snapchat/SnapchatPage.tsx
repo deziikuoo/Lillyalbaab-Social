@@ -96,16 +96,7 @@ const SnapchatPage: React.FC = () => {
   }, [mediaType]);
 
   // Auto-refresh gallery every 5 seconds when there are items (more frequent for real-time updates)
-  useEffect(() => {
-    if (galleryItems.length > 0) {
-      const interval = setInterval(() => {
-        console.log("🔄 [SNAPCHAT GALLERY] Auto-refreshing gallery...");
-        fetchGallery();
-      }, 5000);
-
-      return () => clearInterval(interval);
-    }
-  }, [galleryItems.length]);
+  // Auto-refresh disabled - users must manually refresh gallery
 
   // Listen for manual download completion events
   useEffect(() => {
@@ -132,17 +123,7 @@ const SnapchatPage: React.FC = () => {
     };
   }, []);
 
-  // More frequent refresh when gallery is empty (to catch new downloads)
-  useEffect(() => {
-    if (galleryItems.length === 0 && !loading) {
-      const interval = setInterval(() => {
-        console.log("🔍 [SNAPCHAT GALLERY] Checking for new downloads...");
-        fetchGallery();
-      }, 3000); // Check every 3 seconds when empty
-
-      return () => clearInterval(interval);
-    }
-  }, [galleryItems.length, loading]);
+  // Auto-refresh disabled - users must manually refresh gallery
 
   return (
     <div className="gallery-container">
