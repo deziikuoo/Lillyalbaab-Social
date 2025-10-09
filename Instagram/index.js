@@ -761,11 +761,25 @@ const port = process.env.PORT || 3000;
 // Middleware to parse JSON bodies
 app.use(express.json());
 
-// CORS configuration - allow all origins for now
+// CORS configuration - allow Vercel frontend and all origins
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
+  const origin = req.headers.origin;
+  const allowedOrigins = [
+    "https://tyla-social.vercel.app",
+    "https://tyla-social.onrender.com",
+    "http://localhost:5173",
+    "http://localhost:3000"
+  ];
+  
+  if (allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+  } else {
+    res.header("Access-Control-Allow-Origin", "*");
+  }
+  
   res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.header("Access-Control-Allow-Credentials", "true");
 
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
