@@ -13,3 +13,4 @@ portalocker==3.2.0
 pyperclip==1.9.0
 supabase==2.18.1
 realtime==2.7.0
+psutil==6.1.0
