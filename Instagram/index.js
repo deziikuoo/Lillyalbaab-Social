@@ -6687,131 +6687,134 @@ app.get("/poll-now", async (req, res) => {
 // snapchatPolling.setupSnapchatEndpoints(app);
 
 // Snapchat proxy endpoints for Vercel deployment
-const SNAPCHAT_SERVICE_URL = process.env.SNAPCHAT_SERVICE_URL || 'http://localhost:8000';
+const SNAPCHAT_SERVICE_URL =
+  process.env.SNAPCHAT_SERVICE_URL || "http://localhost:8000";
 
 // Snapchat status endpoint
-app.get('/snapchat-status', async (req, res) => {
+app.get("/snapchat-status", async (req, res) => {
   try {
     const response = await fetch(`${SNAPCHAT_SERVICE_URL}/status`);
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(500).json({ 
-      error: 'Snapchat service unavailable', 
+    res.status(500).json({
+      error: "Snapchat service unavailable",
       message: error.message,
-      snapchat_url: SNAPCHAT_SERVICE_URL 
+      snapchat_url: SNAPCHAT_SERVICE_URL,
     });
   }
 });
 
 // Snapchat stats endpoint
-app.get('/snapchat-stats', async (req, res) => {
+app.get("/snapchat-stats", async (req, res) => {
   try {
     const response = await fetch(`${SNAPCHAT_SERVICE_URL}/stats`);
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(500).json({ 
-      error: 'Snapchat service unavailable', 
-      message: error.message 
+    res.status(500).json({
+      error: "Snapchat service unavailable",
+      message: error.message,
     });
   }
 });
 
 // Snapchat gallery endpoint
-app.get('/gallery/:type', async (req, res) => {
+app.get("/gallery/:type", async (req, res) => {
   try {
     const { type } = req.params;
     const response = await fetch(`${SNAPCHAT_SERVICE_URL}/gallery/${type}`);
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(500).json({ 
-      error: 'Snapchat service unavailable', 
-      message: error.message 
+    res.status(500).json({
+      error: "Snapchat service unavailable",
+      message: error.message,
     });
   }
 });
 
 // Snapchat download endpoint
-app.post('/snapchat-download', async (req, res) => {
+app.post("/snapchat-download", async (req, res) => {
   try {
     const response = await fetch(`${SNAPCHAT_SERVICE_URL}/download`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body)
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body),
     });
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(500).json({ 
-      error: 'Snapchat service unavailable', 
-      message: error.message 
+    res.status(500).json({
+      error: "Snapchat service unavailable",
+      message: error.message,
     });
   }
 });
 
 // Snapchat polling endpoints
-app.post('/snapchat-start-polling', async (req, res) => {
+app.post("/snapchat-start-polling", async (req, res) => {
   try {
     const response = await fetch(`${SNAPCHAT_SERVICE_URL}/start-polling`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body)
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body),
     });
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(500).json({ 
-      error: 'Snapchat service unavailable', 
-      message: error.message 
+    res.status(500).json({
+      error: "Snapchat service unavailable",
+      message: error.message,
     });
   }
 });
 
-app.post('/snapchat-stop-polling', async (req, res) => {
+app.post("/snapchat-stop-polling", async (req, res) => {
   try {
     const response = await fetch(`${SNAPCHAT_SERVICE_URL}/stop-polling`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body)
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body),
     });
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(500).json({ 
-      error: 'Snapchat service unavailable', 
-      message: error.message 
+    res.status(500).json({
+      error: "Snapchat service unavailable",
+      message: error.message,
     });
   }
 });
 
-app.get('/snapchat-poll-now', async (req, res) => {
+app.get("/snapchat-poll-now", async (req, res) => {
   try {
-    const response = await fetch(`${SNAPCHAT_SERVICE_URL}/poll-now?${new URLSearchParams(req.query)}`);
+    const response = await fetch(
+      `${SNAPCHAT_SERVICE_URL}/poll-now?${new URLSearchParams(req.query)}`
+    );
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(500).json({ 
-      error: 'Snapchat service unavailable', 
-      message: error.message 
+    res.status(500).json({
+      error: "Snapchat service unavailable",
+      message: error.message,
     });
   }
 });
 
-app.post('/snapchat-set-target', async (req, res) => {
+app.post("/snapchat-set-target", async (req, res) => {
   try {
     const response = await fetch(`${SNAPCHAT_SERVICE_URL}/set-target`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body)
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body),
     });
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(500).json({ 
-      error: 'Snapchat service unavailable', 
-      message: error.message 
+    res.status(500).json({
+      error: "Snapchat service unavailable",
+      message: error.message,
     });
   }
 });
