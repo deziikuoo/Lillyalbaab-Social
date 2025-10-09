@@ -789,15 +789,23 @@ const dbPath =
     ? "/opt/render/project/src/data/instagram_tracker.db" // Render persistent storage
     : "./instagram_tracker.db"; // Local development
 
-// Downloads directory configuration for Render
-const DOWNLOADS_DIR =
-  process.env.NODE_ENV === "production"
-    ? "/opt/render/project/src/data/downloads" // Render persistent storage
-    : "./downloads"; // Local development
+// Downloads directory configuration for different environments
+const DOWNLOADS_DIR = (() => {
+  if (process.env.VERCEL) {
+    // Vercel: Use /tmp for temporary files (read-write)
+    return "/tmp/downloads";
+  } else if (process.env.NODE_ENV === "production") {
+    // Render: Use persistent storage
+    return "/opt/render/project/src/data/downloads";
+  } else {
+    // Local development
+    return "./downloads";
+  }
+})();
 
 // Ensure directories exist for persistent storage
-// Create data directory if it doesn't exist (for production)
-if (process.env.NODE_ENV === "production") {
+// Create data directory if it doesn't exist (skip for Vercel)
+if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
   const dataDir = "/opt/render/project/src/data";
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
@@ -805,10 +813,14 @@ if (process.env.NODE_ENV === "production") {
   }
 }
 
-// Ensure downloads directory exists
-if (!fs.existsSync(DOWNLOADS_DIR)) {
-  fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
-  console.log(`📁 Created downloads directory: ${DOWNLOADS_DIR}`);
+// Ensure downloads directory exists (works for Vercel /tmp)
+try {
+  if (!fs.existsSync(DOWNLOADS_DIR)) {
+    fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
+    console.log(`📁 Created downloads directory: ${DOWNLOADS_DIR}`);
+  }
+} catch (error) {
+  console.log(`⚠️ Could not create downloads directory: ${error.message}`);
 }
 
 // Initialize Supabase database
@@ -1579,10 +1591,14 @@ async function sendVideoToTelegram(videoUrl, caption = "") {
         },
       });
 
-      // Create temp directory if it doesn't exist
-      const tempDir = path.join(__dirname, "temp");
-      if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir, { recursive: true });
+      // Create temp directory if it doesn't exist (Vercel-compatible)
+      const tempDir = process.env.VERCEL ? "/tmp" : path.join(__dirname, "temp");
+      try {
+        if (!fs.existsSync(tempDir)) {
+          fs.mkdirSync(tempDir, { recursive: true });
+        }
+      } catch (error) {
+        console.log(`⚠️ Could not create temp directory: ${error.message}`);
       }
 
       // Step 2: Save video to temporary file
