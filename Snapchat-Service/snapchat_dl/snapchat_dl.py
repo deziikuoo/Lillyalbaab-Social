@@ -16,8 +16,14 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 import portalocker
-import msvcrt
 import traceback
+import platform
+
+# Import msvcrt only on Windows
+if platform.system() == "Windows":
+    import msvcrt
+else:
+    msvcrt = None
 
 from snapchat_dl.downloader import download_url
 from snapchat_dl.utils import APIResponseError
@@ -49,8 +55,9 @@ class FileLock:
                 # Try to acquire the lock
                 self.lock = open(self.lock_file, 'r+')
                 try:
-                    # Try to get an exclusive lock
-                    msvcrt.locking(self.lock.fileno(), msvcrt.LK_NBLCK, 1)
+                    # Try to get an exclusive lock (Windows-specific)
+                    if msvcrt:
+                        msvcrt.locking(self.lock.fileno(), msvcrt.LK_NBLCK, 1)
                     # If successful, write our PID to the lock file
                     self.lock.seek(0)
                     self.lock.write(str(os.getpid()))
@@ -77,8 +84,9 @@ class FileLock:
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.lock:
             try:
-                # Release the lock
-                msvcrt.locking(self.lock.fileno(), msvcrt.LK_UNLCK, 1)
+                # Release the lock (Windows-specific)
+                if msvcrt:
+                    msvcrt.locking(self.lock.fileno(), msvcrt.LK_UNLCK, 1)
                 self.lock.close()
             except:
                 pass
