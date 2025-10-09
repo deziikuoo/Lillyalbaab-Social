@@ -2,12 +2,12 @@
 
 ## ✅ **Status: FULLY INTEGRATED AND READY**
 
-The Snapchat-Service backend and frontend are now fully integrated with the Instagram-Video-Downloader-API project and will run concurrently when you execute `npm run start:all`.
+The Snapchat-Service backend and frontend are now fully integrated with the Instagram project and will run concurrently when you execute `npm run start:all`.
 
 ## 🚀 **Quick Start**
 
 ```bash
-cd Instagram-Video-Downloader-API
+cd Instagram
 npm run start:all
 ```
 
@@ -196,6 +196,6 @@ All services are configured for PM2 production deployment:
 
 ## 🎉 **Success!**
 
-The Snapchat-Service is now fully integrated and ready to run concurrently with the Instagram-Video-Downloader-API. All services will start together when you run `npm run start:all`, providing a complete social media content management solution.
+The Snapchat-Service is now fully integrated and ready to run concurrently with the Instagram service. All services will start together when you run `npm run start:all`, providing a complete social media content management solution.
 
 **Status**: ✅ **COMPLETE AND READY FOR USE**

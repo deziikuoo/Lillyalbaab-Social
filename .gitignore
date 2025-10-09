@@ -111,7 +111,7 @@ debug-*.js
 
 # Downloaded media files
 Snapchat-Service/server/downloads/
-Instagram-Video-Downloader-API/downloads/
+Instagram/downloads/
 *.mp4
 *.jpg
 *.jpeg
@@ -126,6 +126,12 @@ __pycache__/
 *.pyd
 .Python
 *.so
+
+# Python virtual environments
+venv/
+env/
+ENV/
+.venv
 
 # Keep-alive scripts (optional - remove if you want to include them)
 # keep-alive.js

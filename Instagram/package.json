@@ -1,17 +1,15 @@
 {
-  "name": "instagram-video-downloader-api",
+  "name": "instagram",
   "version": "1.0.2",
   "description": "A simple Node.js API to download Instagram videos using Express and Cheerio.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "start:ig": "node index.js",
-    "start:snap": "cd ..\\Snapchat-Service && venv\\Scripts\\python.exe -m uvicorn server.main:app --reload --port 8000",
-    "start:snap-frontend": "cd client/src/snapchat-frontend && npm run dev",
-    "install:snap-frontend": "cd client/src/snapchat-frontend && npm install",
-    "start:both": "concurrently -k -n \"Instagram,Snapchat\" -c \"cyan,magenta\" \"npm run start:ig --silent\" \"npm run start:snap --silent\"",
+    "start:snap": "cd ../Snapchat-Service && .\\venv\\Scripts\\uvicorn.exe server.main:app --reload --port 8000",
     "start:frontend": "cd client && npm run dev",
-    "start:all": "concurrently -k -n \"Instagram,Snapchat,SnapFrontend,Frontend\" -c \"cyan,magenta,blue,green\" \"npm run start:ig --silent\" \"npm run start:snap --silent\" \"npm run start:snap-frontend --silent\" \"npm run start:frontend --silent\"",
+    "start:both": "concurrently -k -n \"Instagram,Snapchat\" -c \"cyan,magenta\" \"npm run start:ig --silent\" \"npm run start:snap --silent\"",
+    "start:all": "concurrently -k -n \"Instagram,Snapchat,Frontend\" -c \"cyan,magenta,green\" \"npm run start:ig --silent\" \"npm run start:snap --silent\" \"npm run start:frontend --silent\"",
     "monitor": "node ../monitor-services.js",
     "start:monitored": "concurrently -k -n \"API,HealthMonitor\" -c \"cyan,yellow\" \"npm start\" \"npm run monitor-health\"",
     "pm2:start": "pm2 start ../ecosystem.config.js",
@@ -23,7 +21,7 @@
     "keep-alive:render": "HEALTH_URL=https://tyla-social.onrender.com/health node keep-alive.js",
     "monitor-health": "node monitor-health.js",
     "test-cache": "node test-cache.js",
-    "postinstall": "npx puppeteer browsers install chrome && npm run install:snap-frontend",
+    "postinstall": "npx puppeteer browsers install chrome",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

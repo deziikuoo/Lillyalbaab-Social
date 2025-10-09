@@ -18,11 +18,11 @@ class ServiceMonitor {
         port: 8000,
         restartCommand: "npm run start:snap",
       },
-      snapchatFrontend: {
-        name: "Snapchat Frontend",
-        healthUrl: "http://localhost:5174",
-        port: 5174,
-        restartCommand: "npm run start:snap-frontend",
+      frontend: {
+        name: "Unified Frontend",
+        healthUrl: "http://localhost:5173",
+        port: 5173,
+        restartCommand: "npm run start:frontend",
       },
     };
 

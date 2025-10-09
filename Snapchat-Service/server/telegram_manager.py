@@ -32,6 +32,15 @@ class TelegramErrorHandler:
         
         error_message = str(error)
         
+        # Handle the specific list error
+        if "'list' object has no attribute 'get'" in error_message:
+            return {
+                "status": "error",
+                "type": "list_response_error",
+                "message": "Telegram API returned unexpected list response instead of dictionary",
+                "retry": False
+            }
+        
         # Categorize errors
         if "bot was blocked" in error_message.lower():
             return {
@@ -155,6 +164,10 @@ class TelegramManager:
             async with self.session.post(f"{self.base_url}/sendPhoto", data=data) as response:
                 if response.status == 200:
                     result = await response.json()
+                    # Debug: Check what Telegram API returns
+                    logger.info(f"🔍 [DEBUG] Telegram API response type: {type(result)}")
+                    logger.info(f"🔍 [DEBUG] Telegram API response content: {result}")
+                    
                     if result.get("ok"):
                         logger.info(f"✅ Photo sent to Telegram: {os.path.basename(photo_path)}")
                         return result["result"]
@@ -200,11 +213,25 @@ class TelegramManager:
             async with self.session.post(f"{self.base_url}/sendVideo", data=data) as response:
                 if response.status == 200:
                     result = await response.json()
+                    # Debug: Check what Telegram API returns
+                    logger.info(f"🔍 [DEBUG] Telegram API response type: {type(result)}")
+                    logger.info(f"🔍 [DEBUG] Telegram API response content: {result}")
+                    
+                    # Validate response format
+                    if isinstance(result, list):
+                        logger.error(f"❌ Telegram API returned list instead of dict: {result}")
+                        raise Exception(f"Telegram API returned unexpected list response: {result}")
+                    
+                    if not isinstance(result, dict):
+                        logger.error(f"❌ Telegram API returned unexpected type: {type(result)} - {result}")
+                        raise Exception(f"Telegram API returned unexpected response type: {type(result)}")
+                    
                     if result.get("ok"):
                         logger.info(f"✅ Video sent to Telegram: {os.path.basename(video_path)}")
                         return result["result"]
                     else:
-                        raise Exception(f"Telegram API error: {result}")
+                        error_description = result.get("description", "Unknown error")
+                        raise Exception(f"Telegram API error: {error_description}")
                 else:
                     error_text = await response.text()
                     logger.error(f"❌ Failed to send video: {response.status} - {error_text}")
@@ -214,14 +241,81 @@ class TelegramManager:
             logger.error(f"Error sending video to Telegram: {e}")
             raise
     
+    async def send_text(self, text: str) -> dict:
+        """Send text message to Telegram channel"""
+        await self.rate_limiter.wait_if_needed()
+        
+        try:
+            if not self.session:
+                self.session = aiohttp.ClientSession()
+            
+            # Prepare data
+            data = {
+                'chat_id': self.channel_id,
+                'text': text,
+                'parse_mode': 'HTML'
+            }
+            
+            # Send request
+            async with self.session.post(f"{self.base_url}/sendMessage", json=data) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    # Debug: Check what Telegram API returns
+                    logger.info(f"🔍 [DEBUG] Telegram API response type: {type(result)}")
+                    logger.info(f"🔍 [DEBUG] Telegram API response content: {result}")
+                    
+                    # Validate response format
+                    if isinstance(result, list):
+                        logger.error(f"❌ Telegram API returned list instead of dict: {result}")
+                        raise Exception(f"Telegram API returned unexpected list response: {result}")
+                    
+                    if not isinstance(result, dict):
+                        logger.error(f"❌ Telegram API returned unexpected type: {type(result)} - {result}")
+                        raise Exception(f"Telegram API returned unexpected response type: {type(result)}")
+                    
+                    if result.get("ok"):
+                        logger.info(f"✅ Text message sent to Telegram")
+                        return result["result"]
+                    else:
+                        error_description = result.get("description", "Unknown error")
+                        raise Exception(f"Telegram API error: {error_description}")
+                else:
+                    error_text = await response.text()
+                    logger.error(f"❌ Failed to send text message: {response.status} - {error_text}")
+                    raise Exception(f"Telegram API error: {error_text}")
+                    
+        except Exception as e:
+            logger.error(f"Error sending text message to Telegram: {e}")
+            raise
+    
     async def send_with_retry(self, send_func, *args, max_retries: int = 3):
         """Send to Telegram with exponential backoff retry"""
         
         for attempt in range(max_retries):
             try:
-                return await send_func(*args)
+                result = await send_func(*args)
+                # Debug: Check what send_func returns
+                logger.info(f"🔍 [DEBUG] send_func return type: {type(result)}")
+                logger.info(f"🔍 [DEBUG] send_func return content: {result}")
+                
+                # Validate result format
+                if isinstance(result, list):
+                    logger.error(f"❌ send_func returned list instead of dict: {result}")
+                    raise Exception(f"Unexpected list response from send_func: {result}")
+                
+                if not isinstance(result, dict):
+                    logger.error(f"❌ send_func returned unexpected type: {type(result)} - {result}")
+                    raise Exception(f"Unexpected response type from send_func: {type(result)}")
+                
+                return result
                 
             except Exception as e:
+                # Handle the specific list error
+                if "'list' object has no attribute 'get'" in str(e):
+                    logger.error(f"❌ List error detected: {e}")
+                    logger.error(f"❌ This usually means the Telegram API returned a list instead of a dict")
+                    raise Exception(f"Telegram API returned unexpected list response: {e}")
+                
                 error_info = await TelegramErrorHandler.handle_telegram_error(e, {
                     "attempt": attempt + 1,
                     "max_retries": max_retries
@@ -234,6 +328,10 @@ class TelegramManager:
                 wait_time = error_info.get("retry_delay", 2 ** attempt)
                 logger.warning(f"Retrying in {wait_time} seconds (attempt {attempt + 1}/{max_retries})")
                 await asyncio.sleep(wait_time)
+    
+    async def send_text_with_retry(self, text: str, max_retries: int = 3) -> dict:
+        """Send text with retry logic"""
+        return await self.send_with_retry(self.send_text, text, max_retries=max_retries)
     
     async def send_photo_with_retry(self, photo_path: str, caption: str, max_retries: int = 3) -> dict:
         """Send photo with retry logic"""

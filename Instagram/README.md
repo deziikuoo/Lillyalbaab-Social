@@ -30,7 +30,7 @@ A full-stack solution for downloading Instagram media (photos, videos, carousels
 
 ## ⚙️ Configuration
 
-Create a `.env` file in `Instagram-Video-Downloader-API/`:
+Create a `.env` file in `Instagram/`:
 
 ```env
 # Server
@@ -42,15 +42,17 @@ TELEGRAM_CHANNEL_ID=your_channel_id
 ```
 
 Notes:
+
 - Telegram settings are optional; if omitted, Telegram features are disabled.
 - User agent rotation and IG headers are handled internally.
 
 ## 🚀 Getting Started
 
 ### 1) Install dependencies
+
 ```bash
 # Backend
-cd Instagram-Video-Downloader-API
+cd Instagram
 npm install
 
 # Frontend
@@ -60,6 +62,7 @@ cd ..
 ```
 
 ### 2) Run in development
+
 ```bash
 # Backend
 npm start
@@ -68,10 +71,11 @@ npm start
 # Frontend (in a separate terminal)
 cd client
 npm run dev
-# Serves UI at http://localhost:5173
+# Serves unified UI at http://localhost:5173
 ```
 
 ### 3) Build for production (optional)
+
 ```bash
 cd client
 npm run build
@@ -80,11 +84,12 @@ cd ..
 
 ## 🎮 Using the App
 
-- Open the UI at `http://localhost:5173`
+- Open the unified UI at `http://localhost:5173`
 - Paste any public Instagram URL and click Download
 - Use “Send to Telegram” on items (if Telegram is configured)
 
 ### Automated monitoring
+
 - Click “Change Target” to set the target account (e.g., `@instagram`)
 - Open “Polling” and click “Start Polling”
 - Smart scheduler runs checks (15–45 mins depending on activity)
@@ -93,18 +98,21 @@ cd ..
 ## 🔌 API Reference (Backend)
 
 Core endpoints:
+
 - `GET /igdl?url=<instagram_url>`: Download media for a given post URL
 - `POST /send-to-telegram` { videoUrl, caption?, originalInstagramUrl? }
 - `GET /target`: Get current target and polling status
 - `POST /target` { username | url }: Set target account
 
 Automation endpoints:
+
 - `POST /start-polling` | `POST /stop-polling`
 - `GET /poll-now?force=true`
 - `POST /reset-processed` (clears processed history and recent cache)
 - `POST /clear-cache` | `POST /clear-all` (manual cleanup)
 
 Tracking/Statistics endpoints:
+
 - `GET /stats`: JSON snapshot of request stats
 - `POST /stats/print`: Pretty-print stats to server console
 - `POST /stats/reset`: Reset counters
@@ -139,6 +147,7 @@ node test-tracking.js
 ```
 
 Log file:
+
 - A rolling log of requests is written to `request-logs.txt` in the API root.
 
 ## 🧠 Polling & Activity Model
@@ -166,7 +175,7 @@ Log file:
 ## 📁 Project Structure
 
 ```
-Instagram-Video-Downloader-API/
+Instagram/
 ├─ client/                         # React frontend (Vite + TS)
 │  ├─ src/
 │  │  └─ App.tsx                   # UI with status controls
@@ -186,6 +195,7 @@ Instagram-Video-Downloader-API/
 ## 📦 Dependencies
 
 See `package.json` files for exact versions. Key libraries used:
+
 - Backend: express, axios, puppeteer, sqlite3, cheerio, form-data, node-fetch, node-cron, dotenv
 - Frontend: react, react-dom, vite, typescript
 
@@ -199,6 +209,7 @@ See `package.json` files for exact versions. Key libraries used:
 ## 📄 License & Disclaimer
 
 This project is for educational and personal use. You are responsible for:
+
 - Respecting Instagram’s Terms of Service
 - Obtaining permissions for content you download/post
 - Complying with local laws and platform policies

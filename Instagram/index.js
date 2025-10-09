@@ -14,6 +14,19 @@ const InstagramCarouselDownloader = require("./instagram-carousel-downloader");
 // Add fetch for internal API calls
 const fetch = require("node-fetch");
 
+// Snapchat polling module removed - using unified Python service only
+// const snapchatPolling = require("./snapchat-polling");
+
+// Color coding for logs
+const colors = {
+  instagram: "\x1b[35m", // Pink/Magenta
+  reset: "\x1b[0m",
+};
+
+const instagramLog = (message) => {
+  console.log(`${colors.instagram}${message}${colors.reset}`);
+};
+
 // ===== INSTAGRAM SESSION MANAGEMENT ===== - COMMENTED OUT DUE TO PUPPETEER ISSUES
 /*
 class InstagramSession {
@@ -340,13 +353,61 @@ const memoryManager = {
         }
       }
 
-      // Schedule 4-week cache cleanup (every 1344 cleanup cycles = 4 weeks) - TEMPORARILY DISABLED
+      // Schedule 4-week cache cleanup (every 1344 cleanup cycles = 4 weeks)
       // 30 min * 1344 = 40320 min = 672 hours = 28 days = 4 weeks
       const weeklyCleanupCount = Math.floor(
         (Date.now() - this.lastCleanup) / this.cleanupInterval
       );
       if (weeklyCleanupCount % 1344 === 0 && weeklyCleanupCount > 0) {
         console.log("📋 Scheduling 4-week cache cleanup operation...");
+
+        // Perform 4-week cleanup operations
+        try {
+          // Clean up Supabase cache (keep last 8 posts per user)
+          if (supabaseManager) {
+            const cleanupResult = await supabaseManager.cleanExpiredCache();
+            console.log(
+              `🧹 Supabase cache cleanup: ${cleanupResult.stories_removed} stories, ${cleanupResult.posts_removed} posts removed`
+            );
+          }
+
+          // Clean up downloads folder (remove files older than 4 weeks)
+          const fourWeeksAgo = Date.now() - 4 * 7 * 24 * 60 * 60 * 1000; // 4 weeks in milliseconds
+          let downloadsRemoved = 0;
+
+          if (fs.existsSync(DOWNLOADS_DIR)) {
+            const cleanupDownloads = (dirPath) => {
+              const items = fs.readdirSync(dirPath);
+              items.forEach((item) => {
+                const itemPath = path.join(dirPath, item);
+                const stats = fs.statSync(itemPath);
+
+                if (stats.isDirectory()) {
+                  cleanupDownloads(itemPath);
+                  // Remove empty directories
+                  if (fs.readdirSync(itemPath).length === 0) {
+                    fs.rmdirSync(itemPath);
+                  }
+                } else if (
+                  stats.isFile() &&
+                  stats.mtime.getTime() < fourWeeksAgo
+                ) {
+                  fs.unlinkSync(itemPath);
+                  downloadsRemoved++;
+                }
+              });
+            };
+
+            cleanupDownloads(DOWNLOADS_DIR);
+            console.log(
+              `🧹 Downloads cleanup: ${downloadsRemoved} files removed`
+            );
+          }
+
+          console.log("✅ 4-week cleanup completed");
+        } catch (error) {
+          console.error("❌ 4-week cleanup failed:", error);
+        }
       }
 
       try {
@@ -878,30 +939,81 @@ function getRandomUserAgent() {
   return userAgents[Math.floor(Math.random() * userAgents.length)];
 }
 
-// Smart delay function with exponential backoff support
+// Enhanced smart delay function with comprehensive logging and GraphQL API protection
 let errorMultiplier = 1; // Global error multiplier for adaptive delays
+let graphqlCallCount = 0; // Track GraphQL API calls for enhanced protection
+let currentPollingUserAgent = null; // Consistent user agent per polling cycle
 
-function smartDelay(min = 1000, max = 4000, multiplier = 1) {
+function smartDelay(
+  min = 1000,
+  max = 4000,
+  multiplier = 1,
+  context = "general"
+) {
   const adjustedMin = Math.floor(min * multiplier * errorMultiplier);
   const adjustedMax = Math.floor(max * multiplier * errorMultiplier);
   const delay =
     Math.floor(Math.random() * (adjustedMax - adjustedMin + 1)) + adjustedMin;
 
-  // Log delay for debugging (only if significantly different from base)
-  if (multiplier > 1 || errorMultiplier > 1) {
-    console.log(
-      `⏱️ Smart delay: ${delay}ms (base: ${min}-${max}ms, multiplier: ${multiplier}, errorMultiplier: ${errorMultiplier.toFixed(
-        1
-      )})`
-    );
-  }
+  // Enhanced logging for all delays, especially GraphQL API calls
+  const timestamp = new Date().toISOString().split("T")[1].split(".")[0];
+  console.log(
+    `⏱️ [${timestamp}] ${context} delay: ${delay}ms (base: ${min}-${max}ms, multiplier: ${multiplier}, errorMultiplier: ${errorMultiplier.toFixed(
+      1
+    )})`
+  );
 
-  return new Promise((resolve) => setTimeout(resolve, delay));
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      console.log(`✅ [${timestamp}] ${context} delay completed`);
+      resolve();
+    }, delay);
+  });
 }
 
 // Enhanced random delay with error adaptation
 function randomDelay(min = 2000, max = 8000) {
-  return smartDelay(min, max, 1);
+  return smartDelay(min, max, 1, "random");
+}
+
+// Specialized GraphQL API delay function with enhanced protection
+function graphqlDelay(postType = "standard", carouselSize = 0) {
+  graphqlCallCount++;
+
+  let minDelay, maxDelay;
+
+  if (carouselSize > 5) {
+    // Large carousel - highest protection
+    minDelay = 4000;
+    maxDelay = 8000;
+    console.log(
+      `🛡️ GraphQL API call #${graphqlCallCount}: Large carousel (${carouselSize} items) - applying maximum protection delay`
+    );
+  } else if (carouselSize > 1) {
+    // Small carousel - medium protection
+    minDelay = 3000;
+    maxDelay = 6000;
+    console.log(
+      `🛡️ GraphQL API call #${graphqlCallCount}: Small carousel (${carouselSize} items) - applying medium protection delay`
+    );
+  } else {
+    // Single post - standard protection
+    minDelay = 2500;
+    maxDelay = 5000;
+    console.log(
+      `🛡️ GraphQL API call #${graphqlCallCount}: Single post - applying standard protection delay`
+    );
+  }
+
+  // Add progressive delay based on call count
+  const progressiveMultiplier = Math.min(1 + graphqlCallCount * 0.1, 2);
+
+  return smartDelay(
+    minDelay,
+    maxDelay,
+    progressiveMultiplier,
+    `graphql-${postType}`
+  );
 }
 
 // Rate limit delay (long delay for rate limit errors)
@@ -928,6 +1040,37 @@ function decreaseErrorMultiplier() {
   if (errorMultiplier < 1.1) {
     errorMultiplier = 1; // Reset to normal
   }
+}
+
+// Reset GraphQL call counter for new polling cycle
+function resetGraphQLCallCounter() {
+  const previousCount = graphqlCallCount;
+  graphqlCallCount = 0;
+  console.log(
+    `🔄 GraphQL API call counter reset: ${previousCount} calls in previous cycle`
+  );
+}
+
+// Set consistent user agent for polling cycle
+function setPollingUserAgent(userAgent) {
+  currentPollingUserAgent = userAgent;
+  console.log(
+    `🔒 Polling cycle user agent set: ${userAgent.substring(0, 50)}...`
+  );
+}
+
+// Get consistent user agent for polling cycle
+function getPollingUserAgent() {
+  if (!currentPollingUserAgent) {
+    currentPollingUserAgent = getRandomUserAgent();
+    console.log(
+      `🔄 Generated new polling cycle user agent: ${currentPollingUserAgent.substring(
+        0,
+        50
+      )}...`
+    );
+  }
+  return currentPollingUserAgent;
 }
 
 // Exponential backoff for rate limiting
@@ -1192,7 +1335,7 @@ async function sendPhotoToTelegram(photoUrl, caption = "") {
       url: photoUrl,
       responseType: "stream",
       headers: {
-        "User-Agent": getRandomUserAgent(),
+        "User-Agent": getPollingUserAgent(),
         Accept: "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Cache-Control": "no-cache",
@@ -2695,21 +2838,28 @@ async function scrapeInstagramPosts(username, userAgent) {
     console.log(`🔍 Checking for new posts from @${username}`);
 
     // Try Web Profile Info API first (URLs only)
-    const postUrls = await scrapeWithWebProfileInfo(username, userAgent);
-    if (postUrls.length > 0) {
-      console.log(`✅ Web Profile Info API found ${postUrls.length} post URLs`);
+    const { pinnedPosts, regularPosts } = await scrapeWithWebProfileInfo(
+      username,
+      userAgent
+    );
+
+    if (pinnedPosts.length > 0 || regularPosts.length > 0) {
+      console.log(
+        `✅ Web Profile Info API found ${pinnedPosts.length} pinned posts and ${regularPosts.length} regular posts`
+      );
 
       // Warn about large profiles and suggest limits
-      if (postUrls.length >= 8) {
+      const totalPosts = pinnedPosts.length + regularPosts.length;
+      if (totalPosts >= 6) {
         console.log(
-          `⚠️ Large profile detected (${postUrls.length} posts). Consider limiting to avoid overwhelming servers.`
+          `⚠️ Large profile detected (${totalPosts} posts). Consider limiting to avoid overwhelming servers.`
         );
         console.log(
-          `💡 Processing will continue with current limits (max 8 posts).`
+          `💡 Processing will continue with current limits (max 3 pinned + 3 regular posts).`
         );
       }
 
-      return postUrls; // Return URLs only, let main processing handle GraphQL
+      return { pinnedPosts, regularPosts }; // Return separated posts
     }
 
     // Fallback to browser automation - COMMENTED OUT DUE TO PUPPETEER ISSUES
@@ -2747,7 +2897,7 @@ async function scrapeInstagramPosts(username, userAgent) {
       `🔄 Attempting cache fallback due to API failure (browser automation disabled)...`
     );
     try {
-      const cachedPosts = getCachedRecentPosts(username);
+      const cachedPosts = await getCachedRecentPosts(username);
       if (cachedPosts && cachedPosts.length > 0) {
         console.log(
           `📋 Using cached data for @${username} (${cachedPosts.length} posts)`
@@ -2758,7 +2908,15 @@ async function scrapeInstagramPosts(username, userAgent) {
         console.log(
           `⚠️ System is operating in degraded mode - manual intervention may be required`
         );
-        return cachedPosts;
+
+        // Separate cached posts into pinned and regular
+        const pinnedCached = cachedPosts.filter((post) => post.is_pinned);
+        const regularCached = cachedPosts.filter((post) => !post.is_pinned);
+
+        return {
+          pinnedPosts: pinnedCached, // No limit - return all cached pinned posts
+          regularPosts: regularCached, // No limit - return all cached regular posts
+        };
       }
     } catch (cacheError) {
       console.log(`❌ Cache fallback also failed: ${cacheError.message}`);
@@ -2773,10 +2931,10 @@ async function scrapeInstagramPosts(username, userAgent) {
     console.log(
       `🚨 IMMEDIATE ACTION REQUIRED: Check Instagram API access and consider re-enabling browser automation`
     );
-    return [];
+    return { pinnedPosts: [], regularPosts: [] };
   } catch (error) {
     console.error("Instagram scraping error:", error.message);
-    return [];
+    return { pinnedPosts: [], regularPosts: [] };
   }
 }
 
@@ -2784,111 +2942,202 @@ async function scrapeInstagramPosts(username, userAgent) {
 async function scrapeWithWebProfileInfo(username, userAgent) {
   const profileUrl = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`;
 
-  // Try with different user agents if the first one fails
-  const userAgents = [
-    userAgent,
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  ];
+  try {
+    console.log(
+      `🌐 Using Web Profile Info API for @${username} with consistent user agent`
+    );
 
-  for (let attempt = 0; attempt < userAgents.length; attempt++) {
-    const currentUserAgent = userAgents[attempt];
+    const response = await axios.get(profileUrl, {
+      headers: {
+        "User-Agent": userAgent,
+        Accept: "application/json",
+        "Accept-Language": "en-US,en;q=0.9",
+        "X-IG-App-ID": "936619743392459",
+        "X-ASBD-ID": "129477",
+        "X-IG-WWW-Claim": "0",
+        "X-Requested-With": "XMLHttpRequest",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        Referer: "https://www.instagram.com/",
+        Origin: "https://www.instagram.com",
+      },
+      timeout: 15000,
+    });
 
-    try {
+    if (response.data && response.data.data && response.data.data.user) {
+      const user = response.data.data.user;
+      const allPostUrls = [];
+
+      // Extract all post URLs from the profile data
+      if (
+        user.edge_owner_to_timeline_media &&
+        user.edge_owner_to_timeline_media.edges
+      ) {
+        const edges = user.edge_owner_to_timeline_media.edges;
+
+        // Limit to 6 posts maximum per poll cycle
+        const maxPosts = 6;
+        let postCount = 0;
+
+        edges.forEach((edge) => {
+          if (
+            edge &&
+            edge.node &&
+            edge.node.shortcode &&
+            postCount < maxPosts
+          ) {
+            const url = `https://www.instagram.com/p/${edge.node.shortcode}/`;
+            allPostUrls.push({
+              url,
+              shortcode: edge.node.shortcode,
+              is_pinned: false, // Will be updated by pinned detection
+            });
+            postCount++;
+          }
+        });
+
+        console.log(
+          `📱 Web Profile Info API collected ${allPostUrls.length} post URLs (limited to ${maxPosts} max)`
+        );
+
+        // Now process posts with optimized pinned detection and full data fetching
+        const { pinnedPosts, regularPosts } =
+          await processPostsWithPinnedDetection(allPostUrls, userAgent);
+
+        return {
+          pinnedPosts,
+          regularPosts, // No limit - cache all posts
+        };
+      }
+    }
+
+    console.log(`⚠️ Web Profile Info API returned no posts`);
+    return { pinnedPosts: [], regularPosts: [] };
+  } catch (error) {
+    console.log(`❌ Web Profile Info API failed: ${error.message}`);
+    requestTracker.trackInstagram(profileUrl, false, error.message);
+
+    if (error.response?.status === 429) {
+      console.log(`🚫 Rate limit detected in Web Profile Info API`);
+      await rateLimitDelay();
+      increaseErrorMultiplier();
+    } else if (error.response?.status === 401) {
       console.log(
-        `🌐 Using Web Profile Info API for @${username} (attempt ${
-          attempt + 1
-        }/${userAgents.length})`
+        `🔐 Authentication failed (401) - Instagram may have detected automated requests`
       );
+    }
 
-      const response = await axios.get(profileUrl, {
-        headers: {
-          "User-Agent": currentUserAgent,
-          Accept: "application/json",
-          "Accept-Language": "en-US,en;q=0.9",
-          "X-IG-App-ID": "936619743392459",
-          "X-ASBD-ID": "129477",
-          "X-IG-WWW-Claim": "0",
-          "X-Requested-With": "XMLHttpRequest",
-          "Sec-Fetch-Dest": "empty",
-          "Sec-Fetch-Mode": "cors",
-          "Sec-Fetch-Site": "same-origin",
-          Referer: "https://www.instagram.com/",
-          Origin: "https://www.instagram.com",
-        },
-        timeout: 15000,
-      });
+    // Return empty results on failure
+    return { pinnedPosts: [], regularPosts: [] };
+  }
+}
 
-      if (response.data && response.data.data && response.data.data.user) {
-        const user = response.data.data.user;
-        const postUrls = [];
+// Optimized post processing that combines pinned detection with full data fetching
+async function processPostsWithPinnedDetection(allPosts, userAgent) {
+  console.log(
+    `🔍 Starting optimized post processing for ${allPosts.length} posts`
+  );
 
-        // Extract only post URLs from the profile data
-        if (
-          user.edge_owner_to_timeline_media &&
-          user.edge_owner_to_timeline_media.edges
-        ) {
-          const edges = user.edge_owner_to_timeline_media.edges;
+  const pinnedPosts = [];
+  const regularPosts = [];
+  let pinnedCount = 0;
+  let pinnedScanningStopped = false;
+  let processedCount = 0;
 
-          edges.forEach((edge) => {
-            if (edge && edge.node && edge.node.shortcode) {
-              const url = `https://www.instagram.com/p/${edge.node.shortcode}/`;
-              postUrls.push({
-                url,
-                shortcode: edge.node.shortcode,
-                is_pinned: false, // Will be updated by GraphQL processing
-              });
-            }
-          });
+  for (let i = 0; i < allPosts.length; i++) {
+    const post = allPosts[i];
+
+    // Stop processing if we've hit our limits (6 posts max per poll)
+    if (processedCount >= 6) {
+      console.log(
+        `📊 Processing limit reached (${processedCount} posts), stopping`
+      );
+      break;
+    }
+
+    // Process all posts to determine pinned status, but prioritize pinned posts
+    if (!pinnedScanningStopped) {
+      try {
+        console.log(
+          `📌 Processing post ${i + 1} with pinned detection: ${post.shortcode}`
+        );
+
+        // Use InstagramCarouselDownloader to get both pinned status AND full data in one call
+        const carouselDownloader = new InstagramCarouselDownloader(userAgent);
+        const result = await carouselDownloader.downloadCarousel(post.url);
+
+        if (result && result.status && result.data && result.data.length > 0) {
+          // Extract pinned status from the full data
+          const isPinned = result.isPinned || result.data[0]?.isPinned || false;
+          post.is_pinned = isPinned;
+          post.fullData = result.data; // Store the full data for later use
 
           console.log(
-            `📱 Web Profile Info API collected ${postUrls.length} post URLs`
+            `🔍 Pinned status for ${post.shortcode}: ${
+              isPinned ? "PINNED" : "NOT PINNED"
+            } (from result.isPinned: ${
+              result.isPinned
+            }, from result.data[0].isPinned: ${result.data[0]?.isPinned})`
           );
-          return postUrls.slice(0, 8); // Limit to 8 posts (3 pinned + 5 recent)
-        }
-      }
 
-      console.log(`⚠️ Web Profile Info API returned no posts`);
-      return [];
-    } catch (error) {
-      console.log(
-        `❌ Web Profile Info API failed (attempt ${attempt + 1}): ${
-          error.message
-        }`
-      );
-      requestTracker.trackInstagram(profileUrl, false, error.message);
+          if (isPinned) {
+            console.log(`📌 Post ${post.shortcode} is PINNED`);
+            pinnedPosts.push(post);
+            pinnedCount++;
+            processedCount++;
 
-      if (error.response?.status === 429) {
-        console.log(`🚫 Rate limit detected in Web Profile Info API`);
-        await rateLimitDelay();
-        increaseErrorMultiplier();
-        break; // Don't retry on rate limit
-      } else if (error.response?.status === 401) {
-        console.log(
-          `🔐 Authentication failed (401) - Instagram may have detected automated requests`
-        );
-        if (attempt < userAgents.length - 1) {
-          console.log(`🔄 Trying with different user agent...`);
-          continue; // Try next user agent
+            // Stop scanning for pinned posts if we've found 3
+            if (pinnedCount >= 3) {
+              console.log(`📌 Found 3 pinned posts, stopping pinned scanning`);
+              pinnedScanningStopped = true;
+            }
+          } else {
+            console.log(`📌 Post ${post.shortcode} is NOT pinned`);
+            regularPosts.push(post);
+            processedCount++;
+
+            // Continue scanning for pinned posts even after finding a non-pinned post
+            // This ensures we don't miss pinned posts that might be mixed in the feed
+            console.log(
+              `📌 Found non-pinned post, continuing to scan for pinned posts`
+            );
+          }
+
+          // Apply GraphQL delay for the combined call
+          const carouselSize = result.data.length;
+          await graphqlDelay(isPinned ? "pinned" : "regular", carouselSize);
         } else {
           console.log(
-            `🔄 All user agents failed, will trigger fallback to browser automation`
+            `⚠️ Failed to get data for ${post.shortcode}, treating as regular post`
           );
+          post.is_pinned = false;
+          regularPosts.push(post);
+          processedCount++;
+          pinnedScanningStopped = true;
         }
+      } catch (error) {
+        console.log(`⚠️ Error processing ${post.shortcode}: ${error.message}`);
+        // If we can't determine pinned status, treat as regular post
+        post.is_pinned = false;
+        regularPosts.push(post);
+        processedCount++;
+        pinnedScanningStopped = true;
       }
-
-      // For other errors, continue to next attempt
-      if (attempt < userAgents.length - 1) {
-        console.log(`🔄 Retrying with different user agent...`);
-        continue;
+    } else {
+      // Pinned scanning stopped, add remaining posts as regular (up to limit)
+      if (processedCount < 6) {
+        post.is_pinned = false;
+        regularPosts.push(post);
+        processedCount++;
       }
     }
   }
 
-  // If we get here, all attempts failed
-  console.log(`❌ All Web Profile Info API attempts failed`);
-  return [];
+  console.log(
+    `📌 Optimized processing complete: ${pinnedPosts.length} pinned, ${regularPosts.length} regular (${processedCount} total processed)`
+  );
+  return { pinnedPosts, regularPosts };
 }
 
 // Check if post was already processed (excluding pinned posts from recent checks)
@@ -4253,21 +4502,38 @@ async function validateCacheIntegrity() {
 function clearUserCache(username) {
   return new Promise(async (resolve, reject) => {
     try {
-      const result = await new Promise((resolveInner, rejectInner) => {
-        db.run(
-          "DELETE FROM recent_posts_cache WHERE username = ?",
-          [username],
-          function (err) {
-            if (err) rejectInner(err);
-            else {
-              console.log(
-                `🗑️ Cleared cache for @${username} (${this.changes} entries)`
-              );
-              resolveInner(this.changes);
+      let result = 0;
+
+      // Use Supabase if available, otherwise fallback to SQLite
+      if (supabaseManager && supabaseManager.isConnected) {
+        try {
+          console.log(`🗑️ Clearing cache for @${username} using Supabase...`);
+          result = await supabaseManager.clearUserCache(username);
+        } catch (error) {
+          console.error(`❌ Supabase cache clear failed: ${error.message}`);
+          console.log("🔄 Falling back to SQLite...");
+          // Continue to SQLite fallback
+        }
+      }
+
+      // Fallback to SQLite if Supabase failed or not connected
+      if (result === 0 && db) {
+        result = await new Promise((resolveInner, rejectInner) => {
+          db.run(
+            "DELETE FROM recent_posts_cache WHERE username = ?",
+            [username],
+            function (err) {
+              if (err) rejectInner(err);
+              else {
+                console.log(
+                  `🗑️ Cleared cache for @${username} (${this.changes} entries) (SQLite)`
+                );
+                resolveInner(this.changes);
+              }
             }
-          }
-        );
-      });
+          );
+        });
+      }
 
       // Clear in-memory cache
       if (global.postCache && global.postCache[username]) {
@@ -4289,25 +4555,47 @@ function clearUserCache(username) {
 function clearUserData(username) {
   return new Promise(async (resolve, reject) => {
     try {
-      const clearProcessed = new Promise(
-        (resolveProcessed, rejectProcessed) => {
-          db.run(
-            "DELETE FROM processed_posts WHERE username = ?",
-            [username],
-            function (err) {
-              if (err) rejectProcessed(err);
-              else resolveProcessed(this.changes);
-            }
+      let processedDeleted = 0;
+      let cacheDeleted = 0;
+
+      // Use Supabase if available, otherwise fallback to SQLite
+      if (supabaseManager && supabaseManager.isConnected) {
+        try {
+          console.log(
+            `🧹 Clearing all data for @${username} using Supabase...`
           );
+          const result = await supabaseManager.clearUserData(username);
+          processedDeleted = result.processedDeleted;
+          cacheDeleted = result.cacheDeleted;
+        } catch (error) {
+          console.error(`❌ Supabase data clear failed: ${error.message}`);
+          console.log("🔄 Falling back to SQLite...");
+          // Continue to SQLite fallback
         }
-      );
+      }
 
-      const clearCache = clearUserCache(username);
+      // Fallback to SQLite if Supabase failed or not connected
+      if (processedDeleted === 0 && cacheDeleted === 0 && db) {
+        const clearProcessed = new Promise(
+          (resolveProcessed, rejectProcessed) => {
+            db.run(
+              "DELETE FROM processed_posts WHERE username = ?",
+              [username],
+              function (err) {
+                if (err) rejectProcessed(err);
+                else resolveProcessed(this.changes);
+              }
+            );
+          }
+        );
 
-      const [processedDeleted, cacheDeleted] = await Promise.all([
-        clearProcessed,
-        clearCache,
-      ]);
+        const clearCache = clearUserCache(username);
+
+        [processedDeleted, cacheDeleted] = await Promise.all([
+          clearProcessed,
+          clearCache,
+        ]);
+      }
 
       console.log(
         `🧹 Cleared all data for @${username} (processed: ${processedDeleted}, cache: ${cacheDeleted})`
@@ -4827,18 +5115,18 @@ async function processIndividualPost(post, userAgent) {
   }
 }
 
-// Batch GraphQL processing for multiple posts
+// Optimized batch processing with fallback mechanisms
 async function batchGraphQLCall(posts, userAgent) {
   try {
     console.log(
-      `🔄 Processing batch of ${posts.length} posts with GraphQL API`
+      `🔄 Processing optimized batch of ${posts.length} posts with GraphQL API`
     );
 
     const results = [];
     const maxBatchSize = 8; // Max 8 posts (3 pinned + 5 recent)
     const batchPosts = posts.slice(0, maxBatchSize);
 
-    // Process each post in batch (but with individual GraphQL calls for reliability)
+    // Process each post in batch with fallback mechanisms
     for (const post of batchPosts) {
       try {
         const shortcode =
@@ -4846,6 +5134,20 @@ async function batchGraphQLCall(posts, userAgent) {
         if (!shortcode) {
           console.log(`⚠️ Could not extract shortcode from ${post.url}`);
           results.push({ error: "invalid_shortcode", url: post.url });
+          continue;
+        }
+
+        // Check if we already have full data from optimized processing
+        if (post.fullData) {
+          console.log(`✅ Using pre-fetched data for ${shortcode}`);
+          results.push({
+            success: true,
+            shortcode,
+            url: post.url,
+            data: post.fullData,
+            isPinned: post.is_pinned || false,
+            source: "pre-fetched",
+          });
           continue;
         }
 
@@ -4860,23 +5162,52 @@ async function batchGraphQLCall(posts, userAgent) {
             url: post.url,
             data: result.data,
             isPinned: post.is_pinned || false,
+            source: "graphql",
           });
           console.log(`✅ Batch processed: ${shortcode}`);
         } else {
           console.log(
-            `⚠️ Batch processing failed for ${shortcode}, will use snapsave fallback`
+            `⚠️ GraphQL processing failed for ${shortcode}, trying Web Profile Info API fallback`
           );
-          results.push({ error: "graphql_failed", url: post.url, shortcode });
+
+          // Fallback to Web Profile Info API data
+          const fallbackResult = await tryWebProfileInfoFallback(
+            post,
+            userAgent
+          );
+          if (fallbackResult.success) {
+            results.push({
+              success: true,
+              shortcode,
+              url: post.url,
+              data: fallbackResult.data,
+              isPinned: post.is_pinned || false,
+              source: "web-profile-fallback",
+            });
+            console.log(
+              `✅ Web Profile Info fallback successful for ${shortcode}`
+            );
+          } else {
+            console.log(
+              `⚠️ All processing failed for ${shortcode}, will use snapsave fallback`
+            );
+            results.push({
+              error: "all_apis_failed",
+              url: post.url,
+              shortcode,
+            });
+          }
         }
 
-        // Adaptive delay based on carousel size to avoid overwhelming API
-        if (result && result.data && result.data.length > 5) {
-          console.log(
-            `📊 Large carousel detected (${result.data.length} items), using longer delay`
-          );
-          await smartDelay(1000, 2000); // Longer delay for large carousels
+        // Enhanced GraphQL API protection with specialized delay function
+        if (result && result.data && result.data.length > 0) {
+          const carouselSize = result.data.length;
+          const postType = post.is_pinned ? "pinned" : "regular";
+          await graphqlDelay(postType, carouselSize);
         } else {
-          await smartDelay(200, 500); // Normal delay for small posts
+          // Fallback delay if no result data
+          console.log(`⏱️ Applying fallback delay for GraphQL API call`);
+          await smartDelay(2000, 4000, 1, "graphql-fallback");
         }
       } catch (error) {
         console.log(
@@ -4887,14 +5218,82 @@ async function batchGraphQLCall(posts, userAgent) {
     }
 
     console.log(
-      `✅ Batch processing completed: ${
+      `✅ Optimized batch processing completed: ${
         results.filter((r) => r.success).length
       }/${batchPosts.length} successful`
     );
     return results;
   } catch (error) {
-    console.log(`❌ Batch GraphQL processing failed: ${error.message}`);
+    console.log(`❌ Optimized batch processing failed: ${error.message}`);
     return posts.map((post) => ({ error: "batch_failed", url: post.url }));
+  }
+}
+
+// Web Profile Info API fallback function
+async function tryWebProfileInfoFallback(post, userAgent) {
+  try {
+    console.log(
+      `🔄 Attempting Web Profile Info API fallback for ${post.shortcode}`
+    );
+
+    // Use the existing Web Profile Info API logic but for individual post
+    const profileUrl = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${TARGET_USERNAME}`;
+
+    const response = await axios.get(profileUrl, {
+      headers: {
+        "User-Agent": userAgent,
+        Accept: "application/json",
+        "Accept-Language": "en-US,en;q=0.9",
+        "X-IG-App-ID": "936619743392459",
+        "X-ASBD-ID": "129477",
+        "X-IG-WWW-Claim": "0",
+        "X-Requested-With": "XMLHttpRequest",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        Referer: "https://www.instagram.com/",
+        Origin: "https://www.instagram.com",
+      },
+      timeout: 15000,
+    });
+
+    if (response.data && response.data.data && response.data.data.user) {
+      const user = response.data.data.user;
+
+      // Find the specific post in the profile data
+      if (
+        user.edge_owner_to_timeline_media &&
+        user.edge_owner_to_timeline_media.edges
+      ) {
+        const edges = user.edge_owner_to_timeline_media.edges;
+        const targetPost = edges.find(
+          (edge) => edge.node && edge.node.shortcode === post.shortcode
+        );
+
+        if (targetPost) {
+          const node = targetPost.node;
+          // Create basic media data structure from Web Profile Info
+          const basicData = [
+            {
+              url: node.display_url,
+              is_video: node.is_video,
+              is_pinned: post.is_pinned || false,
+              shortcode: node.shortcode,
+              // Add other available fields
+              dimensions: node.dimensions,
+              accessibility_caption: node.accessibility_caption,
+            },
+          ];
+
+          return { success: true, data: basicData };
+        }
+      }
+    }
+
+    return { success: false, error: "post_not_found_in_profile" };
+  } catch (error) {
+    console.log(`❌ Web Profile Info fallback failed: ${error.message}`);
+    return { success: false, error: error.message };
   }
 }
 
@@ -4913,6 +5312,29 @@ async function processInstagramURL(url, userAgent = null) {
     let username = TARGET_USERNAME || "User Not Found";
 
     console.log(`📱 Using username from polling context: @${username}`);
+
+    // Extract shortcode for cache checking
+    const shortcodeMatch = url.match(/\/(p|reel|tv)\/([^\/]+)\//);
+    const shortcode = shortcodeMatch ? shortcodeMatch[2] : null;
+
+    // Check if this post is in cache (for logging only - manual always sends)
+    if (shortcode && username !== "User Not Found") {
+      try {
+        const cachedPosts = await getCachedRecentPosts(username);
+        const isInCache = cachedPosts.some((p) => p.shortcode === shortcode);
+        if (isInCache) {
+          console.log(
+            `ℹ️ [MANUAL] Post ${shortcode} found in cache, but sending anyway (manual override)`
+          );
+        } else {
+          console.log(
+            `📥 [MANUAL] Post ${shortcode} NOT in cache - will be added after send`
+          );
+        }
+      } catch (cacheError) {
+        console.log(`⚠️ [MANUAL] Cache check failed: ${cacheError.message}`);
+      }
+    }
 
     // Remove any img_index parameters from the URL to ensure we process the main carousel
     const urlObj = new URL(url);
@@ -5154,6 +5576,53 @@ async function processInstagramURL(url, userAgent = null) {
       }
     }
 
+    // Update cache with this post if it's new (manual always sends, but only caches new items)
+    if (
+      shortcode &&
+      username !== "User Not Found" &&
+      TELEGRAM_BOT_TOKEN &&
+      TELEGRAM_CHANNEL_ID
+    ) {
+      try {
+        console.log(
+          `📊 [MANUAL] Checking if post ${shortcode} should be added to cache...`
+        );
+
+        // Check if post is already in cache
+        const cachedPosts = await getCachedRecentPosts(username);
+        const isInCache = cachedPosts.some((p) => p.shortcode === shortcode);
+
+        if (!isInCache) {
+          console.log(
+            `📊 [MANUAL] Post ${shortcode} is NEW - adding to cache...`
+          );
+
+          // Create post object for cache
+          const postForCache = {
+            url: url,
+            shortcode: shortcode,
+            is_pinned: false, // Manual downloads are not pinned
+          };
+
+          // Add to cache (merge with existing)
+          const updatedCache = [...cachedPosts, postForCache];
+          await updateRecentPostsCache(username, updatedCache);
+
+          console.log(
+            `✅ [MANUAL] Cache updated: ${cachedPosts.length} existing + 1 new = ${updatedCache.length} total`
+          );
+        } else {
+          console.log(
+            `ℹ️ [MANUAL] Post ${shortcode} already in cache - no cache update needed`
+          );
+        }
+      } catch (cacheError) {
+        console.log(
+          `⚠️ [MANUAL] Failed to update cache: ${cacheError.message}`
+        );
+      }
+    }
+
     return { success: true, data: downloadedURL };
   } catch (err) {
     console.error("Error:", err.message);
@@ -5169,7 +5638,7 @@ app.get("/igdl", async (req, res) => {
       return res.status(400).json({ error: "URL parameter is missing" });
     }
 
-    const result = await processInstagramURL(url, getRandomUserAgent());
+    const result = await processInstagramURL(url, getPollingUserAgent());
 
     if (result.success) {
       res.json(result.data);
@@ -5271,39 +5740,87 @@ app.post("/send-to-telegram", async (req, res) => {
 // Main polling function
 async function checkForNewPosts(force = false) {
   try {
-    // Select random user agent for this poll cycle
+    // Set consistent user agent for this poll cycle - will be used consistently for all API calls
     const pollUserAgent = getRandomUserAgent();
+    setPollingUserAgent(pollUserAgent);
     console.log(
       `\n🔍 Checking for new posts from @${TARGET_USERNAME} ${
         force ? "(force send enabled)" : ""
       }`
     );
-    console.log(`🌐 Using user agent: ${pollUserAgent.substring(0, 50)}...`);
+    console.log(
+      `🌐 Polling cycle using consistent user agent: ${pollUserAgent.substring(
+        0,
+        50
+      )}...`
+    );
+    console.log(
+      `🔒 This user agent will be maintained for all API calls in this polling cycle`
+    );
 
-    const posts = await scrapeInstagramPosts(TARGET_USERNAME, pollUserAgent);
+    // Reset GraphQL call counter for new polling cycle
+    resetGraphQLCallCounter();
 
-    console.log(`Found ${posts.length} total posts`);
+    const { pinnedPosts, regularPosts } = await scrapeInstagramPosts(
+      TARGET_USERNAME,
+      pollUserAgent
+    );
 
-    // Use cache to find only new posts
-    const newPosts = await findNewPosts(TARGET_USERNAME, posts);
+    console.log(
+      `Found ${pinnedPosts.length} pinned posts and ${regularPosts.length} regular posts`
+    );
 
-    // Update cache with current posts
-    await updateRecentPostsCache(TARGET_USERNAME, posts);
+    // Process pinned posts first
+    console.log(`📌 Processing pinned posts first...`);
+    const newPinnedPosts = await findNewPosts(TARGET_USERNAME, pinnedPosts);
+    console.log(`📌 Found ${newPinnedPosts.length} new pinned posts`);
 
-    if (newPosts.length === 0 && !force) {
+    // Process regular posts
+    console.log(`📱 Processing regular posts...`);
+    const newRegularPosts = await findNewPosts(TARGET_USERNAME, regularPosts);
+    console.log(`📱 Found ${newRegularPosts.length} new regular posts`);
+
+    // DON'T update cache yet - wait until after successful Telegram sending
+    const allPosts = [...pinnedPosts, ...regularPosts];
+
+    const totalNewPosts = newPinnedPosts.length + newRegularPosts.length;
+    if (totalNewPosts === 0 && !force) {
       console.log(`✅ No new posts found, skipping post processing...`);
+      // Update cache even when no new posts (refreshes timestamps)
+      await updateRecentPostsCache(TARGET_USERNAME, allPosts);
       // Continue to check stories even if no new posts
+      return;
     }
 
     console.log(
-      `📱 Processing ${newPosts.length} new posts out of ${posts.length} total`
+      `📱 Processing ${totalNewPosts} new posts (${newPinnedPosts.length} pinned + ${newRegularPosts.length} regular)`
     );
 
-    // Use batch processing for efficiency
-    const batchResults = await batchGraphQLCall(newPosts, pollUserAgent);
+    // Process pinned posts first, then regular posts
+    let allBatchResults = [];
+
+    if (newPinnedPosts.length > 0) {
+      console.log(`📌 Processing ${newPinnedPosts.length} new pinned posts...`);
+      const pinnedBatchResults = await batchGraphQLCall(
+        newPinnedPosts,
+        pollUserAgent
+      );
+      allBatchResults = [...pinnedBatchResults];
+    }
+
+    if (newRegularPosts.length > 0) {
+      console.log(
+        `📱 Processing ${newRegularPosts.length} new regular posts...`
+      );
+      const regularBatchResults = await batchGraphQLCall(
+        newRegularPosts,
+        pollUserAgent
+      );
+      allBatchResults = [...allBatchResults, ...regularBatchResults];
+    }
 
     // Process batch results with fallback
-    for (const result of batchResults) {
+    for (const result of allBatchResults) {
       try {
         if (result.error) {
           console.log(
@@ -5311,7 +5828,8 @@ async function checkForNewPosts(force = false) {
           );
 
           // Try individual processing as fallback
-          const originalPost = newPosts.find((p) => p.url === result.url);
+          const allNewPosts = [...newPinnedPosts, ...newRegularPosts];
+          const originalPost = allNewPosts.find((p) => p.url === result.url);
           if (originalPost) {
             console.log(
               `🔄 Attempting individual processing fallback for ${result.url}`
@@ -5484,12 +6002,19 @@ async function checkForNewPosts(force = false) {
       }
     }
 
+    // Update cache AFTER successful Telegram sending (allows retry on failure)
+    console.log(
+      `📊 [CACHE] Updating cache with ${allPosts.length} posts after successful processing...`
+    );
+    await updateRecentPostsCache(TARGET_USERNAME, allPosts);
+    console.log(`✅ [CACHE] Cache updated successfully`);
+
     // Update activity tracker with new posts found
-    if (newPosts.length > 0) {
+    if (totalNewPosts > 0) {
       // Count all new posts as activity (since they're new to our system)
-      activityTracker.updateActivity(newPosts.length);
+      activityTracker.updateActivity(totalNewPosts);
       console.log(
-        `📊 Activity updated: +${newPosts.length} new posts processed`
+        `📊 Activity updated: +${totalNewPosts} new posts processed (${newPinnedPosts.length} pinned + ${newRegularPosts.length} regular)`
       );
     }
 
@@ -5500,6 +6025,9 @@ async function checkForNewPosts(force = false) {
     console.log("");
   } catch (error) {
     console.error("Polling error:", error.message);
+    console.log(
+      "⚠️ [CACHE] Cache NOT updated due to processing error - posts will retry next poll"
+    );
   }
 }
 
@@ -5926,48 +6454,70 @@ app.post("/clear-stories-cache", async (req, res) => {
     const username = TARGET_USERNAME;
     if (!username) return res.status(400).json({ error: "No target set" });
 
-    // Clear processed stories
-    const clearProcessedStories = new Promise((resolve) => {
-      db.run(
-        "DELETE FROM processed_stories WHERE username = ?",
-        [username],
-        function (err) {
-          if (err) {
-            console.error("Database error clearing processed stories:", err);
-            resolve(0);
-          } else {
-            console.log(
-              `🗑️ Cleared processed stories for @${username} (${this.changes} entries)`
-            );
-            resolve(this.changes);
-          }
-        }
-      );
-    });
+    let processedStoriesDeleted = 0;
+    let storiesCacheDeleted = 0;
 
-    // Clear stories cache
-    const clearStoriesCache = new Promise((resolve) => {
-      db.run(
-        "DELETE FROM recent_stories_cache WHERE username = ?",
-        [username],
-        function (err) {
-          if (err) {
-            console.error("Database error clearing stories cache:", err);
-            resolve(0);
-          } else {
-            console.log(
-              `🗑️ Cleared stories cache for @${username} (${this.changes} entries)`
-            );
-            resolve(this.changes);
-          }
-        }
-      );
-    });
+    // Use Supabase if available, otherwise fallback to SQLite
+    if (supabaseManager && supabaseManager.isConnected) {
+      try {
+        console.log(
+          `🗑️ Clearing stories data for @${username} using Supabase...`
+        );
+        const result = await supabaseManager.clearUserStoriesData(username);
+        processedStoriesDeleted = result.processedStoriesDeleted;
+        storiesCacheDeleted = result.storiesCacheDeleted;
+      } catch (error) {
+        console.error(`❌ Supabase stories clear failed: ${error.message}`);
+        console.log("🔄 Falling back to SQLite...");
+        // Continue to SQLite fallback
+      }
+    }
 
-    const [processedStoriesDeleted, storiesCacheDeleted] = await Promise.all([
-      clearProcessedStories,
-      clearStoriesCache,
-    ]);
+    // Fallback to SQLite if Supabase failed or not connected
+    if (processedStoriesDeleted === 0 && storiesCacheDeleted === 0 && db) {
+      // Clear processed stories
+      const clearProcessedStories = new Promise((resolve) => {
+        db.run(
+          "DELETE FROM processed_stories WHERE username = ?",
+          [username],
+          function (err) {
+            if (err) {
+              console.error("Database error clearing processed stories:", err);
+              resolve(0);
+            } else {
+              console.log(
+                `🗑️ Cleared processed stories for @${username} (${this.changes} entries) (SQLite)`
+              );
+              resolve(this.changes);
+            }
+          }
+        );
+      });
+
+      // Clear stories cache
+      const clearStoriesCache = new Promise((resolve) => {
+        db.run(
+          "DELETE FROM recent_stories_cache WHERE username = ?",
+          [username],
+          function (err) {
+            if (err) {
+              console.error("Database error clearing stories cache:", err);
+              resolve(0);
+            } else {
+              console.log(
+                `🗑️ Cleared stories cache for @${username} (${this.changes} entries) (SQLite)`
+              );
+              resolve(this.changes);
+            }
+          }
+        );
+      });
+
+      [processedStoriesDeleted, storiesCacheDeleted] = await Promise.all([
+        clearProcessedStories,
+        clearStoriesCache,
+      ]);
+    }
 
     const totalDeleted = processedStoriesDeleted + storiesCacheDeleted;
     res.json({
@@ -6114,11 +6664,15 @@ app.get("/poll-now", async (req, res) => {
   }
 });
 
+// ===== SNAPCHAT POLLING ENDPOINTS =====
+// Snapchat polling endpoints removed - using unified Python service only
+// snapchatPolling.setupSnapchatEndpoints(app);
+
 app.listen(port, async () => {
-  console.log(`Server is running at http://localhost:${port}`);
-  console.log("🌐 Frontend available: http://localhost:5173");
-  console.log("📡 API server ready for manual requests");
-  console.log(
+  instagramLog(`🚀 Instagram Backend running at http://localhost:${port}`);
+  instagramLog("🌐 Unified Frontend available: http://localhost:5173");
+  instagramLog("📡 API server ready for requests");
+  instagramLog(
     "📊 Request tracking enabled - use /stats endpoint to view statistics"
   );
 
@@ -6702,12 +7256,24 @@ async function checkForNewStories(force = false) {
     }
 
     const pollUserAgent = getRandomUserAgent();
+    setPollingUserAgent(pollUserAgent);
     console.log(
       `\n📱 Checking for new stories from @${TARGET_USERNAME} ${
         force ? "(force send enabled)" : ""
       }`
     );
-    console.log(`🌐 Using user agent: ${pollUserAgent.substring(0, 50)}...`);
+    console.log(
+      `🌐 Stories polling cycle using consistent user agent: ${pollUserAgent.substring(
+        0,
+        50
+      )}...`
+    );
+    console.log(
+      `🔒 This user agent will be maintained for all story API calls in this polling cycle`
+    );
+
+    // Reset GraphQL call counter for stories polling cycle
+    resetGraphQLCallCounter();
 
     const result = await processInstagramStories(
       TARGET_USERNAME,
@@ -6748,7 +7314,7 @@ app.get("/stories", async (req, res) => {
 
     const result = await processInstagramStories(
       username,
-      getRandomUserAgent()
+      getPollingUserAgent()
     );
 
     if (result.success) {
@@ -6773,7 +7339,7 @@ app.get("/stories/target", async (req, res) => {
 
     const result = await processInstagramStories(
       TARGET_USERNAME,
-      getRandomUserAgent()
+      getPollingUserAgent()
     );
 
     if (result.success) {

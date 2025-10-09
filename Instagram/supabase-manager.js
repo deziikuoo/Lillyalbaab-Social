@@ -46,10 +46,12 @@ class SupabaseManager {
   async initializeTables() {
     try {
       console.log("🔧 Initializing Supabase tables...");
-      
+
       // Note: Tables need to be created manually in Supabase dashboard
       // See supabase-tables.sql file for the SQL commands to run
-      console.log("ℹ️ Tables will be created manually using supabase-tables.sql");
+      console.log(
+        "ℹ️ Tables will be created manually using supabase-tables.sql"
+      );
       console.log("✅ Supabase connection test successful");
     } catch (error) {
       console.error("❌ Supabase initialization failed:", error.message);
@@ -572,6 +574,153 @@ class SupabaseManager {
         connected: false,
         error: error.message,
       };
+    }
+  }
+
+  // Clear cache for specific user (Supabase version)
+  async clearUserCache(username) {
+    try {
+      if (!this.isConnected) {
+        console.log("⚠️ Supabase not connected, cannot clear cache");
+        return 0;
+      }
+
+      const { data, error } = await this.client
+        .from("recent_posts_cache")
+        .delete()
+        .eq("username", username)
+        .select();
+
+      if (error) {
+        console.error(
+          `❌ Failed to clear cache for @${username}:`,
+          error.message
+        );
+        return 0;
+      }
+
+      const deletedCount = data ? data.length : 0;
+      console.log(
+        `🗑️ Cleared cache for @${username} (${deletedCount} entries) (Supabase)`
+      );
+      return deletedCount;
+    } catch (error) {
+      console.error(`❌ Error clearing cache for @${username}:`, error.message);
+      return 0;
+    }
+  }
+
+  // Clear processed posts for specific user (Supabase version)
+  async clearUserProcessedPosts(username) {
+    try {
+      if (!this.isConnected) {
+        console.log("⚠️ Supabase not connected, cannot clear processed posts");
+        return 0;
+      }
+
+      const { data, error } = await this.client
+        .from("processed_posts")
+        .delete()
+        .eq("username", username)
+        .select();
+
+      if (error) {
+        console.error(
+          `❌ Failed to clear processed posts for @${username}:`,
+          error.message
+        );
+        return 0;
+      }
+
+      const deletedCount = data ? data.length : 0;
+      console.log(
+        `🗑️ Cleared processed posts for @${username} (${deletedCount} entries) (Supabase)`
+      );
+      return deletedCount;
+    } catch (error) {
+      console.error(
+        `❌ Error clearing processed posts for @${username}:`,
+        error.message
+      );
+      return 0;
+    }
+  }
+
+  // Clear all data for specific user (cache + processed posts) (Supabase version)
+  async clearUserData(username) {
+    try {
+      if (!this.isConnected) {
+        console.log("⚠️ Supabase not connected, cannot clear user data");
+        return { processedDeleted: 0, cacheDeleted: 0 };
+      }
+
+      const [processedDeleted, cacheDeleted] = await Promise.all([
+        this.clearUserProcessedPosts(username),
+        this.clearUserCache(username),
+      ]);
+
+      console.log(
+        `🧹 Cleared all data for @${username} (processed: ${processedDeleted}, cache: ${cacheDeleted}) (Supabase)`
+      );
+      return { processedDeleted, cacheDeleted };
+    } catch (error) {
+      console.error(
+        `❌ Error clearing user data for @${username}:`,
+        error.message
+      );
+      return { processedDeleted: 0, cacheDeleted: 0 };
+    }
+  }
+
+  // Clear stories data for specific user (Supabase version)
+  async clearUserStoriesData(username) {
+    try {
+      if (!this.isConnected) {
+        console.log("⚠️ Supabase not connected, cannot clear stories data");
+        return { processedStoriesDeleted: 0, storiesCacheDeleted: 0 };
+      }
+
+      // Clear processed stories
+      const { data: processedData, error: processedError } = await this.client
+        .from("processed_stories")
+        .delete()
+        .eq("username", username)
+        .select();
+
+      if (processedError) {
+        console.error(
+          `❌ Failed to clear processed stories for @${username}:`,
+          processedError.message
+        );
+      }
+
+      // Clear stories cache
+      const { data: cacheData, error: cacheError } = await this.client
+        .from("recent_stories_cache")
+        .delete()
+        .eq("username", username)
+        .select();
+
+      if (cacheError) {
+        console.error(
+          `❌ Failed to clear stories cache for @${username}:`,
+          cacheError.message
+        );
+      }
+
+      const processedStoriesDeleted = processedData ? processedData.length : 0;
+      const storiesCacheDeleted = cacheData ? cacheData.length : 0;
+
+      console.log(
+        `🗑️ Cleared stories data for @${username} (processed: ${processedStoriesDeleted}, cache: ${storiesCacheDeleted}) (Supabase)`
+      );
+      return { processedStoriesDeleted, storiesCacheDeleted };
+    } catch (error) {
+      console.error(
+        `❌ Error clearing stories data for @${username}:`,
+        error.message
+      );
+      return { processedStoriesDeleted: 0, storiesCacheDeleted: 0 };
     }
   }
 }

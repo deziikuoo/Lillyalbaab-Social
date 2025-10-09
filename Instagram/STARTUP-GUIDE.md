@@ -5,7 +5,7 @@
 ### Option 1: Start All Services (Recommended)
 
 ```bash
-cd "C:\Users\dawan\OneDrive\Documents\Coding Files\Tyla IG Kapturez\Instagram-Video-Downloader-API"
+cd "C:\Users\dawan\OneDrive\Documents\Coding Files\Tyla IG Kapturez\Instagram"
 npm run start:all
 ```
 
@@ -18,7 +18,7 @@ This will start:
 ### Option 2: Start Backend Services Only
 
 ```bash
-cd "C:\Users\dawan\OneDrive\Documents\Coding Files\Tyla IG Kapturez\Instagram-Video-Downloader-API"
+cd "C:\Users\dawan\OneDrive\Documents\Coding Files\Tyla IG Kapturez\Instagram"
 npm run start:both
 ```
 
@@ -30,7 +30,7 @@ This will start:
 Then manually start the frontend in a separate terminal:
 
 ```bash
-cd "C:\Users\dawan\OneDrive\Documents\Coding Files\Tyla IG Kapturez\Instagram-Video-Downloader-API\client"
+cd "C:\Users\dawan\OneDrive\Documents\Coding Files\Tyla IG Kapturez\Instagram\client"
 npm run dev
 ```
 

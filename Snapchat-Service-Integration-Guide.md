@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Snapchat-Service has been separated from the Instagram-Video-Downloader-API and is now a standalone service. This guide explains how to use and integrate it.
+The Snapchat-Service has been separated from the Instagram service and is now a standalone service. This guide explains how to use and integrate it.
 
 ## Service Architecture
 
@@ -15,14 +15,14 @@ The Snapchat-Service has been separated from the Instagram-Video-Downloader-API 
 
 ### Snapchat Frontend (Standalone)
 
-- **Location**: `Instagram-Video-Downloader-API/client/src/snapchat-frontend/`
+- **Location**: `Instagram/client/src/snapchat-frontend/`
 - **Technology**: React + Vite
 - **Port**: 5174
 - **Features**: Complete UI for Snapchat management
 
-### Instagram-Video-Downloader-API
+### Instagram Service
 
-- **Location**: `Instagram-Video-Downloader-API/`
+- **Location**: `Instagram/`
 - **Technology**: Node.js/Express + React
 - **Port**: 3000 (backend) + 5173 (frontend)
 - **Features**: Instagram scraping and downloading only
@@ -62,7 +62,7 @@ The Snapchat-Service has been separated from the Instagram-Video-Downloader-API 
 **Run everything with one command:**
 
 ```bash
-cd Instagram-Video-Downloader-API
+cd Instagram
 npm run start:all
 ```
 
@@ -128,7 +128,7 @@ start-server.bat
 #### 2. Start Snapchat Frontend
 
 ```bash
-cd Instagram-Video-Downloader-API/client/src/snapchat-frontend
+cd Instagram/client/src/snapchat-frontend
 
 # Install dependencies (if not already done)
 npm install
@@ -151,7 +151,7 @@ npm run dev
 #### 3. Start Instagram Service (Optional)
 
 ```bash
-cd Instagram-Video-Downloader-API
+cd Instagram
 npm start
 ```
 
@@ -266,18 +266,18 @@ The frontend automatically connects to the backend via proxy configuration in `v
 
 ## Features Comparison
 
-| Feature                  | Snapchat-Service                  | Instagram-Video-Downloader-API |
-| ------------------------ | --------------------------------- | ------------------------------ |
-| **Architecture**         | Python/FastAPI                    | Node.js/Express + React        |
-| **Scraping Method**      | Web scraping via public interface | Instagram API + web scraping   |
-| **Real-time Updates**    | WebSocket + polling               | Polling only                   |
-| **Database**             | SQLite with metadata              | File-based storage             |
-| **Telegram Integration** | ✅ Complete                       | ✅ Complete                    |
-| **Polling System**       | ✅ Smart activity-based           | ✅ Basic interval-based        |
-| **Progress Tracking**    | ✅ Real-time WebSocket            | ✅ Basic polling               |
-| **Gallery Management**   | ✅ Complete with thumbnails       | ✅ Basic file listing          |
-| **Health Monitoring**    | ✅ Advanced                       | ✅ Basic                       |
-| **Cache Management**     | ✅ Complete                       | ❌ Limited                     |
+| Feature                  | Snapchat-Service                  | Instagram Service            |
+| ------------------------ | --------------------------------- | ---------------------------- |
+| **Architecture**         | Python/FastAPI                    | Node.js/Express + React      |
+| **Scraping Method**      | Web scraping via public interface | Instagram API + web scraping |
+| **Real-time Updates**    | WebSocket + polling               | Polling only                 |
+| **Database**             | SQLite with metadata              | File-based storage           |
+| **Telegram Integration** | ✅ Complete                       | ✅ Complete                  |
+| **Polling System**       | ✅ Smart activity-based           | ✅ Basic interval-based      |
+| **Progress Tracking**    | ✅ Real-time WebSocket            | ✅ Basic polling             |
+| **Gallery Management**   | ✅ Complete with thumbnails       | ✅ Basic file listing        |
+| **Health Monitoring**    | ✅ Advanced                       | ✅ Basic                     |
+| **Cache Management**     | ✅ Complete                       | ❌ Limited                   |
 
 ## Troubleshooting
 

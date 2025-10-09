@@ -13,8 +13,27 @@ from threading import Lock
 import zipfile
 import tempfile
 from loguru import logger
-# Import snapchat_dl with path adjustment
 import sys
+
+# Configure logging to write to server.log file
+log_file_path = os.path.join(os.path.dirname(__file__), '..', 'server.log')
+logger.remove()  # Remove default handler
+logger.add(
+    log_file_path,
+    format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | {name}:{function}:{line} - {message}",
+    level="INFO",
+    rotation="10 MB",
+    retention="7 days",
+    compression="zip"
+)
+logger.add(
+    sys.stdout,
+    format="{time:HH:mm:ss} | {level:<8} | {message}",
+    level="INFO",
+    colorize=True
+)
+
+# Import snapchat_dl with path adjustment
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from snapchat_dl.snapchat_dl import SnapchatDL, NoStoriesFound
@@ -50,8 +69,9 @@ import threading
 import random
 
 # Import our new modules
-from server.database import db_manager
 from server.telegram_manager import TelegramManager, generate_telegram_caption, generate_bulk_caption
+from server.supabase_manager import SnapchatSupabaseManager
+import re
 
 # Load environment variables from the server directory
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
@@ -61,6 +81,9 @@ TARGET_USERNAME = os.getenv('SNAPCHAT_TARGET_USERNAME')
 POLLING_ENABLED = True
 current_polling_timeout = None  # Track current polling timeout for restart
 polling_started = False  # Track if polling has been started
+
+# ===== GLOBAL MEMORY CACHE =====
+# Memory cache removed - using Supabase as single source of truth for cache
 
 # ===== ACTIVITY TRACKER =====
 class ActivityTracker:
@@ -239,6 +262,9 @@ logging.basicConfig(level=logging.INFO)
 logger.remove()
 logger.add(sys.stderr, format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>")
 
+# Disable FastAPI access logs to reduce noise
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
 # Add error logging to file
 logger.add("server.log", rotation="10 MB", retention="7 days", level="ERROR")
 
@@ -273,7 +299,7 @@ class HealthCheck:
         self.last_check = time.time()
         self.consecutive_failures = 0
         self.max_failures = 3
-        self.check_interval = 5 * 60  # 5 minutes
+        self.check_interval = 10 * 60  # 10 minutes (reduced frequency)
         self.running = False
         self.lock = threading.Lock()
     
@@ -288,9 +314,7 @@ class HealthCheck:
                     await self.restart_polling()
                     return
                 
-                # Check database connectivity
-                if db_manager:
-                    await db_manager.check_connection()
+                # Database connectivity checked via Supabase only
                 
                 # Check memory usage
                 memory = psutil.virtual_memory()
@@ -307,7 +331,7 @@ class HealthCheck:
                 # Reset failure counter on success
                 self.consecutive_failures = 0
                 self.last_check = time.time()
-                logger.info("Health check passed")
+                # Only log on failure, not success (to reduce log noise)
                 
         except Exception as error:
             logger.error(f"❌ Health check failed: {error}")
@@ -327,7 +351,7 @@ class HealthCheck:
             logger.error(f"Memory cleanup failed: {e}")
     
     async def cleanup_downloads(self):
-        """Clean up old downloads"""
+        """Clean up old downloads (7-day cleanup for health checks)"""
         try:
             # Remove files older than 7 days
             cutoff_time = time.time() - (7 * 24 * 60 * 60)
@@ -345,6 +369,66 @@ class HealthCheck:
         except Exception as e:
             logger.error(f"Download cleanup failed: {e}")
     
+    async def cleanup_downloads_4week(self):
+        """Clean up downloads folder (4-week complete wipe)"""
+        try:
+            # Remove files older than 4 weeks
+            cutoff_time = time.time() - (4 * 7 * 24 * 60 * 60)  # 4 weeks
+            removed_count = 0
+            
+            for root, dirs, files in os.walk(DOWNLOADS_DIR):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    if os.path.getmtime(file_path) < cutoff_time:
+                        os.remove(file_path)
+                        removed_count += 1
+                
+                # Remove empty directories
+                for dir_name in dirs:
+                    dir_path = os.path.join(root, dir_name)
+                    try:
+                        if not os.listdir(dir_path):  # Directory is empty
+                            os.rmdir(dir_path)
+                    except OSError:
+                        pass  # Directory not empty or other error
+            
+            logger.info(f"🧹 4-week downloads cleanup: {removed_count} files removed")
+            return removed_count
+        except Exception as e:
+            logger.error(f"4-week downloads cleanup failed: {e}")
+            return 0
+    
+    async def cleanup_snapchat_cache(self):
+        """Clean up Snapchat cache (4-week complete wipe)"""
+        try:
+            if supabase_manager.is_connected:
+                # Use Supabase cleanup
+                cleanup_result = await supabase_manager.clean_expired_snapchat_cache()
+                logger.info(f"🧹 Snapchat Supabase cache cleanup: {cleanup_result}")
+            else:
+                logger.info("🧹 Snapchat cache cleanup skipped (Supabase not connected)")
+        except Exception as e:
+            logger.error(f"Snapchat cache cleanup failed: {e}")
+    
+    async def scheduled_cleanup(self):
+        """Scheduled 4-week cleanup for cache, memory, and downloads"""
+        try:
+            logger.info("🔄 Starting scheduled 4-week cleanup...")
+            
+            # Clean up cache
+            await self.cleanup_snapchat_cache()
+            
+            # Clean up memory
+            await self.cleanup_memory()
+            
+            # Clean up downloads (4-week old files)
+            downloads_removed = await self.cleanup_downloads_4week()
+            
+            logger.info(f"✅ Scheduled 4-week cleanup completed: {downloads_removed} downloads removed")
+            
+        except Exception as e:
+            logger.error(f"Scheduled cleanup failed: {e}")
+    
     async def restart_polling(self):
         """Restart polling due to health check failure"""
         try:
@@ -360,8 +444,7 @@ class HealthCheck:
         try:
             logger.info("🔄 Restarting service components...")
             # Reinitialize database connection
-            if db_manager:
-                await db_manager.reconnect()
+            # Database reconnection handled via Supabase only
             # Restart polling
             await self.restart_polling()
             logger.info("✅ Service restart completed")
@@ -388,55 +471,265 @@ class HealthCheck:
         """Stop health check monitoring"""
         self.running = False
 
-# ===== MEMORY MANAGEMENT SYSTEM =====
-class MemoryManager:
-    def __init__(self):
-        self.last_cleanup = datetime.now()
-        self.cleanup_interval = 30 * 60  # 30 minutes
-        self.running = False
-    
-    async def perform_cleanup(self):
-        """Perform memory cleanup"""
-        try:
-            # Clear any accumulated caches
-            if hasattr(globals(), 'story_cache'):
-                cache_size = len(globals()['story_cache'])
-                if cache_size > 1000:
-                    logger.info(f"🧹 Clearing large story cache ({cache_size} entries)")
-                    globals()['story_cache'] = {}
-            
-            # Force garbage collection
-            gc.collect()
-            
-            self.last_cleanup = datetime.now()
-            logger.info('Memory cleanup completed')
-            
-        except Exception as error:
-            logger.error(f'❌ Memory cleanup failed: {error}')
-    
-    def start(self):
-        """Start memory management monitoring"""
-        if self.running:
-            return
-        
-        self.running = True
-        
-        async def cleanup_loop():
-            while self.running:
-                await asyncio.sleep(self.cleanup_interval)
-                await self.perform_cleanup()
-        
-        # Start memory management in background
-        asyncio.create_task(cleanup_loop())
-        logger.info('Memory management system started')
-    
-    def stop(self):
-        """Stop memory management monitoring"""
-        self.running = False
+# Memory management removed to reduce log noise
 
 # Initialize health check system
 health_check = HealthCheck()
-memory_manager = MemoryManager()
+
+# Initialize Supabase manager
+supabase_manager = SnapchatSupabaseManager()
+
+# ===== SNAPCHAT CACHING FUNCTIONS =====
+
+def extract_snap_id_from_url(story_url: str) -> Optional[str]:
+    """Extract snap_id from Snapchat story URL (Snapchat equivalent of shortcode extraction)"""
+    try:
+        # Snapchat story URLs typically contain unique identifiers
+        # Example: https://story.snapchat.com/s/ABC123XYZ
+        if "story.snapchat.com" in story_url:
+            # Extract the unique identifier after /s/
+            match = re.search(r'/s/([^/?]+)', story_url)
+            if match:
+                return match.group(1)
+        
+        # Fallback: use URL hash as snap_id
+        import hashlib
+        return hashlib.md5(story_url.encode()).hexdigest()[:20]
+        
+    except Exception as error:
+        logger.error(f"❌ Error extracting snap_id from URL: {error}")
+        return None
+
+def normalize_story_structure(story: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensure story has all required fields with proper structure"""
+    try:
+        # Ensure story is a dictionary
+        if not isinstance(story, dict):
+            logger.error(f"❌ Story is not a dictionary: {type(story)}")
+            return {}
+        
+        # Ensure required fields exist
+        normalized_story = {
+            'url': story.get('url', ''),
+            'type': story.get('type', 'photo'),
+            'snap_id': story.get('snap_id', ''),
+            'timestamp': story.get('timestamp', int(time.time()))
+        }
+        
+        # Generate snap_id if missing
+        if not normalized_story['snap_id']:
+            normalized_story['snap_id'] = generate_snap_id(normalized_story)
+        
+        return normalized_story
+        
+    except Exception as error:
+        logger.error(f"❌ Error normalizing story structure: {error}")
+        return {}
+
+def generate_snap_id(story: Dict[str, Any]) -> str:
+    """Generate snap_id for story (Snapchat equivalent of shortcode generation)"""
+    try:
+        # Try to extract from URL first
+        if story.get('url'):
+            snap_id = extract_snap_id_from_url(story['url'])
+            if snap_id:
+                return snap_id
+        
+        # Fallback: generate from story data
+        story_data = f"{story.get('url', '')}{story.get('type', '')}{story.get('timestamp', '')}"
+        import hashlib
+        return hashlib.md5(story_data.encode()).hexdigest()[:20]
+        
+    except Exception as error:
+        logger.error(f"❌ Error generating snap_id: {error}")
+        # Final fallback: timestamp-based ID
+        return f"snap_{int(time.time())}_{random.randint(1000, 9999)}"
+
+# ===== CACHE CHECKING AND LOADING FUNCTIONS =====
+
+async def check_cache_on_boot():
+    """Check cache status on startup (Snapchat equivalent of checkCacheOnBoot)"""
+    try:
+        # Check if we have any cached data
+        if supabase_manager.is_connected:
+            # Get last cleanup date from Supabase
+            last_cleanup = await supabase_manager.get_last_cleanup_date()
+            if last_cleanup:
+                last_cleanup_date = datetime.fromisoformat(last_cleanup.replace('Z', '+00:00'))
+                week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+                
+                if last_cleanup_date < week_ago:
+                    logger.info("📊 Cache cleanup would be due (7+ days since last cleanup)")
+                    logger.info(f"   Last cleanup: {last_cleanup_date.strftime('%Y-%m-%d')}")
+                    logger.info(f"   Days since: {int((datetime.now(timezone.utc) - last_cleanup_date).days)}")
+                else:
+                    logger.info("✅ Cache is up to date")
+                    logger.info(f"   Last cleanup: {last_cleanup_date.strftime('%Y-%m-%d')}")
+            else:
+                logger.info("📊 No previous cleanup record found")
+        
+        # Load existing cache data into memory for faster access
+        await load_existing_cache()
+        
+    except Exception as error:
+        logger.warning(f"⚠️ Cache cleanup check failed: {error}")
+        logger.info("✅ Cache system initialized (first run)")
+
+async def load_existing_cache():
+    """Check existing cache data in Supabase (no memory cache loading)"""
+    try:
+        # Use Supabase if available
+        if supabase_manager.is_connected:
+            logger.info("📊 Checking Supabase cache...")
+            
+            try:
+                # Get cache statistics to check cache status
+                cache_stats = supabase_manager.get_snapchat_cache_stats()
+                logger.info(f"📊 Supabase cache stats: {cache_stats}")
+                
+                # Get all cached usernames from Supabase
+                response = supabase_manager.client.table("snapchat_recent_stories_cache").select("username").order("username").execute()
+                
+                cached_users = response.data
+                unique_usernames = list(set([user['username'] for user in cached_users]))
+                logger.info(f"📊 Found {len(unique_usernames)} cached users in Supabase")
+                
+                if len(unique_usernames) == 0:
+                    logger.info("📊 No existing cache data found in Supabase")
+                    return
+                
+                logger.info(f"✅ Supabase cache verified ({len(unique_usernames)} users)")
+                
+                return  # Successfully verified Supabase
+                
+            except Exception as error:
+                logger.error(f"❌ Supabase cache check failed: {error}")
+                logger.info("✅ Cache system initialized (first run)")
+        
+    except Exception as error:
+        logger.error(f"❌ Cache check failed: {error}")
+        logger.info("✅ Cache system initialized (first run)")
+
+async def get_cached_recent_stories(username: str) -> List[Dict[str, Any]]:
+    """Get cached stories for a username (directly from Supabase - no memory cache)"""
+    try:
+        logger.info(f"📊 [CACHE] Getting cached stories for @{username}...")
+        
+        # Use Supabase as single source of truth
+        if supabase_manager.is_connected:
+            try:
+                logger.info(f"📊 [CACHE] Fetching from Supabase for @{username}...")
+                cached_stories = await supabase_manager.get_cached_recent_stories(username)
+                
+                # Normalize cached stories to ensure proper structure
+                normalized_stories = []
+                for story in cached_stories:
+                    normalized_story = normalize_story_structure(story)
+                    if normalized_story:  # Only add if normalization succeeded
+                        normalized_stories.append(normalized_story)
+                
+                logger.info(f"✅ [CACHE] Retrieved {len(normalized_stories)} stories from Supabase for @{username}")
+                return normalized_stories
+            except Exception as error:
+                logger.error(f"❌ [CACHE] Supabase cache retrieval failed: {error}")
+                logger.info(f"📊 [CACHE] No cached stories found for @{username}")
+                return []
+        
+        logger.info(f"📊 [CACHE] No cached stories found for @{username}")
+        return []
+        
+    except Exception as error:
+        logger.error(f"❌ [CACHE] Failed to get cached stories for @{username}: {error}")
+        return []
+
+async def update_stories_cache(username: str, stories: List[Dict[str, Any]]) -> bool:
+    """Update cache with new stories (directly to Supabase - no memory cache)"""
+    try:
+        # Use Supabase as single source of truth
+        if supabase_manager.is_connected:
+            success = await supabase_manager.update_recent_stories_cache(username, stories)
+            return success
+        else:
+            logger.warning(f"⚠️ [CACHE] Supabase not connected - cannot update cache for @{username}")
+            return False
+        
+    except Exception as error:
+        logger.error(f"❌ Failed to update stories cache for @{username}: {error}")
+        return False
+
+async def is_story_processed(snap_id: str, username: str) -> bool:
+    """Check if a story has been processed (with memory cache optimization)"""
+    try:
+        # Use Supabase for caching
+        if supabase_manager.is_connected:
+            return await supabase_manager.is_story_processed(snap_id, username)
+        else:
+            logger.warning(f"⚠️ [CACHE] Supabase not connected - cannot check if story is processed")
+            return False
+        
+        return False
+        
+    except Exception as error:
+        logger.error(f"❌ Failed to check if story is processed: {error}")
+        return False
+
+async def mark_story_processed(snap_id: str, username: str, story_url: str, story_type: str) -> bool:
+    """Mark a story as processed (with memory cache optimization)"""
+    try:
+        # Use Supabase for caching
+        if supabase_manager.is_connected:
+            return await supabase_manager.mark_story_processed(snap_id, username, story_url, story_type)
+        else:
+            logger.warning(f"⚠️ [CACHE] Supabase not connected - cannot mark story as processed")
+            return False
+        
+        return False
+        
+    except Exception as error:
+        logger.error(f"❌ Failed to mark story as processed: {error}")
+        return False
+
+async def find_new_stories(username: str, fetched_stories: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Find stories that are not in the cache (with memory cache optimization)"""
+    try:
+        # Get cached stories for comparison (uses memory cache if available)
+        cached_stories = await get_cached_recent_stories(username)
+        cached_snap_ids = {story['snap_id'] for story in cached_stories if story.get('snap_id')}
+        
+        # Debug: Log cache details
+        logger.info(f"🔍 [CACHE] Cache comparison for @{username}:")
+        logger.info(f"   📊 Fetched stories: {len(fetched_stories)}")
+        logger.info(f"   📊 Cached stories: {len(cached_stories)}")
+        if cached_snap_ids:
+            logger.info(f"   🔍 Cached snap_ids: {list(cached_snap_ids)[:5]}...")  # Show first 5
+        else:
+            logger.info(f"   🔍 No cached snap_ids found")
+        
+        # Filter out stories already in cache
+        new_stories = []
+        for story in fetched_stories:
+            # Ensure story has the required structure
+            if not isinstance(story, dict):
+                logger.error(f"❌ [CACHE] Invalid story format: expected dict, got {type(story)}")
+                continue
+                
+            # Ensure story has snap_id field
+            if 'snap_id' not in story:
+                story['snap_id'] = generate_snap_id(story)
+            
+            snap_id = story['snap_id']
+            if snap_id and snap_id not in cached_snap_ids:
+                new_stories.append(story)
+                logger.info(f"🆕 [CACHE] New story found: {snap_id}")
+            else:
+                logger.info(f"⏭️ [CACHE] Story already cached: {snap_id}")
+        
+        logger.info(f"📊 [CACHE] Final comparison: {len(fetched_stories)} fetched, {len(cached_stories)} cached, {len(new_stories)} new")
+        return new_stories
+        
+    except Exception as error:
+        logger.error(f"❌ [CACHE] Error finding new stories: {error}")
+        return fetched_stories  # Return all stories if cache check fails
 
 # ===== RESOURCE MANAGEMENT =====
 class ResourceManager:
@@ -481,10 +774,10 @@ resource_manager = ResourceManager()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173","http://localhost:3000"],  # React frontend URL
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173", "*"],  # React frontend URL
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["*", "Content-Type", "Accept", "Authorization", "Access-Control-Request-Headers", "Access-Control-Request-Method"],
     expose_headers=["*"],
     max_age=3600,
 )
@@ -492,6 +785,11 @@ app.add_middleware(
 # Add request logging middleware
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    # Skip logging for frequent gallery calls to reduce noise
+    if "/gallery/" in str(request.url):
+        response = await call_next(request)
+        return response
+    
     logger.info(f"Request: {request.method} {request.url}")
     response = await call_next(request)
     logger.info(f"Response status: {response.status_code}")
@@ -735,6 +1033,11 @@ progress_lock = Lock()
 async def root():
     return {"message": "Snapchat Downloader API"}
 
+@app.get("/test")
+async def test_endpoint():
+    logger.info("🔍 [PYTHON] /test endpoint called!")
+    return {"message": "Test endpoint working", "timestamp": datetime.now().isoformat()}
+
 @app.get("/health")
 async def health_check_endpoint():
     """Health check endpoint"""
@@ -743,7 +1046,7 @@ async def health_check_endpoint():
         stats = resource_manager.get_stats()
         
         # Check database connectivity
-        db_status = "connected" if db_manager else "disconnected"
+        db_status = "disconnected"  # SQLite removed
         
         health = {
             "status": "healthy",
@@ -829,7 +1132,6 @@ async def websocket_endpoint(websocket: WebSocket, username: str, media_type: st
 @app.post("/download", response_model=DownloadResponse)
 async def download_content(request: DownloadRequest, background_tasks: BackgroundTasks):
     try:
-        logger.info(f"[Snapchat] /download request: username={request.username}, type={request.download_type}, send_to_telegram={request.send_to_telegram}")
         snapchat = SnapchatDL(directory_prefix=DOWNLOADS_DIR)
         key = f"{request.username}:{request.download_type}"
         
@@ -884,59 +1186,106 @@ async def download_content(request: DownloadRequest, background_tasks: Backgroun
 
 
 
-        # Execute download synchronously (like Instagram system)
+        # Execute direct download and send to Telegram (NO DISK SAVING)
         try:
-            logger.info(f"🔍 DEBUG: Starting download execution for {request.username}")
+            logger.info(f"🔍 [MANUAL] Starting direct download for {request.username} ({request.download_type})")
             
-            # Create a new SnapchatDL instance
-            snapchat = SnapchatDL(directory_prefix=DOWNLOADS_DIR)
+            # Create SnapchatDL instance for fetching
+            snapchat = SnapchatDL()
             
-            # Call the appropriate download method
+            # Fetch stories based on type
+            stories_to_send = []
             if request.download_type == "stories":
-                logger.info(f"🔍 DEBUG: Calling snapchat.download({request.username})")
-                await snapchat.download(request.username, progress_callback)
-                logger.info(f"🔍 DEBUG: snapchat.download completed successfully")
+                async for story, user_info in snapchat._web_fetch_story(request.username):
+                    # Snapchat returns: 0 = photo, 1 = video
+                    media_type = story["snapMediaType"]
+                    is_video = (media_type == 1 or str(media_type).upper() == "VIDEO")
+                    
+                    story_data = {
+                        'url': story["snapUrls"]["mediaUrl"],
+                        'type': 'video' if is_video else 'photo',
+                        'snap_id': story["snapId"]["value"],
+                        'timestamp': story["timestampInSec"]["value"]
+                    }
+                    stories_to_send.append(story_data)
+                    logger.info(f"🔍 [MANUAL] Found {story_data['type']}: {story_data['snap_id']} (snapMediaType={media_type})")
             elif request.download_type == "highlights":
-                logger.info(f"🔍 DEBUG: Calling snapchat.download_highlights({request.username})")
-                await snapchat.download_highlights(request.username, progress_callback)
-                logger.info(f"🔍 DEBUG: snapchat.download_highlights completed successfully")
+                async for highlight, user_info in snapchat._web_fetch_highlight(request.username):
+                    # Snapchat returns: 0 = photo, 1 = video
+                    media_type = highlight["snapMediaType"]
+                    is_video = (media_type == 1 or str(media_type).upper() == "VIDEO")
+                    
+                    story_data = {
+                        'url': highlight["snapUrls"]["mediaUrl"],
+                        'type': 'video' if is_video else 'photo',
+                        'snap_id': highlight["snapId"]["value"],
+                        'timestamp': highlight["timestampInSec"]["value"]
+                    }
+                    stories_to_send.append(story_data)
+                    logger.info(f"🔍 [MANUAL] Found {story_data['type']}: {story_data['snap_id']} (snapMediaType={media_type})")
             elif request.download_type == "spotlights":
-                logger.info(f"🔍 DEBUG: Calling snapchat.download_spotlights({request.username})")
-                await snapchat.download_spotlights(request.username, progress_callback)
-                logger.info(f"🔍 DEBUG: snapchat.download_spotlights completed successfully")
+                async for spotlight, user_info in snapchat._web_fetch_spotlight(request.username):
+                    # Snapchat returns: 0 = photo, 1 = video
+                    media_type = spotlight["snapMediaType"]
+                    is_video = (media_type == 1 or str(media_type).upper() == "VIDEO")
+                    
+                    story_data = {
+                        'url': spotlight["snapUrls"]["mediaUrl"],
+                        'type': 'video' if is_video else 'photo',
+                        'snap_id': spotlight["snapId"]["value"],
+                        'timestamp': spotlight["timestampInSec"]["value"]
+                    }
+                    stories_to_send.append(story_data)
+                    logger.info(f"🔍 [MANUAL] Found {story_data['type']}: {story_data['snap_id']} (snapMediaType={media_type})")
             else:
-                logger.info(f"🔍 DEBUG: Invalid download type: {request.download_type}")
                 return DownloadResponse(
                     status="error",
                     message="Invalid download type selected.",
                     media_urls=None
                 )
             
-            # If Telegram sending is enabled, send downloaded content immediately
-            logger.info(f"🔍 DEBUG: Reached Telegram logic section")
+            if not stories_to_send:
+                raise NoStoriesFound(f"No {request.download_type} found for {request.username}")
+            
+            logger.info(f"📊 [MANUAL] Found {len(stories_to_send)} {request.download_type} to process")
+            
+            # Send directly to Telegram if enabled
             telegram_sent = False
             telegram_message = None
             
-            # Debug logging to see what's happening
-            logger.info(f"🔍 DEBUG: request.send_to_telegram = {request.send_to_telegram}")
-            logger.info(f"🔍 DEBUG: telegram_manager = {telegram_manager is not None}")
-            
             if request.send_to_telegram and telegram_manager:
-                logger.info(f"📤 [AUTO] Starting Telegram send for {request.username}/{request.download_type}")
-                await send_downloaded_content_to_telegram(request.username, request.download_type, request.telegram_caption)
+                logger.info(f"📤 [MANUAL] Sending ALL {len(stories_to_send)} items to Telegram (manual override - ignores cache)...")
+                await download_and_send_directly(request.username, stories_to_send, request.telegram_caption or f"✨ {request.download_type} from @{request.username}")
                 telegram_sent = True
-                telegram_message = "Successfully sent to Telegram"
-                logger.info(f"✅ [AUTO] Telegram send completed for {request.username}")
+                telegram_message = f"Successfully sent {len(stories_to_send)} items to Telegram"
+                logger.info(f"✅ [MANUAL] Sent {len(stories_to_send)} items to Telegram")
+                
+                # Update cache with ONLY NEW items (skip already cached)
+                logger.info(f"📊 [CACHE] Checking which items are new for cache update...")
+                new_items_for_cache = await find_new_stories(request.username, stories_to_send)
+                
+                if len(new_items_for_cache) > 0:
+                    logger.info(f"📊 [CACHE] Updating cache with {len(new_items_for_cache)} NEW items (skipping {len(stories_to_send) - len(new_items_for_cache)} already cached)...")
+                    
+                    # Get current cache
+                    cached_stories = await get_cached_recent_stories(request.username)
+                    
+                    # Merge: keep old cached items + add new items
+                    all_cached_items = cached_stories + new_items_for_cache
+                    
+                    # Update cache with merged list
+                    await update_stories_cache(request.username, all_cached_items)
+                    logger.info(f"✅ [CACHE] Cache updated: {len(cached_stories)} existing + {len(new_items_for_cache)} new = {len(all_cached_items)} total")
+                else:
+                    logger.info(f"ℹ️ [CACHE] All {len(stories_to_send)} items already in cache - no cache update needed")
+                
             else:
-                if not request.send_to_telegram:
-                    logger.info(f"ℹ️ Telegram sending disabled for {request.username} (send_to_telegram = False)")
-                if not telegram_manager:
-                    logger.info(f"ℹ️ Telegram sending disabled for {request.username} (telegram_manager = None)")
+                logger.info(f"ℹ️ Telegram sending disabled - items fetched but not sent")
             
-            telegram_info = f" + Telegram sending enabled" if request.send_to_telegram else ""
+            telegram_info = f" + {len(stories_to_send)} items sent to Telegram" if telegram_sent else ""
             return DownloadResponse(
                 status="success",
-                message=f"Download completed for {request.username} ({request.download_type}){telegram_info}",
+                message=f"Found {len(stories_to_send)} {request.download_type} for {request.username}{telegram_info}",
                 media_urls=None,
                 telegram_sent=telegram_sent,
                 telegram_message=telegram_message
@@ -1029,31 +1378,15 @@ async def send_downloaded_content_to_telegram(username: str, media_type: str, cu
                 else:
                     result = await telegram_manager.send_photo_with_retry(file_path, caption)
                 
-                # Log success
-                await db_manager.insert_telegram_log(
-                    media_id=f"{username}_{filename}",
-                    username=username,
-                    media_type=media_type,
-                    telegram_chat_id=TELEGRAM_CHANNEL_ID,
-                    telegram_message_id=str(result.get('message_id')),
-                    caption=caption,
-                    status='success'
-                )
+                # Log success (Supabase logging handled by telegram manager)
+                logger.info(f"✅ [TELEGRAM] Successfully sent {filename} to Telegram")
                 
                 sent_files.append(filename)
                 logger.info(f"✅ [AUTO] Item {i} sent to Telegram successfully")
                 
             except Exception as e:
                 logger.error(f"⚠️ [AUTO] Failed to send item {i} to Telegram: {e}")
-                await db_manager.insert_telegram_log(
-                    media_id=f"{username}_{filename}",
-                    username=username,
-                    media_type=media_type,
-                    telegram_chat_id=TELEGRAM_CHANNEL_ID,
-                    caption=custom_caption or generate_telegram_caption(username, media_type),
-                    status='error',
-                    error_message=str(e)
-                )
+                logger.error(f"❌ [TELEGRAM] Failed to send {filename} to Telegram: {e}")
                 failed_files.append(filename)
         
         # Log summary (like Instagram)
@@ -1625,30 +1958,13 @@ async def send_to_telegram(request: SendTelegramRequest):
                 else:
                     result = await telegram_manager.send_photo_with_retry(file_path, caption)
                 
-                # Log success
-                await db_manager.insert_telegram_log(
-                    media_id=f"{request.username}_{filename}",
-                    username=request.username,
-                    media_type=request.media_type,
-                    telegram_chat_id=TELEGRAM_CHANNEL_ID,
-                    telegram_message_id=str(result.get('message_id')),
-                    caption=caption,
-                    status='success'
-                )
+                # Log success (Supabase logging handled by telegram manager)
+                logger.info(f"✅ Successfully sent {filename} to Telegram")
                 
                 sent_files.append(filename)
                 
             except Exception as e:
                 logger.error(f"Failed to send {filename} to Telegram: {e}")
-                await db_manager.insert_telegram_log(
-                    media_id=f"{request.username}_{filename}",
-                    username=request.username,
-                    media_type=request.media_type,
-                    telegram_chat_id=TELEGRAM_CHANNEL_ID,
-                    caption=request.caption or generate_telegram_caption(request.username, request.media_type),
-                    status='error',
-                    error_message=str(e)
-                )
                 failed_files.append(filename)
         
         # Return response
@@ -1709,16 +2025,8 @@ async def send_file_to_telegram(username: str, media_type: str, filename: str, c
         else:
             result = await telegram_manager.send_photo_with_retry(file_path, final_caption)
         
-        # Log success
-        await db_manager.insert_telegram_log(
-            media_id=f"{username}_{filename}",
-            username=username,
-            media_type=media_type,
-            telegram_chat_id=TELEGRAM_CHANNEL_ID,
-            telegram_message_id=str(result.get('message_id')),
-            caption=final_caption,
-            status='success'
-        )
+        # Log success (Supabase logging handled by telegram manager)
+        logger.info(f"✅ [MANUAL] Successfully sent {filename} to Telegram")
         
         logger.info(f"✅ [MANUAL] Sent {filename} to Telegram for {username}")
         
@@ -1732,16 +2040,7 @@ async def send_file_to_telegram(username: str, media_type: str, filename: str, c
     except Exception as e:
         logger.error(f"❌ [MANUAL] Failed to send {filename} to Telegram: {e}")
         
-        # Log error
-        await db_manager.insert_telegram_log(
-            media_id=f"{username}_{filename}",
-            username=username,
-            media_type=media_type,
-            telegram_chat_id=TELEGRAM_CHANNEL_ID,
-            caption=caption or generate_telegram_caption(username, media_type),
-            status='error',
-            error_message=str(e)
-        )
+        # Log error (Supabase logging handled by telegram manager)
         
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1749,7 +2048,14 @@ async def send_file_to_telegram(username: str, media_type: str, filename: str, c
 async def get_telegram_stats():
     """Get Telegram sending statistics"""
     try:
-        stats = await db_manager.get_telegram_stats()
+        # Return basic stats since SQLite is removed
+        stats = {
+            "total_sent": 0,
+            "total_failed": 0,
+            "recent_sent": 0,
+            "success_rate": 0.0,
+            "download_url": None
+        }
         return TelegramStatsResponse(**stats)
     except Exception as e:
         logger.error(f"Error getting Telegram stats: {e}")
@@ -1763,6 +2069,93 @@ async def get_telegram_config():
         "bot_token": "***" if TELEGRAM_BOT_TOKEN else None,
         "channel_id": TELEGRAM_CHANNEL_ID
     }
+
+@app.get("/cache/stats")
+async def get_cache_stats():
+    """Get cache statistics for both SQLite and Supabase"""
+    try:
+        stats = {
+            "sqlite": {
+                "connected": False,
+                "database_path": None
+            },
+            "supabase": {
+                "connected": supabase_manager.is_connected if supabase_manager else False
+            },
+            "memory_cache": {
+                "removed": "Memory cache removed - using Supabase only"
+            }
+        }
+        
+        # Get Supabase cache stats if connected
+        if supabase_manager and supabase_manager.is_connected:
+            supabase_stats = supabase_manager.get_snapchat_cache_stats()
+            stats["supabase"].update(supabase_stats)
+        
+        return stats
+        
+    except Exception as error:
+        logger.error(f"Error getting cache stats: {error}")
+        raise HTTPException(status_code=500, detail=str(error))
+
+@app.get("/cache/status")
+async def get_cache_status():
+    """Get detailed cache status (similar to Instagram's cache-status endpoint)"""
+    try:
+        username = TARGET_USERNAME or "no_target_set"
+        
+        # Get cached stories for the target user
+        cached_stories = await get_cached_recent_stories(username) if TARGET_USERNAME else []
+        
+        return {
+            "username": username,
+            "database_cache": {
+                "count": len(cached_stories),
+                "stories": cached_stories[:5] if cached_stories else []  # First 5 stories for preview
+            },
+            "memory_cache": {
+                "removed": "Memory cache removed - using Supabase only"
+            },
+            "cache_system": {
+                "supabase_connected": supabase_manager.is_connected if supabase_manager else False,
+                "sqlite_connected": False,
+                "memory_cache_enabled": False
+            }
+        }
+        
+    except Exception as error:
+        logger.error(f"Error getting cache status: {error}")
+        raise HTTPException(status_code=500, detail=str(error))
+
+@app.get("/targeted-usernames")
+async def get_targeted_usernames():
+    """Get all usernames that have been targeted for suggestions"""
+    try:
+        usernames = []
+        
+        # Get usernames from Supabase if connected
+        if supabase_manager and supabase_manager.is_connected:
+            try:
+                response = supabase_manager.client.table("snapchat_recent_stories_cache").select("username").execute()
+                if response.data:
+                    supabase_usernames = list(set([user['username'] for user in response.data]))
+                    usernames.extend(supabase_usernames)
+            except Exception as error:
+                logger.warning(f"Failed to get usernames from Supabase: {error}")
+        
+        # SQLite fallback removed - using Supabase only
+        
+        # Remove duplicates and sort
+        unique_usernames = sorted(list(set(usernames)))
+        
+        return {
+            "usernames": unique_usernames,
+            "count": len(unique_usernames)
+        }
+        
+    except Exception as error:
+        logger.error(f"Error getting targeted usernames: {error}")
+        raise HTTPException(status_code=500, detail=str(error))
 
 # ===== PHASE 2: POLLING SYSTEM IMPLEMENTATION =====
 
@@ -1852,139 +2245,140 @@ async def execute_poll_cycle():
 
 # ===== 2.3 Story Processing Pipeline =====
 async def check_for_new_stories(force=False):
+    """Use the exact same approach as manual downloads for automatic polling"""
     try:
-        logger.info(f"\nChecking for new stories from @{TARGET_USERNAME} {force and '(force send enabled)' or ''}")
+        logger.info(f"\n🔍 [POLL] Checking for new stories from @{TARGET_USERNAME} {force and '(force send enabled)' or ''}")
+        
+        # Check Supabase connection status
+        if supabase_manager.is_connected:
+            logger.info("✅ [CACHE] Supabase connection is active")
+        else:
+            logger.warning("⚠️ [CACHE] Supabase connection is not available, using fallback")
         
         # Use existing Snapchat downloader to get stories
         snapchat_dl = SnapchatDL()
         
         try:
-            # Fetch stories without downloading
+            # Fetch stories without downloading (same as manual)
             stories = []
             async for story, user_info in snapchat_dl._web_fetch_story(TARGET_USERNAME):
+                # Snapchat returns: 0 = photo, 1 = video (integer, not string)
+                media_type = story["snapMediaType"]
+                is_video = (media_type == 1 or str(media_type).upper() == "VIDEO")
+                
                 # Convert to the format expected by the polling system
                 story_data = {
                     'url': story["snapUrls"]["mediaUrl"],
-                    'type': 'video' if story["snapMediaType"] == "VIDEO" else 'photo',
+                    'type': 'video' if is_video else 'photo',
                     'snap_id': story["snapId"]["value"],
                     'timestamp': story["timestampInSec"]["value"]
                 }
+                # Debug logging to verify type detection
+                logger.info(f"🔍 [POLL] Story type detected: {story_data['type']} (snapMediaType: {media_type})")
                 stories.append(story_data)
             
-            logger.info(f"Found {len(stories)} total stories")
+            logger.info(f"📊 [POLL] Found {len(stories)} total stories from Snapchat")
+            request_tracker.track_snapchat(f"stories_{TARGET_USERNAME}", True)
         except NoStoriesFound:
-            logger.info("No stories found for user")
+            logger.info("📭 [POLL] No stories found for user")
             stories = []
+            request_tracker.track_snapchat(f"stories_{TARGET_USERNAME}", True)
         except Exception as e:
-            logger.error(f"Error fetching stories: {e}")
+            logger.error(f"❌ [POLL] Error fetching stories: {e}")
             request_tracker.track_snapchat(f"stories_{TARGET_USERNAME}", False, str(e))
             return
         
-        # Use cache to find only new stories
+        # Get cached stories for comparison
+        logger.info(f"📊 [CACHE] Checking cache for @{TARGET_USERNAME}...")
+        cached_stories = await get_cached_recent_stories(TARGET_USERNAME)
+        logger.info(f"📊 [CACHE] Found {len(cached_stories)} cached stories")
+        
+        # POLLING: Use cache to find ONLY NEW stories (skip already sent)
         new_stories = await find_new_stories(TARGET_USERNAME, stories)
         
-        # Update cache with current stories
-        await update_stories_cache(TARGET_USERNAME, stories)
-        
         if len(new_stories) == 0 and not force:
-            logger.info("✅ No new stories found, skipping story processing...")
+            logger.info("✅ [CACHE] No new stories found, skipping story processing...")
+            # Update cache even when no new stories (refreshes timestamps)
+            logger.info(f"📊 [CACHE] Updating cache with {len(stories)} current stories...")
+            await update_stories_cache(TARGET_USERNAME, stories)
             return
         
-        logger.info(f"Processing {len(new_stories)} new stories out of {len(stories)} total")
+        logger.info(f"📱 [POLL] Processing {len(new_stories)} NEW stories out of {len(stories)} total (skipping {len(stories) - len(new_stories)} cached)")
         
-        # Process each new story
-        for story in new_stories:
+        # POLLING: Send ONLY new stories (cache-filtered)
+        if telegram_manager and len(new_stories) > 0:
             try:
-                # Send to Telegram automatically
-                if telegram_manager:
+                logger.info(f"📤 [AUTO] Using cache-filtered manual download infrastructure for {len(new_stories)} new stories...")
+                
+                # Download only the new stories using the manual infrastructure
+                await download_filtered_stories(TARGET_USERNAME, new_stories, f"✨ New stories from <a href='https://snapchat.com/add/{TARGET_USERNAME}'>@{TARGET_USERNAME}</a>! 📱")
+                
+                logger.info(f"✅ [AUTO] Cache-filtered download and Telegram sending completed")
+                
+                # Mark all new stories as processed
+                logger.info(f"📊 [CACHE] Marking {len(new_stories)} stories as processed...")
+                for story in new_stories:
                     try:
-                        logger.info(f"📤 [AUTO] Sending story to Telegram...")
-                        story_caption = f"✨ New story from <a href='https://snapchat.com/add/{TARGET_USERNAME}'>@{TARGET_USERNAME}</a>! 📱"
-                        
-                        # Determine if it's a video based on file extension or content type
-                        is_video = story.get('url', '').lower().endswith(('.mp4', '.mov', '.avi')) or story.get('type') == 'video'
-                        
-                        if is_video:
-                            result = await telegram_manager.send_video_with_retry(story['url'], story_caption)
-                            request_tracker.track_telegram('video', True)
-                        else:
-                            result = await telegram_manager.send_photo_with_retry(story['url'], story_caption)
-                            request_tracker.track_telegram('photo', True)
-                        
-                        logger.info(f"✅ [AUTO] Story sent to Telegram successfully")
-                        
-                        # Add delay between Telegram sends
-                        await asyncio.sleep(1)
-                        
-                    except Exception as telegram_error:
-                        logger.error(f"⚠️ [AUTO] Failed to send story to Telegram: {telegram_error}")
-                        request_tracker.track_telegram('photo' if not is_video else 'video', False, str(telegram_error))
+                        story_id = generate_story_id(story)
+                        story_url = story.get('url', '')
+                        story_type = story.get('type', 'photo')
+                        await mark_story_processed(story_id, TARGET_USERNAME, story_url, story_type)
+                        logger.info(f"✅ [CACHE] Story marked as processed: {story_id}")
+                    except Exception as process_error:
+                        logger.error(f"❌ [AUTO] Error marking story as processed: {process_error}")
                 
-                # Mark as processed
-                story_id = generate_story_id(story)
-                await mark_story_processed(story_id, TARGET_USERNAME, story['url'], story.get('type', 'photo'))
-                logger.info(f"✅ Story marked as processed: {story_id}")
+                # Update cache AFTER successful sending (allows retry on failure)
+                logger.info(f"📊 [CACHE] Updating cache with {len(stories)} current stories after successful send...")
+                await update_stories_cache(TARGET_USERNAME, stories)
                 
-            except Exception as error:
-                logger.error(f"⚠️ Error processing story: {error}")
+                logger.info(f"✅ [AUTO] Successfully processed {len(new_stories)} new stories using cache-filtered manual infrastructure")
+                
+            except Exception as download_error:
+                logger.error(f"❌ [AUTO] Error using cache-filtered manual download infrastructure: {download_error}")
+                logger.error(f"🔍 [DEBUG] Error type: {type(download_error)}")
+                logger.warning(f"⚠️ [CACHE] Cache NOT updated due to send failure - stories will retry next poll")
         
         # Update activity tracker with new stories found
         if len(new_stories) > 0:
             activity_tracker.update_activity(len(new_stories))
-            logger.info(f"📊 Activity updated: +{len(new_stories)} new stories processed")
+            logger.info(f"📊 [ACTIVITY] Activity updated: +{len(new_stories)} new stories processed")
         
-        logger.info('Polling check completed')
-        # Always print request statistics after each polling run
+        # Log summary
+        logger.info(f"✅ [POLL] Polling check completed: {len(new_stories)} new stories processed using manual infrastructure")
+        
+        # Log cache statistics
+        if supabase_manager.is_connected:
+            try:
+                cache_stats = supabase_manager.get_snapchat_cache_stats()
+                logger.info(f"📊 [CACHE] Snapchat cache stats: {cache_stats}")
+            except Exception as stats_error:
+                logger.error(f"❌ [CACHE] Error getting cache stats: {stats_error}")
+        
         request_tracker.print_stats()
-        
         logger.info('')
         
     except Exception as error:
-        logger.error(f'Polling error: {error}')
+        logger.error(f'❌ [POLL] Polling error: {error}')
         request_tracker.track_snapchat(f"stories_{TARGET_USERNAME}", False, str(error))
-
-# ===== 2.4 Database Operations for Stories =====
-async def find_new_stories(username, fetched_stories):
-    """Find stories that are not in the cache"""
-    try:
-        # Get cached stories for this user
-        cached_stories = await db_manager.get_cached_media(username, 'stories')
-        cached_story_ids = {story['snap_id'] for story in cached_stories if story.get('snap_id')}
-        
-        new_stories = []
-        for story in fetched_stories:
-            story_id = generate_story_id(story)
-            if story_id not in cached_story_ids:
-                new_stories.append(story)
-        
-        logger.info(f"📊 Stories summary: {len(fetched_stories)} fetched, {len(cached_story_ids)} cached, {len(new_stories)} new")
-        return new_stories
-        
-    except Exception as error:
-        logger.error(f"Error finding new stories: {error}")
-        return fetched_stories  # Return all stories if cache lookup fails
 
 async def update_stories_cache(username, stories):
     """Update the stories cache with current stories"""
     try:
-        # Clear old cache entries for this user
-        await db_manager.clear_cached_media(username, 'stories')
+        logger.info(f"📊 [CACHE] Updating stories cache for @{username} with {len(stories)} stories...")
         
-        # Insert new cache entries
-        for i, story in enumerate(stories):
-            story_id = generate_story_id(story)
-            await db_manager.insert_cached_media(
-                username=username,
-                media_url=story['url'],
-                snap_id=story_id,
-                media_type=story.get('type', 'photo'),
-                media_order=i
-            )
-        
-        logger.info(f"✅ Stories cache updated for @{username}")
+        # Use Supabase for caching
+        if supabase_manager.is_connected:
+            # Update Supabase cache
+            success = await supabase_manager.update_recent_stories_cache(username, stories)
+            if success:
+                logger.info(f"✅ [CACHE] Stories cache updated for @{username} (Supabase)")
+            else:
+                logger.error(f"❌ [CACHE] Failed to update Supabase cache for @{username}")
+        else:
+            logger.warning(f"⚠️ [CACHE] Supabase not connected - cannot update cache for @{username}")
         
     except Exception as error:
-        logger.error(f"Error updating stories cache: {error}")
+        logger.error(f"❌ [CACHE] Error updating stories cache: {error}")
 
 def generate_story_id(story):
     """Generate a unique story ID from the snap_id or URL"""
@@ -1999,8 +2393,12 @@ def generate_story_id(story):
 async def check_story_processed(username, story_id):
     """Check if a story has already been processed"""
     try:
-        processed_media = await db_manager.get_processed_media_by_id(story_id)
-        return processed_media is not None
+        # Use Supabase for caching
+        if supabase_manager.is_connected:
+            return await supabase_manager.is_story_processed(story_id, username)
+        else:
+            logger.warning(f"⚠️ [CACHE] Supabase not connected - cannot check if story is processed")
+            return False
         
     except Exception as error:
         logger.error(f"Error checking story processed: {error}")
@@ -2009,17 +2407,20 @@ async def check_story_processed(username, story_id):
 async def mark_story_processed(story_id, username, story_url, story_type):
     """Mark a story as processed"""
     try:
-        await db_manager.insert_processed_media(
-            media_id=story_id,
-            username=username,
-            media_url=story_url,
-            media_type=story_type,
-            file_path=story_url,  # For stories, URL is the file path
-            is_sent_to_telegram=True
-        )
+        logger.info(f"📊 [CACHE] Marking story as processed: {story_id}")
+        
+        # Use Supabase for caching
+        if supabase_manager.is_connected:
+            success = await supabase_manager.mark_story_processed(story_id, username, story_url, story_type)
+            if success:
+                logger.info(f"✅ [CACHE] Story marked as processed in Supabase: {story_id}")
+            else:
+                logger.error(f"❌ [CACHE] Failed to mark story as processed in Supabase: {story_id}")
+        else:
+            logger.warning(f"⚠️ [CACHE] Supabase not connected - cannot mark story as processed")
         
     except Exception as error:
-        logger.error(f"Error marking story processed: {error}")
+        logger.error(f"❌ [CACHE] Error marking story processed: {error}")
 
 # ===== PHASE 5: API ENDPOINTS =====
 
@@ -2146,11 +2547,12 @@ async def get_polling_config():
     }
 
 @app.post("/set-target")
-async def set_target_endpoint(username: str):
+async def set_target_endpoint(request: AddTargetRequest):
     """Set the target username for polling (follows Instagram flow - no automatic polling)"""
     try:
         global TARGET_USERNAME
         
+        username = request.username
         if not username or username.strip() == "":
             raise HTTPException(status_code=400, detail="Username cannot be empty")
         
@@ -2176,51 +2578,204 @@ async def set_target_endpoint(username: str):
 # ===== PHASE 6: TELEGRAM INTEGRATION ENHANCEMENT =====
 
 # ===== 6.1 Enhanced Telegram Sending with Fallbacks =====
-async def send_story_to_telegram_with_fallback(story, username):
-    """Send story to Telegram with comprehensive fallback handling"""
+# Note: This function has been removed as we now use the same download and sending
+# infrastructure as the manual system to ensure videos are sent as videos, not images.
+
+# ===== PHASE 6.5: SNAPCHAT-SPECIFIC ENDPOINTS FOR FRONTEND =====
+# These endpoints provide the same functionality as the existing endpoints
+# but with the snapchat- prefix that the frontend expects
+
+@app.get("/snapchat-status")
+async def get_snapchat_status():
+    """Get Snapchat service status (frontend compatibility endpoint)"""
     try:
-        if not telegram_manager:
-            logger.warning("⚠️ Telegram not configured - skipping story send")
-            return False
+        stats = request_tracker.get_stats()
+        return {
+            "status": "running",
+            "target_username": TARGET_USERNAME,
+            "enabled": POLLING_ENABLED,
+            "active": current_polling_timeout is not None,
+            "started": polling_started,
+            "current_interval": activity_tracker.get_polling_interval(),
+            "activity_level": activity_tracker.get_activity_level(),
+            "uptime": stats['uptime'],
+            "statistics": {
+                "snapchat": stats['snapchat'],
+                "telegram": stats['telegram'],
+                "rates": stats['rates']
+            }
+        }
         
-        story_caption = f"✨ New story from <a href='https://snapchat.com/add/{username}'>@{username}</a>! 📱"
-        is_video = story.get('url', '').lower().endswith(('.mp4', '.mov', '.avi')) or story.get('type') == 'video'
-        
-        # Primary send attempt
-        try:
-            if is_video:
-                result = await telegram_manager.send_video_with_retry(story['url'], story_caption)
-                request_tracker.track_telegram('video', True)
-            else:
-                result = await telegram_manager.send_photo_with_retry(story['url'], story_caption)
-                request_tracker.track_telegram('photo', True)
-            
-            logger.info(f"✅ [AUTO] Story sent to Telegram successfully")
-            return True
-            
-        except Exception as primary_error:
-            logger.warning(f"⚠️ Primary Telegram send failed: {primary_error}")
-            
-            # Fallback: Try with different caption format
-            try:
-                fallback_caption = f"📱 New story from @{username}"
-                if is_video:
-                    result = await telegram_manager.send_video_with_retry(story['url'], fallback_caption)
-                else:
-                    result = await telegram_manager.send_photo_with_retry(story['url'], fallback_caption)
-                
-                logger.info(f"✅ [FALLBACK] Story sent to Telegram with fallback caption")
-                request_tracker.track_telegram('video' if is_video else 'photo', True)
-                return True
-                
-            except Exception as fallback_error:
-                logger.error(f"❌ Fallback Telegram send also failed: {fallback_error}")
-                request_tracker.track_telegram('video' if is_video else 'photo', False, str(fallback_error))
-                return False
-                
     except Exception as error:
-        logger.error(f"❌ Error in send_story_to_telegram_with_fallback: {error}")
-        return False
+        logger.error(f"Error getting Snapchat status: {error}")
+        raise HTTPException(status_code=500, detail=str(error))
+
+@app.post("/snapchat-set-target")
+async def set_snapchat_target_endpoint(request: AddTargetRequest):
+    """Set the Snapchat target username (frontend compatibility endpoint)"""
+    try:
+        global TARGET_USERNAME
+        
+        username = request.username
+        if not username or username.strip() == "":
+            raise HTTPException(status_code=400, detail="Username cannot be empty")
+        
+        # Only stop polling if we're changing to a different target
+        if polling_started and TARGET_USERNAME and TARGET_USERNAME.strip() != username.strip():
+            logger.info(f"🔄 Changing Snapchat target from @{TARGET_USERNAME} to @{username.strip()}, stopping current polling")
+            await stop_polling()
+        
+        TARGET_USERNAME = username.strip()
+        
+        logger.info(f"Snapchat target username set to: @{TARGET_USERNAME}")
+        
+        return {
+            "success": True,
+            "message": f"Snapchat target username set to @{TARGET_USERNAME}",
+            "target": TARGET_USERNAME
+        }
+        
+    except Exception as error:
+        logger.error(f"Error setting Snapchat target: {error}")
+        raise HTTPException(status_code=500, detail=str(error))
+
+@app.get("/snapchat-targeted-usernames")
+async def get_snapchat_targeted_usernames():
+    """Get Snapchat targeted usernames (frontend compatibility endpoint)"""
+    try:
+        usernames = []
+        if TARGET_USERNAME:
+            usernames.append(TARGET_USERNAME)
+        
+        return {
+            "usernames": usernames,
+            "current_target": TARGET_USERNAME
+        }
+        
+    except Exception as error:
+        logger.error(f"Error getting Snapchat targeted usernames: {error}")
+        raise HTTPException(status_code=500, detail=str(error))
+
+@app.post("/snapchat-start-polling")
+async def start_snapchat_polling_endpoint():
+    """Start Snapchat polling (frontend compatibility endpoint)"""
+    try:
+        if not TARGET_USERNAME:
+            raise HTTPException(status_code=400, detail="No target set. Please set a target first.")
+        
+        if polling_started:
+            return {
+                "success": True,
+                "message": "Snapchat polling already started",
+                "target": TARGET_USERNAME,
+                "polling_active": True
+            }
+        
+        logger.info(f"Starting Snapchat polling for @{TARGET_USERNAME}")
+        await start_polling(TARGET_USERNAME)
+        
+        return {
+            "success": True,
+            "message": f'Snapchat polling started for @{TARGET_USERNAME}',
+            "target": TARGET_USERNAME,
+            "polling_active": True
+        }
+        
+    except Exception as error:
+        logger.error(f"Error starting Snapchat polling: {error}")
+        raise HTTPException(status_code=500, detail=str(error))
+
+@app.post("/snapchat-stop-polling")
+async def stop_snapchat_polling_endpoint():
+    """Stop Snapchat polling (frontend compatibility endpoint)"""
+    try:
+        if not polling_started:
+            return {
+                "success": True,
+                "message": "Snapchat polling not active",
+                "polling_active": False
+            }
+        
+        logger.info(f"🛑 Stopping Snapchat polling for @{TARGET_USERNAME}")
+        await stop_polling()
+        
+        return {
+            "success": True,
+            "message": "Snapchat polling stopped",
+            "polling_active": False
+        }
+        
+    except Exception as error:
+        logger.error(f"Error stopping Snapchat polling: {error}")
+        raise HTTPException(status_code=500, detail=str(error))
+
+@app.get("/snapchat-poll-now")
+async def snapchat_poll_now_endpoint(force: bool = False):
+    """Manual Snapchat polling (frontend compatibility endpoint)"""
+    try:
+        if not TARGET_USERNAME:
+            raise HTTPException(status_code=400, detail="No target set. Please set a target first.")
+        
+        logger.info(f"Manual Snapchat polling requested for @{TARGET_USERNAME} {force and '(force enabled)' or ''}")
+        
+        # Run the polling check
+        await check_for_new_stories(force=force)
+        
+        return {
+            "success": True,
+            "message": f"Manual Snapchat polling completed for @{TARGET_USERNAME}",
+            "target": TARGET_USERNAME,
+            "force": force
+        }
+        
+    except Exception as error:
+        logger.error(f"Error during manual Snapchat polling: {error}")
+        raise HTTPException(status_code=500, detail=str(error))
+
+@app.get("/snapchat-stats")
+async def get_snapchat_stats():
+    """Get Snapchat statistics (frontend compatibility endpoint)"""
+    try:
+        stats = request_tracker.get_stats()
+        return {
+            "snapchat": stats['snapchat'],
+            "telegram": stats['telegram'],
+            "rates": stats['rates'],
+            "uptime": stats['uptime']
+        }
+        
+    except Exception as error:
+        logger.error(f"Error getting Snapchat stats: {error}")
+        raise HTTPException(status_code=500, detail=str(error))
+
+@app.post("/snapchat-clear-cache")
+async def clear_snapchat_cache_endpoint():
+    """Clear Snapchat cache (frontend compatibility endpoint)"""
+    try:
+        if not TARGET_USERNAME:
+            raise HTTPException(status_code=400, detail="No target set. Please set a target first.")
+        
+        logger.info(f"Clearing Snapchat cache for @{TARGET_USERNAME}")
+        
+        # Clear cache for the current target
+        if supabase_manager.is_connected:
+            deleted_count = await supabase_manager.clear_user_cache(TARGET_USERNAME)
+            logger.info(f"🗑️ Cleared {deleted_count} cache entries for @{TARGET_USERNAME}")
+        else:
+            logger.warning("⚠️ Supabase not connected, cannot clear cache")
+            deleted_count = 0
+        
+        # Memory cache removed - Supabase is the only cache now
+        
+        return {
+            "success": True,
+            "message": f"Snapchat cache cleared for @{TARGET_USERNAME} (Supabase + memory)",
+            "deleted_count": deleted_count
+        }
+        
+    except Exception as error:
+        logger.error(f"Error clearing Snapchat cache: {error}")
+        raise HTTPException(status_code=500, detail=str(error))
 
 # ===== PHASE 7: SERVICE INTEGRATION & GRACEFUL SHUTDOWN =====
 
@@ -2240,15 +2795,10 @@ async def graceful_shutdown():
             logger.info("🏥 Stopping health check system...")
             health_check.stop()
         
-        # Stop memory management
-        if memory_manager.running:
-            logger.info("🧠 Stopping memory management...")
-            memory_manager.stop()
+
         
-        # Close database connections
-        if db_manager:
-            logger.info("🗄️ Closing database connections...")
-            await db_manager.close()
+        # Database connections closed (SQLite removed)
+        logger.info("🗄️ Database connections closed (SQLite removed)")
         
         # Close Telegram manager
         if telegram_manager:
@@ -2277,12 +2827,23 @@ async def graceful_shutdown():
 # ===== 7.2 Enhanced Startup Integration =====
 @app.on_event("startup")
 async def enhanced_startup_event():
-    """Enhanced startup with polling system integration"""
+    """Enhanced startup with Supabase integration"""
     try:
         app.startup_time = time.time()
         
         # Initialize core services
         logger.info("Initializing Snapchat service...")
+        
+        # Connect to Supabase
+        supabase_connected = await supabase_manager.connect()
+        if supabase_connected:
+            logger.info("✅ Supabase integration ready for Snapchat")
+        else:
+            logger.warning("⚠️ Supabase integration disabled for Snapchat")
+        
+        # Check and load cache on startup
+        logger.info("📊 Checking cache status on startup...")
+        await check_cache_on_boot()
         
         # Validate Telegram configuration
         telegram_valid = await validate_telegram_config()
@@ -2293,7 +2854,15 @@ async def enhanced_startup_event():
         
         # Start monitoring systems
         health_check.start()
-        memory_manager.start()
+        
+        # Schedule 4-week cleanup (every 4 weeks)
+        scheduler.add_job(
+            health_check.scheduled_cleanup,
+            trigger=IntervalTrigger(weeks=4),
+            id="snapchat_4week_cleanup",
+            replace_existing=True
+        )
+        logger.info("⏰ Scheduled 4-week cleanup job added")
         
         # Initialize polling if target is set
         if TARGET_USERNAME:
@@ -2333,96 +2902,7 @@ def enhanced_signal_handler(signum, frame):
 signal.signal(signal.SIGINT, enhanced_signal_handler)
 signal.signal(signal.SIGTERM, enhanced_signal_handler)
 
-# ===== 7.5 Enhanced Polling Integration =====
-async def enhanced_check_for_new_stories(force=False):
-    """Enhanced story checking with better error handling and Telegram integration"""
-    try:
-        logger.info(f"\nChecking for new stories from @{TARGET_USERNAME} {force and '(force send enabled)' or ''}")
-        
-        # Use existing Snapchat downloader to get stories
-        snapchat_dl = SnapchatDL()
-        
-        try:
-            # Fetch stories without downloading
-            stories = []
-            async for story, user_info in snapchat_dl._web_fetch_story(TARGET_USERNAME):
-                # Convert to the format expected by the polling system
-                story_data = {
-                    'url': story["snapUrls"]["mediaUrl"],
-                    'type': 'video' if story["snapMediaType"] == "VIDEO" else 'photo',
-                    'snap_id': story["snapId"]["value"],
-                    'timestamp': story["timestampInSec"]["value"]
-                }
-                stories.append(story_data)
-            
-            logger.info(f"Found {len(stories)} total stories")
-            request_tracker.track_snapchat(f"stories_{TARGET_USERNAME}", True)
-        except NoStoriesFound:
-            logger.info("No stories found for user")
-            stories = []
-            request_tracker.track_snapchat(f"stories_{TARGET_USERNAME}", True)
-        except Exception as e:
-            logger.error(f"Error fetching stories: {e}")
-            request_tracker.track_snapchat(f"stories_{TARGET_USERNAME}", False, str(e))
-            return
-        
-        # Use cache to find only new stories
-        new_stories = await find_new_stories(TARGET_USERNAME, stories)
-        
-        # Update cache with current stories
-        await update_stories_cache(TARGET_USERNAME, stories)
-        
-        if len(new_stories) == 0 and not force:
-            logger.info("✅ No new stories found, skipping story processing...")
-            return
-        
-        logger.info(f"Processing {len(new_stories)} new stories out of {len(stories)} total")
-        
-        # Process each new story with enhanced Telegram integration
-        successful_sends = 0
-        failed_sends = 0
-        
-        for i, story in enumerate(new_stories, 1):
-            try:
-                logger.info(f"📤 [AUTO] Processing story {i}/{len(new_stories)}...")
-                
-                # Send to Telegram with enhanced fallback
-                telegram_success = await send_story_to_telegram_with_fallback(story, TARGET_USERNAME)
-                
-                if telegram_success:
-                    successful_sends += 1
-                else:
-                    failed_sends += 1
-                
-                # Mark as processed
-                story_id = generate_story_id(story)
-                await mark_story_processed(story_id, TARGET_USERNAME, story['url'], story.get('type', 'photo'))
-                logger.info(f"✅ Story {i} marked as processed: {story_id}")
-                
-                # Add delay between sends to avoid rate limiting
-                if i < len(new_stories):
-                    await asyncio.sleep(2)
-                
-            except Exception as error:
-                logger.error(f"⚠️ Error processing story {i}: {error}")
-                failed_sends += 1
-        
-        # Update activity tracker with new stories found
-        if len(new_stories) > 0:
-            activity_tracker.update_activity(len(new_stories))
-            logger.info(f"📊 Activity updated: +{len(new_stories)} new stories processed")
-        
-        # Log summary
-        logger.info(f"Polling check completed: {successful_sends} sent, {failed_sends} failed")
-        request_tracker.print_stats()
-        logger.info('')
-        
-    except Exception as error:
-        logger.error(f'Polling error: {error}')
-        request_tracker.track_snapchat(f"stories_{TARGET_USERNAME}", False, str(error))
 
-# Replace the original check_for_new_stories with the enhanced version
-check_for_new_stories = enhanced_check_for_new_stories
 
 # Add clear cache endpoint
 @app.post("/clear-cache")
@@ -2443,13 +2923,8 @@ async def clear_cache():
                     pass
             websocket_manager.active_connections[key] = []
         
-        # Clear database cache (if using database)
-        if db_manager:
-            try:
-                await db_manager.clear_all_cached_media()
-                logger.info("Database cache cleared")
-            except Exception as e:
-                logger.warning(f"Could not clear database cache: {e}")
+        # Database cache clearing removed (SQLite fallback removed)
+        logger.info("Database cache clearing skipped (SQLite removed)")
         
         logger.info("Cache cleared successfully")
         return {"success": True, "message": "Cache cleared successfully"}
@@ -2458,11 +2933,84 @@ async def clear_cache():
         logger.error(f"Error clearing cache: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to clear cache: {str(e)}")
 
+# Add clear cache for specific user endpoint
+@app.post("/clear-user-cache")
+async def clear_user_cache(username: str):
+    """Clear cache for specific user"""
+    try:
+        if not username:
+            raise HTTPException(status_code=400, detail="Username is required")
+        
+        deleted_count = 0
+        
+        # Use Supabase for caching
+        if supabase_manager and supabase_manager.is_connected:
+            try:
+                logger.info(f"🗑️ Clearing cache for @{username} using Supabase...")
+                deleted_count = await supabase_manager.clear_user_cache(username)
+            except Exception as error:
+                logger.error(f"❌ Supabase cache clear failed: {error}")
+                logger.warning(f"⚠️ Cannot clear cache for @{username} - Supabase not available")
+        else:
+            logger.warning(f"⚠️ Cannot clear cache for @{username} - Supabase not connected")
+        
+        # Memory cache removed - Supabase is the only cache now
+        
+        return {
+            "success": True, 
+            "deleted": deleted_count, 
+            "username": username,
+            "message": f"Cache cleared for @{username}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error clearing user cache: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear user cache: {str(e)}")
+
+# Add clear all data for specific user endpoint
+@app.post("/clear-user-data")
+async def clear_user_data(username: str):
+    """Clear all data (cache + processed stories) for specific user"""
+    try:
+        if not username:
+            raise HTTPException(status_code=400, detail="Username is required")
+        
+        processed_deleted = 0
+        cache_deleted = 0
+        
+        # Use Supabase for caching
+        if supabase_manager and supabase_manager.is_connected:
+            try:
+                logger.info(f"🧹 Clearing all data for @{username} using Supabase...")
+                result = await supabase_manager.clear_user_data(username)
+                processed_deleted = result["processed_deleted"]
+                cache_deleted = result["cache_deleted"]
+            except Exception as error:
+                logger.error(f"❌ Supabase data clear failed: {error}")
+                logger.warning(f"⚠️ Cannot clear data for @{username} - Supabase not available")
+        else:
+            logger.warning(f"⚠️ Cannot clear data for @{username} - Supabase not connected")
+        
+        # Memory cache removed - Supabase is the only cache now
+        
+        return {
+            "success": True,
+            "processed_deleted": processed_deleted,
+            "cache_deleted": cache_deleted,
+            "username": username,
+            "message": f"All data cleared for @{username}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error clearing user data: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear user data: {str(e)}")
+
 # Add gallery endpoint for all users
 @app.get("/gallery/{media_type}", response_model=GalleryResponse)
 async def get_gallery_all_users(media_type: str):
     """Get gallery for all users of a specific media type"""
-    logger.info(f"Fetching gallery for all users - {media_type}")
+    # Reduced logging to avoid spam
+    # logger.info(f"Fetching gallery for all users - {media_type}")
     if media_type not in ["stories", "highlights", "spotlights"]:
         raise HTTPException(status_code=400, detail="Invalid media type")
     
@@ -2547,6 +3095,103 @@ async def serve_downloaded_file(username: str, media_type: str, filename: str):
     except Exception as e:
         logger.error(f"Error serving file {filename}: {e}")
         raise HTTPException(status_code=500, detail="Error serving file")
+
+# ===== DIRECT DOWNLOAD AND SEND FUNCTION (NO DISK SAVE) =====
+async def download_and_send_directly(username: str, stories: list, telegram_caption: str):
+    """
+    Download stories to temporary memory and send directly to Telegram
+    WITHOUT saving to disk permanently. Temp files are deleted immediately after sending.
+    """
+    try:
+        logger.info(f"📥 [DIRECT] Downloading and sending {len(stories)} items directly to Telegram...")
+        
+        import tempfile
+        sent_count = 0
+        failed_count = 0
+        
+        for i, story in enumerate(stories, 1):
+            temp_file = None
+            try:
+                story_url = story.get('url')
+                story_type = story.get('type', 'photo')
+                snap_id = story.get('snap_id', f'story_{i}')
+                
+                logger.info(f"📥 [DIRECT] Processing {i}/{len(stories)}: {story_type} - {snap_id}")
+                
+                # Download to temporary file
+                file_extension = '.mp4' if story_type == 'video' else '.jpg'
+                temp_file = tempfile.NamedTemporaryFile(suffix=file_extension, delete=False)
+                temp_path = temp_file.name
+                temp_file.close()
+                
+                # Download content
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(story_url) as response:
+                        if response.status == 200:
+                            content = await response.read()
+                            with open(temp_path, 'wb') as f:
+                                f.write(content)
+                            logger.info(f"✅ [DIRECT] Downloaded to temp: {os.path.basename(temp_path)}")
+                        else:
+                            logger.error(f"❌ [DIRECT] Download failed: HTTP {response.status}")
+                            failed_count += 1
+                            continue
+                
+                # Send to Telegram
+                if telegram_manager:
+                    try:
+                        individual_caption = f"{telegram_caption}\n\n📱 Item {i}/{len(stories)}"
+                        
+                        if story_type == 'video':
+                            result = await telegram_manager.send_video_with_retry(temp_path, individual_caption)
+                        else:
+                            result = await telegram_manager.send_photo_with_retry(temp_path, individual_caption)
+                        
+                        logger.info(f"✅ [DIRECT] Sent to Telegram: {snap_id}")
+                        sent_count += 1
+                        
+                    except Exception as e:
+                        logger.error(f"❌ [DIRECT] Failed to send to Telegram: {e}")
+                        failed_count += 1
+                
+                # Delete temp file immediately
+                if temp_file and os.path.exists(temp_path):
+                    os.unlink(temp_path)
+                    logger.info(f"🗑️ [DIRECT] Deleted temp file: {os.path.basename(temp_path)}")
+                    
+            except Exception as e:
+                logger.error(f"❌ [DIRECT] Error processing story {i}: {e}")
+                failed_count += 1
+                # Clean up temp file on error
+                if temp_file and os.path.exists(temp_path):
+                    try:
+                        os.unlink(temp_path)
+                    except:
+                        pass
+        
+        logger.info(f"📊 [DIRECT] Complete: {sent_count} sent, {failed_count} failed")
+        
+    except Exception as e:
+        logger.error(f"❌ [DIRECT] Error in direct download and send: {e}")
+        raise
+
+# ===== CACHE-FILTERED DOWNLOAD FUNCTION =====
+async def download_filtered_stories(username: str, new_stories: list, telegram_caption: str):
+    """
+    Download only new stories and send directly to Telegram
+    Uses the direct download method (temp files only, no permanent disk save)
+    """
+    try:
+        logger.info(f"📥 [POLLING] Processing {len(new_stories)} new stories...")
+        
+        # Use the direct download and send function (no permanent disk save)
+        await download_and_send_directly(username, new_stories, telegram_caption)
+        
+        logger.info(f"✅ [POLLING] Completed sending {len(new_stories)} new stories")
+        
+    except Exception as e:
+        logger.error(f"❌ [POLLING] Error in filtered download: {e}")
+        raise
 
 if __name__ == "__main__":
     import uvicorn

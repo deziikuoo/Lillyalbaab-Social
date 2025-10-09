@@ -42,7 +42,40 @@ export default defineConfig({
         target: "http://localhost:3000",
         changeOrigin: true,
       },
-      // Snapchat service proxy (REST + WebSocket)
+      // Snapchat endpoints now integrated with Instagram backend
+      "/snapchat-start-polling": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
+      "/snapchat-stop-polling": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
+      "/snapchat-poll-now": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
+      "/snapchat-set-target": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
+      "/snapchat-status": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
+      "/snapchat-stats": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
+      "/snapchat-download": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
+      "/snapchat-clear-cache": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
+      // Legacy Snapchat service proxy (for downloads and other features)
       "/snapchat-api": {
         target: "http://localhost:8000",
         changeOrigin: true,
@@ -53,12 +86,6 @@ export default defineConfig({
       "/downloads": {
         target: "http://localhost:8000",
         changeOrigin: true,
-      },
-      // Snapchat-specific endpoints (these conflict with Instagram, so we need to be specific)
-      "/snapchat-api/send-to-telegram": {
-        target: "http://localhost:8000",
-        changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/snapchat-api/, ""),
       },
     },
   },
