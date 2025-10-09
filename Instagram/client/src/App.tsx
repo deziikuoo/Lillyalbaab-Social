@@ -603,7 +603,7 @@ const App: React.FC = () => {
 
     try {
       // Try direct API call first, fallback to Node.js proxy if needed
-      const directApiUrl = "http://localhost:8000/download";
+      const directApiUrl = import.meta.env.PROD ? `${SNAPCHAT_API_BASE}/snapchat-download` : "http://localhost:8000/download";
       const proxyApiUrl = `${SNAPCHAT_API_BASE}/snapchat-download`;
 
       console.log(
@@ -838,7 +838,7 @@ const App: React.FC = () => {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/clear-user-cache?username=${snapchatCurrentTarget}`,
+        `${SNAPCHAT_API_BASE}/snapchat-clear-user-cache?username=${snapchatCurrentTarget}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -875,7 +875,7 @@ const App: React.FC = () => {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/clear-user-data?username=${snapchatCurrentTarget}`,
+        `${SNAPCHAT_API_BASE}/snapchat-clear-user-data?username=${snapchatCurrentTarget}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

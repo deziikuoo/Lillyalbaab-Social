@@ -2172,7 +2172,9 @@ async def start_polling(username):
     
     logger.info(f"Snapchat polling started for @{TARGET_USERNAME}")
     logger.info('Manual poll: GET /poll-now')
-    logger.info(f'Frontend available: http://localhost:8000')
+    # Get service URL from environment or use default
+    service_url = os.getenv('SNAPCHAT_SERVICE_URL', 'http://localhost:8000')
+    logger.info(f'Frontend available: {service_url}')
     
     # Start health check system
     health_check.start()
@@ -2872,8 +2874,10 @@ async def enhanced_startup_event():
             logger.info("💡 Set target username with /set-target to enable polling")
         
         logger.info("Snapchat service started successfully")
-        logger.info("API Documentation: http://localhost:8000/docs")
-        logger.info("Health Check: http://localhost:8000/health")
+        # Get service URL from environment or use default
+        service_url = os.getenv('SNAPCHAT_SERVICE_URL', 'http://localhost:8000')
+        logger.info(f"API Documentation: {service_url}/docs")
+        logger.info(f"Health Check: {service_url}/health")
         
     except Exception as error:
         logger.error(f"❌ Error during startup: {error}")

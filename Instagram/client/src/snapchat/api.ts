@@ -201,16 +201,20 @@ export async function getGallery(
     }`
   );
 
-  // Normalize URLs to be absolute (use Python service origin)
+  // Normalize URLs to be absolute (use appropriate service origin)
   if (data.media) {
+    const baseUrl = import.meta.env.PROD 
+      ? "https://tyla-social.onrender.com" 
+      : "http://localhost:8000";
+    
     data.media = data.media.map((item: any) => ({
       ...item,
       download_url: item.download_url?.startsWith("http")
         ? item.download_url
-        : `http://localhost:8000${item.download_url}`,
+        : `${baseUrl}${item.download_url}`,
       thumbnail_url: item.thumbnail_url?.startsWith("http")
         ? item.thumbnail_url
-        : `http://localhost:8000${item.thumbnail_url}`,
+        : `${baseUrl}${item.thumbnail_url}`,
     }));
   }
 
