@@ -1,6 +1,6 @@
 // Snapchat API base URL with environment-aware configuration and fallbacks
 export const SNAP_BASE: string = import.meta.env.PROD
-  ? "https://tyla-social.vercel.app" // Production: Use Vercel proxy endpoints
+  ? "https://tyla-social.vercel.app" // Production: Use Vercel (proxies to Python service)
   : "http://localhost:8000"; // Development: Direct Python service
 
 // Fallback URLs for graceful degradation

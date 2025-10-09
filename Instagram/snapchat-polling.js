@@ -30,8 +30,8 @@ const SNAPCHAT_POLLING_ENABLED = true;
 let snapchatCurrentPollingTimeout = null;
 let snapchatPollingStarted = false;
 
-// Snapchat API base URL
-const SNAPCHAT_API_BASE = "http://localhost:8000";
+// Snapchat API base URL - environment aware
+const SNAPCHAT_API_BASE = process.env.SNAPCHAT_SERVICE_URL || "http://localhost:8000";
 
 // ===== SNAPCHAT ACTIVITY TRACKER =====
 let snapchatActivityTracker = {

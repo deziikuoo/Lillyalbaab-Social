@@ -19,6 +19,30 @@
       "dest": "index.js"
     },
     {
+      "src": "/snapchat-(.*)",
+      "dest": "index.js"
+    },
+    {
+      "src": "/download",
+      "dest": "index.js"
+    },
+    {
+      "src": "/gallery/(.*)",
+      "dest": "index.js"
+    },
+    {
+      "src": "/progress/(.*)",
+      "dest": "index.js"
+    },
+    {
+      "src": "/send-to-telegram",
+      "dest": "index.js"
+    },
+    {
+      "src": "/clear-cache",
+      "dest": "index.js"
+    },
+    {
       "src": "/(.*)",
       "dest": "client/$1"
     }
