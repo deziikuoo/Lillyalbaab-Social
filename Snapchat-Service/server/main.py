@@ -840,8 +840,8 @@ async def log_requests(request: Request, call_next):
             status_code=503
         )
     
-    # Skip logging for frequent gallery calls to reduce noise
-    if "/gallery/" in str(request.url):
+    # Skip logging for frequent health checks and gallery calls to reduce noise
+    if "/ping" in str(request.url) or "/gallery/" in str(request.url):
         response = await call_next(request)
         return response
     
