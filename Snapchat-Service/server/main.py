@@ -328,11 +328,14 @@ class HealthCheck:
                     logger.error(f"🚨 Critical memory usage: {memory.percent}% - aggressive cleanup")
                     await self.aggressive_memory_cleanup()
                 
-                # Check disk space
+                # Check disk space (more aggressive on Render)
                 disk = psutil.disk_usage(DOWNLOADS_DIR)
-                if disk.percent > 80:
+                if disk.percent > 75:
                     logger.warning(f"⚠️ High disk usage: {disk.percent}% - cleaning old files")
                     await self.cleanup_downloads()
+                if disk.percent > 85:
+                    logger.error(f"🚨 Critical disk usage: {disk.percent}% - aggressive cleanup")
+                    await self.aggressive_disk_cleanup()
                 
                 # Reset failure counter on success
                 self.consecutive_failures = 0
@@ -397,6 +400,41 @@ class HealthCheck:
                 logger.info(f"🧹 Cleaned up {removed_count} old files")
         except Exception as e:
             logger.error(f"Download cleanup failed: {e}")
+    
+    async def aggressive_disk_cleanup(self):
+        """Aggressive disk cleanup to prevent disk-full issues (removes 3+ day old files)"""
+        try:
+            # Remove files older than 3 days (more aggressive)
+            cutoff_time = time.time() - (3 * 24 * 60 * 60)
+            removed_count = 0
+            freed_bytes = 0
+            
+            for root, dirs, files in os.walk(DOWNLOADS_DIR):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    try:
+                        if os.path.getmtime(file_path) < cutoff_time:
+                            file_size = os.path.getsize(file_path)
+                            os.remove(file_path)
+                            removed_count += 1
+                            freed_bytes += file_size
+                    except Exception:
+                        pass  # Skip files that can't be removed
+                
+                # Remove empty directories
+                for dir_name in dirs:
+                    dir_path = os.path.join(root, dir_name)
+                    try:
+                        if not os.listdir(dir_path):
+                            os.rmdir(dir_path)
+                    except Exception:
+                        pass
+            
+            freed_mb = freed_bytes / (1024 * 1024)
+            disk = psutil.disk_usage(DOWNLOADS_DIR)
+            logger.info(f"🧹 Aggressive cleanup: {removed_count} files removed, {freed_mb:.1f}MB freed. Disk now at {disk.percent}%")
+        except Exception as e:
+            logger.error(f"Aggressive disk cleanup failed: {e}")
     
     async def cleanup_downloads_4week(self):
         """Clean up downloads folder (4-week complete wipe)"""
@@ -2967,6 +3005,25 @@ async def enhanced_startup_event():
             replace_existing=True
         )
         logger.info("⏰ Scheduled 4-week cleanup job added")
+        
+        # Schedule keep-alive to prevent Render free tier timeout
+        async def keep_alive():
+            """Prevent Render from killing service due to inactivity"""
+            try:
+                import aiohttp
+                service_url = os.getenv('SNAPCHAT_SERVICE_URL', 'http://localhost:8000')
+                async with aiohttp.ClientSession() as session:
+                    await session.get(f"{service_url}/ping")
+            except:
+                pass  # Silently fail if can't reach self
+        
+        scheduler.add_job(
+            keep_alive,
+            trigger=IntervalTrigger(minutes=10),
+            id="keep_alive_ping",
+            replace_existing=True
+        )
+        logger.info("⏰ Keep-alive job added (pings self every 10 minutes)")
         
         # Initialize polling if target is set
         if TARGET_USERNAME:
