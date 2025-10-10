@@ -3006,24 +3006,9 @@ async def enhanced_startup_event():
         )
         logger.info("⏰ Scheduled 4-week cleanup job added")
         
-        # Schedule keep-alive to prevent Render free tier timeout
-        async def keep_alive():
-            """Prevent Render from killing service due to inactivity"""
-            try:
-                import aiohttp
-                service_url = os.getenv('SNAPCHAT_SERVICE_URL', 'http://localhost:8000')
-                async with aiohttp.ClientSession() as session:
-                    await session.get(f"{service_url}/ping")
-            except:
-                pass  # Silently fail if can't reach self
-        
-        scheduler.add_job(
-            keep_alive,
-            trigger=IntervalTrigger(minutes=10),
-            id="keep_alive_ping",
-            replace_existing=True
-        )
-        logger.info("⏰ Keep-alive job added (pings self every 10 minutes)")
+        # Note: Use UptimeRobot (or similar) to ping /ping endpoint every 5-10 minutes
+        # to prevent Render free tier from spinning down due to inactivity
+        # https://uptimerobot.com - Free tier supports 50 monitors
         
         # Initialize polling if target is set
         if TARGET_USERNAME:
