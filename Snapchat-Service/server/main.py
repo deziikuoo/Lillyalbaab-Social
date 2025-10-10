@@ -255,6 +255,9 @@ class RequestTracker:
 activity_tracker = ActivityTracker()
 request_tracker = RequestTracker()
 
+# Shutdown flag
+shutdown_in_progress = False
+
 app = FastAPI(title="Snapchat Downloader API")
 
 # Configure logging
@@ -316,16 +319,19 @@ class HealthCheck:
                 
                 # Database connectivity checked via Supabase only
                 
-                # Check memory usage
+                # Check memory usage (proactive cleanup at 70% to prevent OOM)
                 memory = psutil.virtual_memory()
-                if memory.percent > 90:
-                    logger.warning(f"High memory usage: {memory.percent}%")
+                if memory.percent > 70:
+                    logger.warning(f"⚠️ Elevated memory usage: {memory.percent}% - performing cleanup")
                     await self.cleanup_memory()
+                if memory.percent > 85:
+                    logger.error(f"🚨 Critical memory usage: {memory.percent}% - aggressive cleanup")
+                    await self.aggressive_memory_cleanup()
                 
                 # Check disk space
                 disk = psutil.disk_usage(DOWNLOADS_DIR)
-                if disk.percent > 90:
-                    logger.warning(f"High disk usage: {disk.percent}%")
+                if disk.percent > 80:
+                    logger.warning(f"⚠️ High disk usage: {disk.percent}% - cleaning old files")
                     await self.cleanup_downloads()
                 
                 # Reset failure counter on success
@@ -349,6 +355,29 @@ class HealthCheck:
             logger.info("🗑️ Memory cleanup performed")
         except Exception as e:
             logger.error(f"Memory cleanup failed: {e}")
+    
+    async def aggressive_memory_cleanup(self):
+        """Aggressive memory cleanup to prevent OOM kills"""
+        try:
+            # Clear progress data older than 1 hour
+            with progress_lock:
+                keys_to_remove = []
+                for key in list(progress_data.keys()):
+                    # Remove old progress entries
+                    keys_to_remove.append(key)
+                for key in keys_to_remove:
+                    progress_data.pop(key, None)
+                    file_progress.pop(key, None)
+            
+            # Force multiple garbage collection passes
+            for _ in range(3):
+                gc.collect()
+            
+            # Get new memory stats
+            memory = psutil.virtual_memory()
+            logger.info(f"🧹 Aggressive cleanup completed. Memory now at {memory.percent}%")
+        except Exception as e:
+            logger.error(f"Aggressive memory cleanup failed: {e}")
     
     async def cleanup_downloads(self):
         """Clean up old downloads (7-day cleanup for health checks)"""
@@ -761,12 +790,29 @@ class ResourceManager:
     def get_stats(self):
         """Get resource usage statistics"""
         with self.lock:
-            return {
+            stats = {
                 "active_downloads": len(self.active_downloads),
-                "active_websockets": len(self.active_websockets),
-                "memory_usage": psutil.virtual_memory()._asdict(),
-                "disk_usage": psutil.disk_usage(DOWNLOADS_DIR)._asdict()
+                "active_websockets": len(self.active_websockets)
             }
+            
+            # Safely get memory usage
+            try:
+                stats["memory_usage"] = psutil.virtual_memory()._asdict()
+            except Exception as e:
+                logger.error(f"Failed to get memory usage: {e}")
+                stats["memory_usage"] = {"error": str(e)}
+            
+            # Safely get disk usage
+            try:
+                if os.path.exists(DOWNLOADS_DIR):
+                    stats["disk_usage"] = psutil.disk_usage(DOWNLOADS_DIR)._asdict()
+                else:
+                    stats["disk_usage"] = {"error": "downloads directory not found"}
+            except Exception as e:
+                logger.error(f"Failed to get disk usage: {e}")
+                stats["disk_usage"] = {"error": str(e)}
+            
+            return stats
 
 # Initialize resource manager
 resource_manager = ResourceManager()
@@ -785,15 +831,31 @@ app.add_middleware(
 # Add request logging middleware
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    global shutdown_in_progress
+    
+    # During shutdown, reject new requests gracefully
+    if shutdown_in_progress:
+        return JSONResponse(
+            content={"status": "service_shutting_down", "message": "Service is shutting down"},
+            status_code=503
+        )
+    
     # Skip logging for frequent gallery calls to reduce noise
     if "/gallery/" in str(request.url):
         response = await call_next(request)
         return response
     
     logger.info(f"Request: {request.method} {request.url}")
-    response = await call_next(request)
-    logger.info(f"Response status: {response.status_code}")
-    return response
+    try:
+        response = await call_next(request)
+        logger.info(f"Response status: {response.status_code}")
+        return response
+    except Exception as e:
+        logger.error(f"Request handling error: {e}")
+        return JSONResponse(
+            content={"status": "error", "message": str(e)},
+            status_code=500
+        )
 
 # Set up downloads directory
 DOWNLOADS_DIR = os.getenv("DOWNLOADS_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads"))
@@ -1038,29 +1100,45 @@ async def test_endpoint():
     logger.info("🔍 [PYTHON] /test endpoint called!")
     return {"message": "Test endpoint working", "timestamp": datetime.now().isoformat()}
 
+@app.get("/ping")
+async def ping_endpoint():
+    """Ultra-lightweight health check for Render (no resource checks)"""
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+
 @app.get("/health")
 async def health_check_endpoint():
-    """Health check endpoint"""
+    """Health check endpoint - must respond quickly for Render"""
     try:
-        # Get resource stats
-        stats = resource_manager.get_stats()
-        
-        # Check database connectivity
-        db_status = "disconnected"  # SQLite removed
-        
+        # Basic health response (fast)
         health = {
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
             "uptime": time.time() - app.startup_time if hasattr(app, 'startup_time') else 0,
-            "database": db_status,
-            "health_check": {
-                "consecutive_failures": health_check.consecutive_failures,
-                "last_check": health_check.last_check
-            },
-            "resources": stats
+            "polling_active": polling_started
         }
         
-        # Check if service is healthy
+        # Get resource stats (with timeout protection)
+        try:
+            stats = resource_manager.get_stats()
+            health["resources"] = stats
+        except Exception as e:
+            logger.error(f"Failed to get resource stats: {e}")
+            health["resources"] = {"error": str(e)}
+        
+        # Database connectivity
+        health["database"] = "disconnected"  # SQLite removed
+        
+        # Health check status
+        try:
+            health["health_check"] = {
+                "consecutive_failures": health_check.consecutive_failures,
+                "last_check": health_check.last_check,
+                "running": health_check.running
+            }
+        except Exception as e:
+            logger.error(f"Failed to get health check status: {e}")
+        
+        # Check if service is unhealthy
         if health_check.consecutive_failures >= health_check.max_failures:
             health["status"] = "unhealthy"
             return JSONResponse(content=health, status_code=503)
@@ -1068,8 +1146,13 @@ async def health_check_endpoint():
         return health
     except Exception as e:
         logger.error(f"Health check endpoint error: {e}")
+        # Always return a response, even if there's an error
         return JSONResponse(
-            content={"status": "error", "message": str(e)},
+            content={
+                "status": "error", 
+                "message": str(e),
+                "timestamp": datetime.now().isoformat()
+            },
             status_code=500
         )
 
@@ -1538,43 +1621,44 @@ async def update_progress(username: str, media_type: str, filename: str, progres
     """Update progress for a specific file and broadcast to all connected clients."""
     key = f"{username}/{media_type}"
     
-    # Get current progress data
-    progress_data = progress_tracker.get_progress(key) or {
-        "status": "in_progress",
-        "files": {},
-        "overall": {
+    # Get current progress data from global progress_data dict
+    with progress_lock:
+        current_progress = progress_data.get(key, {
             "status": "in_progress",
-            "progress": 0,
-            "message": "Download in progress"
-        }
-    }
-    
-    # Update file progress
-    progress_data["files"][filename] = {
-        "status": status,
-        "progress": progress
-    }
-    
-    # Calculate overall progress
-    total_files = len(progress_data["files"])
-    if total_files > 0:
-        total_progress = sum(f["progress"] for f in progress_data["files"].values())
-        overall_progress = total_progress / total_files
-        progress_data["overall"]["progress"] = overall_progress
+            "files": {},
+            "overall": {
+                "status": "in_progress",
+                "progress": 0,
+                "message": "Download in progress"
+            }
+        })
         
-        # Update overall status if all files are complete
-        if all(f["status"] == "complete" for f in progress_data["files"].values()):
-            progress_data["overall"]["status"] = "complete"
-            progress_data["overall"]["message"] = "Download completed"
-        elif any(f["status"] == "error" for f in progress_data["files"].values()):
-            progress_data["overall"]["status"] = "error"
-            progress_data["overall"]["message"] = "Some files failed to download"
-    
-    # Update progress tracker
-    progress_tracker.update_progress(key, progress_data)
+        # Update file progress
+        current_progress["files"][filename] = {
+            "status": status,
+            "progress": progress
+        }
+        
+        # Calculate overall progress
+        total_files = len(current_progress["files"])
+        if total_files > 0:
+            total_progress = sum(f["progress"] for f in current_progress["files"].values())
+            overall_progress = total_progress / total_files
+            current_progress["overall"]["progress"] = overall_progress
+            
+            # Update overall status if all files are complete
+            if all(f["status"] == "complete" for f in current_progress["files"].values()):
+                current_progress["overall"]["status"] = "complete"
+                current_progress["overall"]["message"] = "Download completed"
+            elif any(f["status"] == "error" for f in current_progress["files"].values()):
+                current_progress["overall"]["status"] = "error"
+                current_progress["overall"]["message"] = "Some files failed to download"
+        
+        # Update global progress data
+        progress_data[key] = current_progress
     
     # Broadcast update to all connected clients
-    await websocket_manager.broadcast(key, progress_data)
+    await websocket_manager.broadcast(key, current_progress)
 
 def cleanup_downloads():
     """Clean up the downloads directory."""
@@ -2227,11 +2311,18 @@ async def schedule_next_poll():
 async def execute_poll_cycle():
     if POLLING_ENABLED:
         try:
+            # Force garbage collection before poll to prevent memory buildup
+            import gc
+            gc.collect()
+            
             # Check for new stories
             await check_for_new_stories()
             
             # Reset activity counter for next poll cycle
             activity_tracker.reset_activity_counter()
+            
+            # Force garbage collection after poll
+            gc.collect()
             
             await schedule_next_poll()  # Schedule the next poll
         except Exception as error:
@@ -2784,35 +2875,47 @@ async def clear_snapchat_cache_endpoint():
 # ===== 7.1 Enhanced Graceful Shutdown =====
 async def graceful_shutdown():
     """Enhanced graceful shutdown for the polling system"""
+    global shutdown_in_progress
+    shutdown_in_progress = True
+    logger.info("🔄 Starting graceful shutdown...")
+    
+    # Stop polling system
     try:
-        logger.info("🔄 Starting graceful shutdown...")
-        
-        # Stop polling system
         if polling_started:
             logger.info("🛑 Stopping polling system...")
             await stop_polling()
-        
-        # Stop health check system
+    except Exception as e:
+        logger.error(f"❌ Error stopping polling: {e}")
+    
+    # Stop health check system
+    try:
         if health_check.running:
             logger.info("🏥 Stopping health check system...")
             health_check.stop()
-        
-
-        
-        # Database connections closed (SQLite removed)
-        logger.info("🗄️ Database connections closed (SQLite removed)")
-        
-        # Close Telegram manager
+    except Exception as e:
+        logger.error(f"❌ Error stopping health check: {e}")
+    
+    # Database connections closed (SQLite removed)
+    logger.info("🗄️ Database connections closed (SQLite removed)")
+    
+    # Close Telegram manager
+    try:
         if telegram_manager:
             logger.info("📤 Closing Telegram manager...")
             await telegram_manager.close()
-        
-        # Stop scheduler
+    except Exception as e:
+        logger.error(f"❌ Error closing Telegram manager: {e}")
+    
+    # Stop scheduler
+    try:
         if scheduler.running:
             logger.info("⏰ Stopping scheduler...")
             scheduler.shutdown()
-        
-        # Close WebSocket connections
+    except Exception as e:
+        logger.error(f"❌ Error stopping scheduler: {e}")
+    
+    # Close WebSocket connections
+    try:
         logger.info("🔌 Closing WebSocket connections...")
         for key in list(websocket_manager.active_connections.keys()):
             for websocket in websocket_manager.active_connections[key]:
@@ -2820,11 +2923,10 @@ async def graceful_shutdown():
                     await websocket.close()
                 except:
                     pass
-        
-        logger.info("✅ Graceful shutdown completed")
-        
-    except Exception as error:
-        logger.error(f"❌ Error during graceful shutdown: {error}")
+    except Exception as e:
+        logger.error(f"❌ Error closing WebSocket connections: {e}")
+    
+    logger.info("✅ Graceful shutdown completed")
 
 # ===== 7.2 Enhanced Startup Integration =====
 @app.on_event("startup")
@@ -2899,8 +3001,16 @@ def enhanced_signal_handler(signum, frame):
     """Enhanced signal handler for graceful shutdown"""
     logger.info(f"📡 Received signal {signum}, initiating graceful shutdown...")
     
-    # Schedule graceful shutdown in the event loop
-    asyncio.create_task(graceful_shutdown())
+    # Get the event loop and schedule graceful shutdown
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(graceful_shutdown())
+        else:
+            # If no loop is running, run shutdown synchronously
+            asyncio.run(graceful_shutdown())
+    except Exception as e:
+        logger.error(f"❌ Error scheduling graceful shutdown: {e}")
 
 # Register enhanced signal handlers
 signal.signal(signal.SIGINT, enhanced_signal_handler)

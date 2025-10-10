@@ -96,6 +96,13 @@ class TelegramManager:
         if self.session:
             await self.session.close()
     
+    async def close(self):
+        """Close the aiohttp session"""
+        if self.session:
+            await self.session.close()
+            self.session = None
+            logger.info("✅ Telegram session closed")
+    
     async def validate_connection(self) -> bool:
         """Validate bot token and channel access"""
         try:

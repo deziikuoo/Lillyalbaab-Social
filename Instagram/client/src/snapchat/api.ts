@@ -203,10 +203,10 @@ export async function getGallery(
 
   // Normalize URLs to be absolute (use appropriate service origin)
   if (data.media) {
-    const baseUrl = import.meta.env.PROD 
-      ? "https://tyla-social.onrender.com" 
+    const baseUrl = import.meta.env.PROD
+      ? "https://tyla-social.onrender.com"
       : "http://localhost:8000";
-    
+
     data.media = data.media.map((item: any) => ({
       ...item,
       download_url: item.download_url?.startsWith("http")
