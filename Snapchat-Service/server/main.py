@@ -1139,6 +1139,7 @@ async def test_endpoint():
     return {"message": "Test endpoint working", "timestamp": datetime.now().isoformat()}
 
 @app.get("/ping")
+@app.head("/ping")
 async def ping_endpoint():
     """Ultra-lightweight health check for Render (no resource checks)"""
     return {"status": "ok", "timestamp": datetime.now().isoformat()}
