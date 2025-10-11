@@ -1,0 +1,32 @@
+{
+  "name": "tyla-social",
+  "version": "1.0.0",
+  "description": "Tyla Social Media Downloader - Instagram and Snapchat content management system",
+  "main": "Instagram/index.js",
+  "scripts": {
+    "start": "cd Instagram && npm start",
+    "build": "cd Instagram/client && npm run build",
+    "dev": "cd Instagram && npm run start:frontend",
+    "install:all": "cd Instagram && npm install && cd client && npm install",
+    "build:frontend": "cd Instagram/client && npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "instagram",
+    "snapchat",
+    "social-media",
+    "downloader",
+    "telegram",
+    "api"
+  ],
+  "author": "Milan Bhandari",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deziikuoo/Tyla-Social.git"
+  }
+}

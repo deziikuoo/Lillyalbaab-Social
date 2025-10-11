@@ -1,17 +1,37 @@
 services:
   - type: web
-    name: tyla-instagram
+    name: tyla-social
     env: node
     region: oregon
     plan: starter
-    buildCommand: chmod +x install-chrome-render.sh && ./install-chrome-render.sh && npm install
-    startCommand: npm start
+    buildCommand: cd Instagram && chmod +x install-chrome-render.sh && ./install-chrome-render.sh && npm install
+    startCommand: cd Instagram && npm start
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 3000
       - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
         value: false
       - key: PUPPETEER_EXECUTABLE_PATH
         value: /usr/bin/chromium
       - key: PUPPETEER_CACHE_DIR
-        value: /opt/render/.cache/puppeteer
+        value: /opt/render/project/src/data/chrome
+      - key: SUPABASE_URL
+        value: https://tuvyckzfwdtaieajl.ezh.supabase.co
+      - key: SUPABASE_KEY
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR1dnlja3pmd2R0YWllYWpsLmV6aC5zdXBhYmFzZS5jbyIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzMzNDk1NzM4LCJleHAiOjIwNDkwNzE3Mzh9.8tK8xK8xK8xK8xK8xK8xK8xK8xK8xK8xK8xK8xK8
+      - key: TELEGRAM_BOT_TOKEN
+        value: 8033935478:AAFCuh5q0gdzp9nx21mak516V_UUV_200
+      - key: TELEGRAM_CHANNEL_ID
+        value: -1002885871132
+      - key: TELEGRAM_AUTH
+        value: true
+      - key: SNAPCHAT_SERVICE_URL
+        value: https://tyla-social-snapchat
+      - key: USER_AGENT
+        value: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+      - key: X_IG_APP_ID
+        value: 936619743392459
+      - key: TZ
+        value: America/New_York
