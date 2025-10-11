@@ -43,8 +43,40 @@
       "dest": "index.js"
     },
     {
+      "src": "/igdl",
+      "dest": "index.js"
+    },
+    {
+      "src": "/target",
+      "dest": "index.js"
+    },
+    {
+      "src": "/start-polling",
+      "dest": "index.js"
+    },
+    {
+      "src": "/stop-polling",
+      "dest": "index.js"
+    },
+    {
+      "src": "/status",
+      "dest": "index.js"
+    },
+    {
+      "src": "/stats",
+      "dest": "index.js"
+    },
+    {
+      "src": "/set-target",
+      "dest": "index.js"
+    },
+    {
+      "src": "/poll-now",
+      "dest": "index.js"
+    },
+    {
       "src": "/(.*)",
-      "dest": "client/$1"
+      "dest": "client/index.html"
     }
   ]
 }
