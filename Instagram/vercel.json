@@ -7,81 +7,13 @@
       "config": {
         "distDir": "dist"
       }
-    },
-    {
-      "src": "index.js",
-      "use": "@vercel/node"
     }
   ],
   "buildCommand": "cd client && npm run build",
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "index.js"
-    },
-    {
-      "src": "/igdl",
-      "dest": "index.js"
-    },
-    {
-      "src": "/send-to-telegram",
-      "dest": "index.js"
-    },
-    {
-      "src": "/target",
-      "dest": "index.js"
-    },
-    {
-      "src": "/start-polling",
-      "dest": "index.js"
-    },
-    {
-      "src": "/stop-polling",
-      "dest": "index.js"
-    },
-    {
-      "src": "/status",
-      "dest": "index.js"
-    },
-    {
-      "src": "/stats",
-      "dest": "index.js"
-    },
-    {
-      "src": "/poll-now",
-      "dest": "index.js"
-    },
-    {
-      "src": "/health",
-      "dest": "index.js"
-    },
-    {
-      "src": "/clear-cache",
-      "dest": "index.js"
-    },
-    {
-      "src": "/clear-all",
-      "dest": "index.js"
-    },
-    {
-      "src": "/clear-stories-cache",
-      "dest": "index.js"
-    },
-    {
-      "src": "/snapchat-(.*)",
-      "dest": "index.js"
-    },
-    {
-      "src": "/download",
-      "dest": "index.js"
-    },
-    {
-      "src": "/gallery/(.*)",
-      "dest": "index.js"
-    },
-    {
-      "src": "/progress/(.*)",
-      "dest": "index.js"
+      "src": "/",
+      "dest": "/index.html"
     },
     {
       "src": "/instagram",
@@ -89,10 +21,6 @@
     },
     {
       "src": "/snapchat",
-      "dest": "/index.html"
-    },
-    {
-      "src": "/",
       "dest": "/index.html"
     },
     {
