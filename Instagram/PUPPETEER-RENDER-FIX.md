@@ -21,6 +21,7 @@ Cache path: /opt/render/.cache/puppeteer
 ## Solution Overview
 
 Implemented a multi-step fix:
+
 1. ✅ Created build script to install Chromium on Render
 2. ✅ Added environment variables for Puppeteer configuration
 3. ✅ Updated Puppeteer launch to use system Chrome as fallback
@@ -33,6 +34,7 @@ Implemented a multi-step fix:
 **Purpose:** Install Chromium and all required dependencies on Render
 
 **What it does:**
+
 - Updates apt package list
 - Installs Chromium browser (`chromium`, `chromium-sandbox`)
 - Installs required system libraries (fonts, graphics, audio, etc.)
@@ -61,6 +63,7 @@ services:
 ```
 
 **Key Settings:**
+
 - `buildCommand`: Makes script executable, installs Chrome, then npm dependencies
 - `PUPPETEER_EXECUTABLE_PATH`: Points to system Chromium
 - `PUPPETEER_CACHE_DIR`: Sets writable cache directory
@@ -70,6 +73,7 @@ services:
 **Updated FastDlSession.initialize():**
 
 **Before:**
+
 ```javascript
 this.browser = await puppeteer.launch({
   headless: true,
@@ -78,6 +82,7 @@ this.browser = await puppeteer.launch({
 ```
 
 **After:**
+
 ```javascript
 const launchOptions = {
   headless: true,
@@ -96,6 +101,7 @@ this.browser = await puppeteer.launch(launchOptions);
 ```
 
 **Benefits:**
+
 - Automatically uses system Chrome on Render (`/usr/bin/chromium`)
 - Falls back to Puppeteer's bundled Chrome locally
 - Clear logging shows which Chrome is being used
@@ -105,11 +111,13 @@ this.browser = await puppeteer.launch(launchOptions);
 **Updated postinstall script:**
 
 **Before:**
+
 ```json
 "postinstall": "npx puppeteer browsers install chrome"
 ```
 
 **After:**
+
 ```json
 "postinstall": "npx puppeteer browsers install chrome || echo 'Puppeteer Chrome install failed, will use system Chrome'"
 ```
@@ -119,12 +127,15 @@ this.browser = await puppeteer.launch(launchOptions);
 ## How It Works
 
 ### Local Development (Windows/Mac)
+
 1. `npm install` runs postinstall → downloads Puppeteer Chrome
 2. Puppeteer launches with bundled Chrome (no env variable set)
 3. FastDl stories work normally
 
 ### Render Deployment
+
 1. **Build Phase:**
+
    - `install-chrome-render.sh` runs
    - Installs system Chromium + dependencies
    - `npm install` runs postinstall (may succeed or fail, doesn't matter)
@@ -139,15 +150,16 @@ this.browser = await puppeteer.launch(launchOptions);
 
 Set these in Render dashboard or use `render.yaml`:
 
-| Variable | Value | Purpose |
-|----------|-------|---------|
-| `PUPPETEER_EXECUTABLE_PATH` | `/usr/bin/chromium` | Path to system Chrome |
-| `PUPPETEER_CACHE_DIR` | `/opt/render/.cache/puppeteer` | Writable cache directory |
-| `PUPPETEER_SKIP_CHROMIUM_DOWNLOAD` | `false` | Allow bundled Chrome as backup |
+| Variable                           | Value                          | Purpose                        |
+| ---------------------------------- | ------------------------------ | ------------------------------ |
+| `PUPPETEER_EXECUTABLE_PATH`        | `/usr/bin/chromium`            | Path to system Chrome          |
+| `PUPPETEER_CACHE_DIR`              | `/opt/render/.cache/puppeteer` | Writable cache directory       |
+| `PUPPETEER_SKIP_CHROMIUM_DOWNLOAD` | `false`                        | Allow bundled Chrome as backup |
 
 ## Testing
 
 ### Verify Locally
+
 ```bash
 cd Instagram
 npm install
@@ -155,6 +167,7 @@ node index.js
 ```
 
 **Expected output:**
+
 ```
 🌐 Using Puppeteer bundled Chrome
 ✅ [FASTDL SESSION] Browser initialized successfully
@@ -163,6 +176,7 @@ node index.js
 ### Verify on Render
 
 **After deployment, check logs for:**
+
 ```
 🌐 Using system Chrome: /usr/bin/chromium
 ✅ [FASTDL SESSION] Browser initialized successfully
@@ -170,6 +184,7 @@ node index.js
 ```
 
 **No more error:**
+
 ```
 ❌ Could not find Chrome (ver. 139.0.7258.66)
 ```
@@ -179,6 +194,7 @@ node index.js
 ### Option 1: Using render.yaml (Recommended)
 
 1. Commit and push all changes:
+
    ```bash
    git add Instagram/
    git commit -m "fix: Add Puppeteer/Chrome support for Render"
@@ -186,6 +202,7 @@ node index.js
    ```
 
 2. In Render dashboard:
+
    - Go to your Instagram service
    - Settings → "Build & Deploy"
    - **Render will automatically detect `render.yaml` and use it**
@@ -197,11 +214,13 @@ node index.js
 If `render.yaml` isn't detected:
 
 1. **Update Build Command:**
+
    ```bash
    chmod +x install-chrome-render.sh && ./install-chrome-render.sh && npm install
    ```
 
 2. **Add Environment Variables:**
+
    - `PUPPETEER_EXECUTABLE_PATH` = `/usr/bin/chromium`
    - `PUPPETEER_CACHE_DIR` = `/opt/render/.cache/puppeteer`
 
@@ -213,6 +232,7 @@ If `render.yaml` isn't detected:
 
 **Cause:** Script not executable  
 **Fix:** Ensure `chmod +x` is in build command:
+
 ```bash
 chmod +x install-chrome-render.sh && ./install-chrome-render.sh && npm install
 ```
@@ -225,22 +245,25 @@ chmod +x install-chrome-render.sh && ./install-chrome-render.sh && npm install
 ### Issue: Still getting "Could not find Chrome"
 
 **Checks:**
+
 1. Verify `PUPPETEER_EXECUTABLE_PATH` is set in Render environment variables
 2. Check build logs for successful Chromium installation
 3. Verify `/usr/bin/chromium` exists in deployment
 
 **Debug:**
 Add this to your code temporarily:
+
 ```javascript
-const fs = require('fs');
-console.log('Chrome exists?', fs.existsSync('/usr/bin/chromium'));
-console.log('Env var:', process.env.PUPPETEER_EXECUTABLE_PATH);
+const fs = require("fs");
+console.log("Chrome exists?", fs.existsSync("/usr/bin/chromium"));
+console.log("Env var:", process.env.PUPPETEER_EXECUTABLE_PATH);
 ```
 
 ### Issue: Build takes too long / times out
 
 **Cause:** Installing all Chrome dependencies  
 **Fix:** Reduce dependencies in `install-chrome-render.sh` to only essentials:
+
 ```bash
 apt-get install -y chromium chromium-sandbox libgbm1 libnss3
 ```
@@ -248,25 +271,30 @@ apt-get install -y chromium chromium-sandbox libgbm1 libnss3
 ## Performance Impact
 
 ### Build Time
+
 - **Before:** ~2-3 minutes (npm install only)
 - **After:** ~4-6 minutes (Chrome install + npm install)
 - **One-time cost:** Chrome install is cached on Render
 
 ### Runtime Performance
+
 - **No impact:** System Chrome has same performance as bundled Chrome
 - **Memory:** ~200-300MB per browser instance (normal for Puppeteer)
 
 ## Alternative Solutions (Not Implemented)
 
 ### 1. Use Puppeteer-Core + External Chrome
+
 **Pros:** Smaller package size  
 **Cons:** Requires maintaining Chrome version compatibility
 
 ### 2. Use Playwright Instead
+
 **Pros:** Better Render support  
 **Cons:** Would require rewriting entire FastDl integration
 
 ### 3. Use Different Story Fetching Method
+
 **Pros:** No browser automation needed  
 **Cons:** FastDl.app specifically requires browser for JavaScript rendering
 
@@ -279,6 +307,7 @@ apt-get install -y chromium chromium-sandbox libgbm1 libnss3
 ## Success Criteria
 
 ✅ **Fixed when you see:**
+
 ```
 🎬 Creating FastDl session for @wolftyla
 🌐 Using system Chrome: /usr/bin/chromium
@@ -287,6 +316,7 @@ apt-get install -y chromium chromium-sandbox libgbm1 libnss3
 ```
 
 ❌ **Not fixed if you still see:**
+
 ```
 ❌ [FASTDL SESSION] Browser initialization failed: Could not find Chrome
 ```
@@ -296,4 +326,3 @@ apt-get install -y chromium chromium-sandbox libgbm1 libnss3
 - **Chrome updates:** Render handles system Chrome updates automatically
 - **Puppeteer updates:** Test locally before deploying to ensure compatibility
 - **Monitoring:** Watch Render logs for any Chrome-related errors after deploys
-

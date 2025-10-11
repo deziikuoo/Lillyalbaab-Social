@@ -939,6 +939,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// Serve static files from React build (for Vercel deployment)
+app.use(express.static(path.join(__dirname, 'client/dist')));
+
 // Telegram configuration
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID;
@@ -5546,8 +5549,21 @@ async function tryWebProfileInfoFallback(post, userAgent) {
   }
 }
 
-app.get("/", (req, res) => {
-  res.json({ message: "Hello World!" });
+// Serve React app for all non-API routes (client-side routing)
+app.get("*", (req, res) => {
+  // Only serve index.html for non-API routes
+  if (!req.path.startsWith('/api/') && !req.path.startsWith('/snapchat-') && 
+      !req.path.startsWith('/download') && !req.path.startsWith('/gallery/') &&
+      !req.path.startsWith('/progress/') && !req.path.startsWith('/send-to-telegram') &&
+      !req.path.startsWith('/clear-cache') && !req.path.startsWith('/igdl') &&
+      !req.path.startsWith('/target') && !req.path.startsWith('/start-polling') &&
+      !req.path.startsWith('/stop-polling') && !req.path.startsWith('/status') &&
+      !req.path.startsWith('/stats') && !req.path.startsWith('/set-target') &&
+      !req.path.startsWith('/poll-now') && !req.path.startsWith('/health')) {
+    res.sendFile(path.join(__dirname, 'client/dist/index.html'));
+  } else {
+    res.status(404).json({ error: 'Route not found' });
+  }
 });
 
 // Extract the processing logic from /igdl endpoint into a reusable function

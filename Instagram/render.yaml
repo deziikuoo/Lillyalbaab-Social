@@ -15,4 +15,3 @@ services:
         value: /usr/bin/chromium
       - key: PUPPETEER_CACHE_DIR
         value: /opt/render/.cache/puppeteer
-
