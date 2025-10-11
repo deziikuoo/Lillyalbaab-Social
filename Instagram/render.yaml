@@ -4,8 +4,7 @@ services:
     env: node
     region: oregon
     plan: starter
-    rootDir: ./Instagram
-    buildCommand: npm install
+    buildCommand: chmod +x install-chrome-render.sh && ./install-chrome-render.sh && npm install
     startCommand: npm start
     envVars:
       - key: NODE_ENV

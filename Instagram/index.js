@@ -939,9 +939,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve static files from React build (for Vercel deployment)
-app.use(express.static(path.join(__dirname, "client/dist")));
-
 // Telegram configuration
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID;
@@ -5549,44 +5546,8 @@ async function tryWebProfileInfoFallback(post, userAgent) {
   }
 }
 
-// Serve React app for all non-API routes (client-side routing)
-app.get("*", (req, res) => {
-  // Only serve index.html for non-API routes
-  if (
-    !req.path.startsWith("/api/") &&
-    !req.path.startsWith("/snapchat-") &&
-    !req.path.startsWith("/download") &&
-    !req.path.startsWith("/gallery/") &&
-    !req.path.startsWith("/progress/") &&
-    !req.path.startsWith("/send-to-telegram") &&
-    !req.path.startsWith("/clear-cache") &&
-    !req.path.startsWith("/igdl") &&
-    !req.path.startsWith("/target") &&
-    !req.path.startsWith("/start-polling") &&
-    !req.path.startsWith("/stop-polling") &&
-    !req.path.startsWith("/status") &&
-    !req.path.startsWith("/stats") &&
-    !req.path.startsWith("/set-target") &&
-    !req.path.startsWith("/poll-now") &&
-    !req.path.startsWith("/health")
-  ) {
-    const indexPath = path.join(__dirname, "client/dist/index.html");
-
-    // Check if the client is built, if not return a helpful message
-    if (!fs.existsSync(indexPath)) {
-      res.status(503).json({
-        error: "Frontend not built yet",
-        message:
-          "The React frontend is still being built. Please wait a moment and refresh the page.",
-        timestamp: new Date().toISOString(),
-      });
-      return;
-    }
-
-    res.sendFile(indexPath);
-  } else {
-    res.status(404).json({ error: "Route not found" });
-  }
+app.get("/", (req, res) => {
+  res.json({ message: "Hello World!" });
 });
 
 // Extract the processing logic from /igdl endpoint into a reusable function
@@ -6821,8 +6782,8 @@ app.post("/clear-stories-cache", async (req, res) => {
       // Clear stories cache (Supabase only - no SQLite fallback)
       const clearStoriesCache = new Promise(async (resolve) => {
         try {
-          if (supabaseManager && supabaseManager.isConnected) {
-            const { error } = await supabaseManager.client
+          if (supabase) {
+            const { error } = await supabase
               .from("recent_stories_cache")
               .delete()
               .eq("username", username);
@@ -6895,8 +6856,8 @@ app.get("/debug-stories", async (req, res) => {
     // Check recent_stories_cache table (Supabase only)
     const storiesCache = new Promise(async (resolve) => {
       try {
-        if (supabaseManager && supabaseManager.isConnected) {
-          const { data, error } = await supabaseManager.client
+        if (supabase) {
+          const { data, error } = await supabase
             .from("recent_stories_cache")
             .select("*", { count: "exact" })
             .eq("username", username);
@@ -7795,13 +7756,13 @@ async function markStoryProcessed(username, storyUrl, storyType, storyId) {
 // Update stories cache (Supabase only)
 async function updateStoriesCache(username, stories) {
   try {
-    if (!supabaseManager || !supabaseManager.isConnected) {
+    if (!supabase) {
       console.log(`⚠️ Supabase not connected, skipping stories cache update`);
       return;
     }
 
     // Clear old cache for this user
-    const { error: deleteError } = await supabaseManager.client
+    const { error: deleteError } = await supabase
       .from("recent_stories_cache")
       .delete()
       .eq("username", username);
@@ -7826,7 +7787,7 @@ async function updateStoriesCache(username, stories) {
       story_type: story.storyType || (story.is_video ? "video" : "photo"),
     }));
 
-    const { error: insertError } = await supabaseManager.client
+    const { error: insertError } = await supabase
       .from("recent_stories_cache")
       .insert(cacheEntries);
 

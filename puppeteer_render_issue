@@ -1,0 +1,27 @@
+🎯 Target changed from @none to @wolftyl
+🎯 Target changed from @wolftyl to @wolftyla
+🚀 Starting polling for @wolftyla
+🚀 Instagram polling started for @wolftyla
+📍 Manual poll: GET /poll-now
+🌐 Frontend available: http://localhost:3000
+🏥 Health check system started
+🧠 Memory management system started
+🔄 Starting sequential polling process...
+📱 Step 1: Checking for new stories...
+🔒 Polling cycle user agent set: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36...
+📱 Checking for new stories from @wolftyla 
+🌐 Stories polling cycle using consistent user agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36...
+🔒 This user agent will be maintained for all story API calls in this polling cycle
+🔄 GraphQL API call counter reset: 0 calls in previous cycle
+📱 Processing Instagram stories for: @wolftyla with FastDl.app
+🎬 Creating FastDl session for @wolftyla
+🌐 Using user agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36
+❌ [FASTDL SESSION] Browser initialization failed: Could not find Chrome (ver. 139.0.7258.66). This can occur if either
+ 1. you did not perform an installation before running the script (e.g. `npx puppeteer browsers install chrome`) or
+ 2. your cache path is incorrectly configured (which is: /opt/render/.cache/puppeteer).
+For (2), check out our guide on configuring puppeteer at https://pptr.dev/guides/configuration.
+❌ Failed to initialize FastDl session for @wolftyla
+❌ Story processing failed: Session initialization failed
+✅ Step 1 completed: Stories check finished
+📝 Step 2: Checking for new posts...
+🔒 Polling cycle user agent set: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb...

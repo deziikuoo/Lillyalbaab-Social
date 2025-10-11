@@ -6,6 +6,7 @@
 ## Problem Analysis
 
 From `storage_issue.md` logs:
+
 - Disk usage climbing from 79.5% → 82.4% → 87.2% (critical)
 - Aggressive cleanup ran but removed **0 files, 0MB freed**
 - The cleanup function walks `DOWNLOADS_DIR` but finds nothing
@@ -30,6 +31,7 @@ async def diagnose_disk_usage(self):
 ```
 
 **Features:**
+
 - Scans downloads directory and reports file count + size
 - Checks log files (server.log, request-logs.txt, error-logs.txt)
 - Checks database files (snapchat_telegram.db in multiple locations)
@@ -37,6 +39,7 @@ async def diagnose_disk_usage(self):
 - Automatically called when disk usage exceeds 85%
 
 **Output:**
+
 ```
 📊 [DISK] Downloads folder: X files, X.X MB
 📊 [DISK] Downloads path: /path/to/downloads
@@ -53,6 +56,7 @@ async def diagnose_disk_usage(self):
 Updated `download_and_send_directly()` to use `try/finally` for guaranteed cleanup:
 
 **Before:**
+
 ```python
 try:
     # download and send
@@ -65,6 +69,7 @@ except Exception:
 ```
 
 **After:**
+
 ```python
 try:
     # download and send
@@ -80,6 +85,7 @@ finally:
 ```
 
 **Benefits:**
+
 - Temp files are **always** deleted, even on unexpected exceptions
 - No orphaned temp files accumulating in system temp directory
 - Better error logging for cleanup failures
@@ -96,12 +102,14 @@ async def cleanup_old_logs(self):
 ```
 
 **Features:**
+
 - Removes `.zip` log archives older than 7 days
 - Tracks freed space in MB
 - Automatically called during critical disk usage (>85%)
 - Preserves current `server.log` file (only removes old archives)
 
 **Log Rotation Config (already in place):**
+
 - 10 MB rotation size
 - 7 days retention
 - Automatic compression to `.zip`
@@ -113,15 +121,18 @@ async def cleanup_old_logs(self):
 Updated `cleanup_downloads()` to be much more aggressive:
 
 **Before:**
+
 - Removed files older than **7 days**
 - Only logged count, not freed space
 
 **After:**
+
 - Removes files older than **1 day** (7x more aggressive)
 - Tracks and logs freed space in MB
 - Better error handling (continues on individual file failures)
 
 **Cleanup Thresholds:**
+
 1. **>75% disk usage:** Regular cleanup (1-day threshold)
 2. **>85% disk usage:** Aggressive cleanup (3-day threshold) + diagnostics + log cleanup
 
@@ -177,15 +188,18 @@ When disk usage is high, you'll now see:
 ## Impact
 
 ### Storage Reduction
+
 - **1-day file retention** instead of 7-day: ~85% reduction in stored files
 - **Log archive cleanup:** Removes old compressed logs (7+ days)
 - **Guaranteed temp cleanup:** Prevents temp file accumulation
 
 ### Visibility
+
 - **Diagnostics on every critical alert:** Identifies exact source of space usage
 - **Better logging:** Shows MB freed for all cleanup operations
 
 ### Reliability
+
 - **Try/finally for temp files:** No orphaned files even on crashes
 - **Continues on errors:** Individual file cleanup failures don't stop entire process
 
@@ -205,4 +219,3 @@ No database changes or configuration changes required. Simply deploy the updated
 
 - Original issue: `storage_issue.md` (disk at 87.2%, 0 files removed)
 - Related to: Polling working (70 stories), but cleanup ineffective
-
