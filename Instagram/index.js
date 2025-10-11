@@ -5571,17 +5571,18 @@ app.get("*", (req, res) => {
     !req.path.startsWith("/health")
   ) {
     const indexPath = path.join(__dirname, "client/dist/index.html");
-    
+
     // Check if the client is built, if not return a helpful message
     if (!fs.existsSync(indexPath)) {
-      res.status(503).json({ 
-        error: "Frontend not built yet", 
-        message: "The React frontend is still being built. Please wait a moment and refresh the page.",
-        timestamp: new Date().toISOString()
+      res.status(503).json({
+        error: "Frontend not built yet",
+        message:
+          "The React frontend is still being built. Please wait a moment and refresh the page.",
+        timestamp: new Date().toISOString(),
       });
       return;
     }
-    
+
     res.sendFile(indexPath);
   } else {
     res.status(404).json({ error: "Route not found" });
