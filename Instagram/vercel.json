@@ -76,19 +76,15 @@
     },
     {
       "src": "/instagram",
-      "dest": "client/dist/index.html"
+      "dest": "/index.html"
     },
     {
       "src": "/snapchat",
-      "dest": "client/dist/index.html"
-    },
-    {
-      "src": "/",
-      "dest": "client/dist/index.html"
+      "dest": "/index.html"
     },
     {
       "src": "/(.*)",
-      "dest": "client/dist/$1"
+      "dest": "/$1"
     }
   ]
 }
