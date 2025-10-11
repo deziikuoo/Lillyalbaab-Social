@@ -232,6 +232,40 @@ class FastDlSession {
         timeout: 30000,
       };
 
+      // DEBUGGING: Check file system and environment
+      console.log(`🔍 [DEBUG] Environment variables:`);
+      console.log(`   PUPPETEER_EXECUTABLE_PATH: ${process.env.PUPPETEER_EXECUTABLE_PATH || 'not set'}`);
+      console.log(`   PUPPETEER_CACHE_DIR: ${process.env.PUPPETEER_CACHE_DIR || 'not set'}`);
+      
+      // Check if /opt/render/.cache exists and what's in it
+      const fs = require('fs');
+      const path = require('path');
+      
+      console.log(`🔍 [DEBUG] Checking /opt/render/.cache directory:`);
+      try {
+        if (fs.existsSync('/opt/render/.cache')) {
+          console.log(`   ✅ /opt/render/.cache exists`);
+          const cacheContents = fs.readdirSync('/opt/render/.cache');
+          console.log(`   📁 Contents: ${cacheContents.join(', ')}`);
+          
+          if (fs.existsSync('/opt/render/.cache/puppeteer')) {
+            console.log(`   ✅ /opt/render/.cache/puppeteer exists`);
+            const puppeteerContents = fs.readdirSync('/opt/render/.cache/puppeteer');
+            console.log(`   📁 Puppeteer contents: ${puppeteerContents.join(', ')}`);
+            
+            if (fs.existsSync('/opt/render/.cache/puppeteer/chrome')) {
+              console.log(`   ✅ /opt/render/.cache/puppeteer/chrome exists`);
+              const chromeContents = fs.readdirSync('/opt/render/.cache/puppeteer/chrome');
+              console.log(`   📁 Chrome contents: ${chromeContents.join(', ')}`);
+            }
+          }
+        } else {
+          console.log(`   ❌ /opt/render/.cache does not exist`);
+        }
+      } catch (error) {
+        console.log(`   ❌ Error checking cache directory: ${error.message}`);
+      }
+
       // Use system Chrome on Render if available (fallback to Puppeteer's bundled Chrome)
       if (process.env.PUPPETEER_EXECUTABLE_PATH) {
         launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
@@ -242,6 +276,60 @@ class FastDlSession {
         // Use Puppeteer's bundled Chrome with explicit path
         if (process.env.PUPPETEER_CACHE_DIR) {
           const chromePath = `${process.env.PUPPETEER_CACHE_DIR}/chrome/linux-139.0.7258.66/chrome-linux64/chrome`;
+          
+          // DEBUGGING: Check if Chrome file exists and its permissions
+          console.log(`🔍 [DEBUG] Checking Chrome executable:`);
+          console.log(`   Expected path: ${chromePath}`);
+          
+          if (fs.existsSync(chromePath)) {
+            console.log(`   ✅ Chrome file exists`);
+            try {
+              const stats = fs.statSync(chromePath);
+              console.log(`   📊 File size: ${stats.size} bytes`);
+              console.log(`   📊 Is executable: ${stats.mode & parseInt('111', 8) ? 'Yes' : 'No'}`);
+              console.log(`   📊 Mode: ${stats.mode.toString(8)}`);
+            } catch (error) {
+              console.log(`   ❌ Error getting file stats: ${error.message}`);
+            }
+          } else {
+            console.log(`   ❌ Chrome file does not exist`);
+            
+            // Try to find Chrome in alternative locations
+            console.log(`🔍 [DEBUG] Searching for Chrome in alternative locations:`);
+            const alternativePaths = [
+              '/opt/render/.cache/puppeteer/chrome/linux-139.0.7258.66/chrome-linux64/chrome',
+              '/opt/render/project/src/node_modules/puppeteer/.local-chromium/linux-139.0.7258.66/chrome-linux/chrome',
+              '/opt/render/project/src/node_modules/.cache/puppeteer/chrome/linux-139.0.7258.66/chrome-linux64/chrome'
+            ];
+            
+            for (const altPath of alternativePaths) {
+              if (fs.existsSync(altPath)) {
+                console.log(`   ✅ Found Chrome at: ${altPath}`);
+                launchOptions.executablePath = altPath;
+                break;
+              } else {
+                console.log(`   ❌ Not found: ${altPath}`);
+              }
+            }
+            
+            // If still not found, try Puppeteer's built-in executable path
+            if (!launchOptions.executablePath || !fs.existsSync(launchOptions.executablePath)) {
+              console.log(`🔍 [DEBUG] Trying Puppeteer's built-in executablePath()`);
+              try {
+                const puppeteerExecPath = require('puppeteer').executablePath();
+                console.log(`   Puppeteer suggests: ${puppeteerExecPath}`);
+                if (fs.existsSync(puppeteerExecPath)) {
+                  console.log(`   ✅ Puppeteer's path exists, using it`);
+                  launchOptions.executablePath = puppeteerExecPath;
+                } else {
+                  console.log(`   ❌ Puppeteer's path also doesn't exist`);
+                }
+              } catch (error) {
+                console.log(`   ❌ Error getting Puppeteer executablePath: ${error.message}`);
+              }
+            }
+          }
+          
           launchOptions.executablePath = chromePath;
           console.log(`🌐 Using Puppeteer bundled Chrome: ${chromePath}`);
         } else {
