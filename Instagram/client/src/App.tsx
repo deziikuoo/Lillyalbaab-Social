@@ -260,7 +260,7 @@ const App: React.FC = () => {
 
   // Snapchat username suggestions with debouncing
   const debouncedFetchSuggestions = useMemo(() => {
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: ReturnType<typeof setTimeout>;
     return (input: string) => {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(async () => {
@@ -307,7 +307,7 @@ const App: React.FC = () => {
 
   // Target username suggestions with debouncing
   const debouncedFetchTargetSuggestions = useMemo(() => {
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: ReturnType<typeof setTimeout>;
     return (input: string) => {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(async () => {
