@@ -235,9 +235,18 @@ class FastDlSession {
       // Use system Chrome on Render if available (fallback to Puppeteer's bundled Chrome)
       if (process.env.PUPPETEER_EXECUTABLE_PATH) {
         launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-        console.log(`🌐 Using system Chrome: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
+        console.log(
+          `🌐 Using system Chrome: ${process.env.PUPPETEER_EXECUTABLE_PATH}`
+        );
       } else {
-        console.log(`🌐 Using Puppeteer bundled Chrome`);
+        // Use Puppeteer's bundled Chrome with explicit path
+        if (process.env.PUPPETEER_CACHE_DIR) {
+          const chromePath = `${process.env.PUPPETEER_CACHE_DIR}/chrome/linux-139.0.7258.66/chrome-linux64/chrome`;
+          launchOptions.executablePath = chromePath;
+          console.log(`🌐 Using Puppeteer bundled Chrome: ${chromePath}`);
+        } else {
+          console.log(`🌐 Using Puppeteer bundled Chrome (default path)`);
+        }
       }
 
       this.browser = await puppeteer.launch(launchOptions);
