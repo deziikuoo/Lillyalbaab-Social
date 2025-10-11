@@ -335,7 +335,9 @@ class HealthCheck:
                     await self.cleanup_downloads()
                 if disk.percent > 85:
                     logger.error(f"🚨 Critical disk usage: {disk.percent}% - aggressive cleanup")
+                    await self.diagnose_disk_usage()
                     await self.aggressive_disk_cleanup()
+                    await self.cleanup_old_logs()
                 
                 # Reset failure counter on success
                 self.consecutive_failures = 0
@@ -383,21 +385,28 @@ class HealthCheck:
             logger.error(f"Aggressive memory cleanup failed: {e}")
     
     async def cleanup_downloads(self):
-        """Clean up old downloads (7-day cleanup for health checks)"""
+        """Clean up old downloads (1-day cleanup instead of 7-day)"""
         try:
-            # Remove files older than 7 days
-            cutoff_time = time.time() - (7 * 24 * 60 * 60)
+            # Remove files older than 1 day (was 7 days)
+            cutoff_time = time.time() - (1 * 24 * 60 * 60)  # Changed from 7 days
             removed_count = 0
+            freed_bytes = 0
             
             for root, dirs, files in os.walk(DOWNLOADS_DIR):
                 for file in files:
                     file_path = os.path.join(root, file)
-                    if os.path.getmtime(file_path) < cutoff_time:
-                        os.remove(file_path)
-                        removed_count += 1
+                    try:
+                        if os.path.getmtime(file_path) < cutoff_time:
+                            file_size = os.path.getsize(file_path)
+                            os.remove(file_path)
+                            removed_count += 1
+                            freed_bytes += file_size
+                    except Exception:
+                        pass
             
+            freed_mb = freed_bytes / (1024 * 1024)
             if removed_count > 0:
-                logger.info(f"🧹 Cleaned up {removed_count} old files")
+                logger.info(f"🧹 Cleaned up {removed_count} old files ({freed_mb:.1f} MB freed)")
         except Exception as e:
             logger.error(f"Download cleanup failed: {e}")
     
@@ -435,6 +444,80 @@ class HealthCheck:
             logger.info(f"🧹 Aggressive cleanup: {removed_count} files removed, {freed_mb:.1f}MB freed. Disk now at {disk.percent}%")
         except Exception as e:
             logger.error(f"Aggressive disk cleanup failed: {e}")
+    
+    async def diagnose_disk_usage(self):
+        """Diagnose what's using disk space"""
+        try:
+            logger.info("📊 [DISK] Analyzing disk usage...")
+            
+            # Check downloads directory
+            downloads_size = sum(
+                os.path.getsize(os.path.join(root, file))
+                for root, dirs, files in os.walk(DOWNLOADS_DIR)
+                for file in files
+            ) / (1024 * 1024)  # Convert to MB
+            
+            downloads_count = sum(
+                len(files)
+                for root, dirs, files in os.walk(DOWNLOADS_DIR)
+            )
+            
+            logger.info(f"📊 [DISK] Downloads folder: {downloads_count} files, {downloads_size:.1f} MB")
+            logger.info(f"📊 [DISK] Downloads path: {DOWNLOADS_DIR}")
+            
+            # Check log files
+            log_dir = os.path.dirname(__file__)
+            log_files = ['server.log', 'request-logs.txt', 'error-logs.txt']
+            for log_file in log_files:
+                log_path = os.path.join(log_dir, log_file)
+                if os.path.exists(log_path):
+                    size_mb = os.path.getsize(log_path) / (1024 * 1024)
+                    logger.info(f"📊 [DISK] {log_file}: {size_mb:.1f} MB")
+            
+            # Check database files
+            db_files = [
+                os.path.join(os.path.dirname(__file__), 'snapchat_telegram.db'),
+                os.path.join(os.path.dirname(__file__), '..', 'snapchat_telegram.db')
+            ]
+            for db_path in db_files:
+                if os.path.exists(db_path):
+                    size_mb = os.path.getsize(db_path) / (1024 * 1024)
+                    logger.info(f"📊 [DISK] Database {db_path}: {size_mb:.1f} MB")
+            
+            # Check system disk usage
+            disk = psutil.disk_usage(DOWNLOADS_DIR)
+            logger.info(f"📊 [DISK] System drive usage: {disk.percent}% ({disk.used / (1024**3):.1f}GB used of {disk.total / (1024**3):.1f}GB)")
+            
+        except Exception as e:
+            logger.error(f"❌ [DISK] Diagnostic failed: {e}")
+    
+    async def cleanup_old_logs(self):
+        """Clean up old log files"""
+        try:
+            log_dir = os.path.dirname(__file__)
+            
+            # Clean up old compressed logs (older than 7 days)
+            cutoff_time = time.time() - (7 * 24 * 60 * 60)
+            removed_count = 0
+            freed_bytes = 0
+            
+            for file in os.listdir(log_dir):
+                if file.endswith('.zip') and 'server.log' in file:
+                    file_path = os.path.join(log_dir, file)
+                    try:
+                        if os.path.getmtime(file_path) < cutoff_time:
+                            file_size = os.path.getsize(file_path)
+                            os.remove(file_path)
+                            removed_count += 1
+                            freed_bytes += file_size
+                    except Exception:
+                        pass
+            
+            freed_mb = freed_bytes / (1024 * 1024)
+            if removed_count > 0:
+                logger.info(f"🧹 Cleaned up {removed_count} old log archives ({freed_mb:.1f} MB freed)")
+        except Exception as e:
+            logger.error(f"❌ Log cleanup failed: {e}")
     
     async def cleanup_downloads_4week(self):
         """Clean up downloads folder (4-week complete wipe)"""
@@ -3267,7 +3350,7 @@ async def download_and_send_directly(username: str, stories: list, telegram_capt
         failed_count = 0
         
         for i, story in enumerate(stories, 1):
-            temp_file = None
+            temp_path = None
             try:
                 story_url = story.get('url')
                 story_type = story.get('type', 'photo')
@@ -3310,21 +3393,18 @@ async def download_and_send_directly(username: str, stories: list, telegram_capt
                     except Exception as e:
                         logger.error(f"❌ [DIRECT] Failed to send to Telegram: {e}")
                         failed_count += 1
-                
-                # Delete temp file immediately
-                if temp_file and os.path.exists(temp_path):
-                    os.unlink(temp_path)
-                    logger.info(f"🗑️ [DIRECT] Deleted temp file: {os.path.basename(temp_path)}")
                     
             except Exception as e:
                 logger.error(f"❌ [DIRECT] Error processing story {i}: {e}")
                 failed_count += 1
-                # Clean up temp file on error
-                if temp_file and os.path.exists(temp_path):
+            finally:
+                # ALWAYS cleanup, even if error
+                if temp_path and os.path.exists(temp_path):
                     try:
                         os.unlink(temp_path)
-                    except:
-                        pass
+                        logger.info(f"🗑️ [DIRECT] Deleted temp file: {os.path.basename(temp_path)}")
+                    except Exception as cleanup_error:
+                        logger.error(f"⚠️ [DIRECT] Failed to delete temp file: {cleanup_error}")
         
         logger.info(f"📊 [DIRECT] Complete: {sent_count} sent, {failed_count} failed")
         
