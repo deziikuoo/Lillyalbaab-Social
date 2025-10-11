@@ -10,22 +10,11 @@
     }
   ],
   "buildCommand": "cd client && npm run build",
+  "outputDirectory": "client/dist",
   "routes": [
     {
-      "src": "/",
-      "dest": "/index.html"
-    },
-    {
-      "src": "/instagram",
-      "dest": "/index.html"
-    },
-    {
-      "src": "/snapchat",
-      "dest": "/index.html"
-    },
-    {
       "src": "/(.*)",
-      "dest": "/$1"
+      "dest": "/index.html"
     }
   ]
 }
