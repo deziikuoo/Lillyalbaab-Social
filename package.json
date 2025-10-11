@@ -5,7 +5,7 @@
   "main": "Instagram/index.js",
   "scripts": {
     "start": "cd Instagram && npm start",
-    "build": "cd Instagram/client && npm install --production=false && npm run build",
+    "build": "cd Instagram/client && npm run build",
     "dev": "cd Instagram && npm run start:frontend",
     "install:all": "cd Instagram && npm install && cd client && npm install",
     "build:frontend": "cd Instagram/client && npm run build",

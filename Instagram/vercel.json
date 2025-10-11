@@ -2,13 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "package.json",
+      "src": "Instagram/client/package.json",
       "use": "@vercel/static-build",
       "config": {
-        "distDir": "Instagram/client/dist"
+        "distDir": "dist"
       }
     }
   ],
+  "buildCommand": "cd Instagram/client && npm install --production=false && npm run build",
   "routes": [
     {
       "src": "/(.*)",
