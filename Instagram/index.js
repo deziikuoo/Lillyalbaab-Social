@@ -940,7 +940,7 @@ app.use((req, res, next) => {
 });
 
 // Serve static files from React build (for Vercel deployment)
-app.use(express.static(path.join(__dirname, 'client/dist')));
+app.use(express.static(path.join(__dirname, "client/dist")));
 
 // Telegram configuration
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -5552,17 +5552,39 @@ async function tryWebProfileInfoFallback(post, userAgent) {
 // Serve React app for all non-API routes (client-side routing)
 app.get("*", (req, res) => {
   // Only serve index.html for non-API routes
-  if (!req.path.startsWith('/api/') && !req.path.startsWith('/snapchat-') && 
-      !req.path.startsWith('/download') && !req.path.startsWith('/gallery/') &&
-      !req.path.startsWith('/progress/') && !req.path.startsWith('/send-to-telegram') &&
-      !req.path.startsWith('/clear-cache') && !req.path.startsWith('/igdl') &&
-      !req.path.startsWith('/target') && !req.path.startsWith('/start-polling') &&
-      !req.path.startsWith('/stop-polling') && !req.path.startsWith('/status') &&
-      !req.path.startsWith('/stats') && !req.path.startsWith('/set-target') &&
-      !req.path.startsWith('/poll-now') && !req.path.startsWith('/health')) {
-    res.sendFile(path.join(__dirname, 'client/dist/index.html'));
+  if (
+    !req.path.startsWith("/api/") &&
+    !req.path.startsWith("/snapchat-") &&
+    !req.path.startsWith("/download") &&
+    !req.path.startsWith("/gallery/") &&
+    !req.path.startsWith("/progress/") &&
+    !req.path.startsWith("/send-to-telegram") &&
+    !req.path.startsWith("/clear-cache") &&
+    !req.path.startsWith("/igdl") &&
+    !req.path.startsWith("/target") &&
+    !req.path.startsWith("/start-polling") &&
+    !req.path.startsWith("/stop-polling") &&
+    !req.path.startsWith("/status") &&
+    !req.path.startsWith("/stats") &&
+    !req.path.startsWith("/set-target") &&
+    !req.path.startsWith("/poll-now") &&
+    !req.path.startsWith("/health")
+  ) {
+    const indexPath = path.join(__dirname, "client/dist/index.html");
+    
+    // Check if the client is built, if not return a helpful message
+    if (!fs.existsSync(indexPath)) {
+      res.status(503).json({ 
+        error: "Frontend not built yet", 
+        message: "The React frontend is still being built. Please wait a moment and refresh the page.",
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    
+    res.sendFile(indexPath);
   } else {
-    res.status(404).json({ error: 'Route not found' });
+    res.status(404).json({ error: "Route not found" });
   }
 });
 
