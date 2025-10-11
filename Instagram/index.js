@@ -913,9 +913,6 @@ const port = process.env.PORT || 3000;
 // Middleware to parse JSON bodies
 app.use(express.json());
 
-// Serve static files from the React app build directory
-app.use(express.static(path.join(__dirname, "client/dist")));
-
 // CORS configuration - allow Vercel frontend and all origins
 app.use((req, res, next) => {
   const origin = req.headers.origin;
@@ -5550,7 +5547,16 @@ async function tryWebProfileInfoFallback(post, userAgent) {
 }
 
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "client/dist/index.html"));
+  res.json({ 
+    message: "Tyla Social API Server", 
+    status: "running",
+    endpoints: {
+      frontend: "https://tyla-social-frontend.vercel.app",
+      health: "/health",
+      instagram: "/igdl",
+      snapchat: "/snapchat-status"
+    }
+  });
 });
 
 // Extract the processing logic from /igdl endpoint into a reusable function
