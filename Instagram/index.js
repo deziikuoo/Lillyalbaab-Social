@@ -7,12 +7,28 @@ const cheerio = require("cheerio");
 const cron = require("node-cron");
 const sqlite3 = require("sqlite3").verbose();
 const SupabaseManager = require("./supabase-manager");
-// const puppeteer = require("puppeteer"); // COMMENTED OUT DUE TO PUPPETEER ISSUES
+const puppeteer = require("puppeteer");
 const readline = require("readline");
 const InstagramCarouselDownloader = require("./instagram-carousel-downloader");
 
 // Add fetch for internal API calls
 const fetch = require("node-fetch");
+
+// FFmpeg for video re-encoding
+let ffmpeg = null;
+let ffmpegAvailable = false;
+try {
+  ffmpeg = require("fluent-ffmpeg");
+  const ffmpegStatic = require("ffmpeg-static");
+  ffmpeg.setFfmpegPath(ffmpegStatic);
+  ffmpegAvailable = true;
+  console.log("✅ FFmpeg available for video re-encoding");
+} catch (error) {
+  console.log(
+    "⚠️ FFmpeg not available - videos may appear stretched in Telegram"
+  );
+  console.log("💡 Install with: npm install fluent-ffmpeg ffmpeg-static");
+}
 
 // Snapchat polling module removed - using unified Python service only
 // const snapchatPolling = require("./snapchat-polling");
@@ -130,8 +146,7 @@ class InstagramSession {
 }
 */
 
-// ===== FASTDL SESSION MANAGEMENT ===== - COMMENTED OUT DUE TO PUPPETEER ISSUES
-/*
+// ===== FASTDL SESSION MANAGEMENT =====
 class FastDlSession {
   constructor(username) {
     this.username = username;
@@ -181,11 +196,11 @@ class FastDlSession {
           "--disable-gpu",
           "--disable-web-security",
           "--disable-features=VizDisplayCompositor",
-          "--single-process",
+          // "--single-process", // Removed - can cause issues with browser loading
           "--disable-extensions",
           "--disable-plugins",
-          "--disable-images",
-          "--disable-javascript",
+          // "--disable-images", // REMOVED - FastDl needs images
+          // "--disable-javascript", // REMOVED - FastDl requires JavaScript
           "--disable-background-timer-throttling",
           "--disable-backgrounding-occluded-windows",
           "--disable-renderer-backgrounding",
@@ -297,7 +312,7 @@ class FastDlSession {
     await element.click({ delay: Math.random() * 100 + 50 });
   }
 }
-*/
+
 // ===== GLOBAL ERROR HANDLING =====
 process.on("uncaughtException", (error) => {
   console.error("🚨 UNCAUGHT EXCEPTION:", error);
@@ -768,15 +783,15 @@ app.use((req, res, next) => {
     "https://tyla-social.vercel.app",
     "https://tyla-social.onrender.com",
     "http://localhost:5173",
-    "http://localhost:3000"
+    "http://localhost:3000",
   ];
-  
+
   if (allowedOrigins.includes(origin)) {
     res.header("Access-Control-Allow-Origin", origin);
   } else {
     res.header("Access-Control-Allow-Origin", "*");
   }
-  
+
   res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.header("Access-Control-Allow-Credentials", "true");
@@ -919,24 +934,9 @@ function initializeSQLiteTables() {
     username TEXT
   )`);
 
-      // Stories tracking tables
-      db.run(`CREATE TABLE IF NOT EXISTS processed_stories (
-    id TEXT PRIMARY KEY,
-    username TEXT,
-    story_url TEXT,
-    story_type TEXT,
-    story_id TEXT,
-    processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-
-      db.run(`CREATE TABLE IF NOT EXISTS recent_stories_cache (
-    username TEXT,
-    story_url TEXT,
-    story_id TEXT,
-    story_type TEXT,
-    cached_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (username, story_id)
-  )`);
+      // REMOVED: Stories tracking tables - Stories use Supabase only
+      // db.run(`CREATE TABLE IF NOT EXISTS processed_stories (...)`);
+      // db.run(`CREATE TABLE IF NOT EXISTS recent_stories_cache (...)`);
     });
   }
 }
@@ -1283,6 +1283,7 @@ const DEBUG_LOG = false;
 // Function to send photo to Telegram (prefer direct URL; fallback to download/upload)
 async function sendPhotoToTelegram(photoUrl, caption = "") {
   let tempFilePath = null;
+  let shouldCleanup = false;
 
   try {
     // Ensure Telegram configuration is present before attempting any API calls
@@ -1309,81 +1310,98 @@ async function sendPhotoToTelegram(photoUrl, caption = "") {
       );
     }
 
-    // Validate photo URL
-    if (!photoUrl || !photoUrl.startsWith("http")) {
+    // Check if photoUrl is a local file path (already downloaded)
+    const isLocalFile = fs.existsSync(photoUrl);
+
+    if (isLocalFile) {
+      // Local file - use it directly for upload
+      console.log("📤 Uploading local photo file to Telegram...");
+      tempFilePath = photoUrl;
+      shouldCleanup = false; // Don't cleanup - caller will handle it
+    } else if (!photoUrl || !photoUrl.startsWith("http")) {
       throw new Error(`Invalid photo URL: ${photoUrl}`);
+    } else {
+      // Remote URL processing continues below
     }
 
-    console.log("📸 Downloading and sending photo to Telegram...");
-    console.log("📸 Photo URL:", photoUrl);
+    if (!isLocalFile) {
+      console.log("📸 Downloading and sending photo to Telegram...");
+      console.log("📸 Photo URL:", photoUrl);
 
-    // Fast path: if this is a public CDN (instagram) URL, send it directly to Telegram
-    try {
-      if (
-        photoUrl.includes("cdninstagram.com") ||
-        photoUrl.includes("scontent-")
-      ) {
-        const directResp = await axios.post(
-          `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`,
-          {
-            chat_id: TELEGRAM_CHANNEL_ID,
-            photo: photoUrl,
-            caption: caption || "New Instagram photo",
-            parse_mode: "HTML",
-          },
-          { timeout: 30000 }
-        );
-        if (directResp.data?.ok) {
-          console.log("✅ Photo sent to Telegram via direct URL");
-          requestTracker.trackTelegram("photo", true);
-          return {
-            success: true,
-            messageId: directResp.data.result.message_id,
-            method: "direct_url",
-          };
+      // Fast path: if this is a public CDN (instagram) URL, send it directly to Telegram
+      try {
+        if (
+          photoUrl.includes("cdninstagram.com") ||
+          photoUrl.includes("scontent-")
+        ) {
+          const directResp = await axios.post(
+            `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`,
+            {
+              chat_id: TELEGRAM_CHANNEL_ID,
+              photo: photoUrl,
+              caption: caption || "New Instagram photo",
+              parse_mode: "HTML",
+            },
+            { timeout: 30000 }
+          );
+          if (directResp.data?.ok) {
+            console.log("✅ Photo sent to Telegram via direct URL");
+            requestTracker.trackTelegram("photo", true);
+            return {
+              success: true,
+              messageId: directResp.data.result.message_id,
+              method: "direct_url",
+            };
+          }
         }
+      } catch (directErr) {
+        console.log(
+          "⚠️ Direct URL send failed, falling back to download/upload:",
+          directErr.response?.data?.description || directErr.message
+        );
+        requestTracker.trackTelegram("photo", false, directErr.message);
       }
-    } catch (directErr) {
-      console.log(
-        "⚠️ Direct URL send failed, falling back to download/upload:",
-        directErr.response?.data?.description || directErr.message
-      );
-      requestTracker.trackTelegram("photo", false, directErr.message);
+
+      // Create temp filename
+      const timestamp = Date.now();
+      tempFilePath = path.join(__dirname, `temp_photo_${timestamp}.jpg`);
+      shouldCleanup = true; // We created a temp file, cleanup after
+
+      // Download the photo
+      const response = await axios({
+        method: "get",
+        url: photoUrl,
+        responseType: "stream",
+        headers: {
+          "User-Agent": getPollingUserAgent(),
+          Accept: "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+          "Sec-Fetch-Dest": "image",
+          "Sec-Fetch-Mode": "no-cors",
+          "Sec-Fetch-Site": "cross-site",
+        },
+      });
+
+      // Save to temp file
+      const writer = fs.createWriteStream(tempFilePath);
+      response.data.pipe(writer);
+
+      await new Promise((resolve, reject) => {
+        writer.on("finish", resolve);
+        writer.on("error", reject);
+      });
+
+      console.log("📁 Photo downloaded to temp file");
     }
 
-    // Create temp filename
-    const timestamp = Date.now();
-    tempFilePath = path.join(__dirname, `temp_photo_${timestamp}.jpg`);
+    // At this point, tempFilePath is set (either local file or downloaded file)
+    if (!tempFilePath) {
+      throw new Error("No photo file available for upload");
+    }
 
-    // Download the photo
-    const response = await axios({
-      method: "get",
-      url: photoUrl,
-      responseType: "stream",
-      headers: {
-        "User-Agent": getPollingUserAgent(),
-        Accept: "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Cache-Control": "no-cache",
-        Pragma: "no-cache",
-        "Sec-Fetch-Dest": "image",
-        "Sec-Fetch-Mode": "no-cors",
-        "Sec-Fetch-Site": "cross-site",
-      },
-    });
-
-    // Save to temp file
-    const writer = fs.createWriteStream(tempFilePath);
-    response.data.pipe(writer);
-
-    await new Promise((resolve, reject) => {
-      writer.on("finish", resolve);
-      writer.on("error", reject);
-    });
-
-    console.log("📁 Photo downloaded to temp file");
-
-    // Upload to Telegram (fallback)
+    // Upload to Telegram
     const form = new FormData();
     form.append("chat_id", TELEGRAM_CHANNEL_ID);
     form.append("photo", fs.createReadStream(tempFilePath), "photo.jpg");
@@ -1432,8 +1450,8 @@ async function sendPhotoToTelegram(photoUrl, caption = "") {
     requestTracker.trackTelegram("photo", false, error.message);
     throw error;
   } finally {
-    // Clean up temp file
-    if (tempFilePath && fs.existsSync(tempFilePath)) {
+    // Clean up temp file only if we created it
+    if (shouldCleanup && tempFilePath && fs.existsSync(tempFilePath)) {
       try {
         fs.unlinkSync(tempFilePath);
         console.log("🗑️ Temp photo file cleaned up");
@@ -1477,7 +1495,7 @@ async function sendMediaGroupToTelegram(mediaItems, caption = "") {
       // Prepare media array for this chunk
       const media = chunk.map((item, index) => {
         const mediaObject = {
-          type: item.is_video ? "video" : "photo",
+          type: item.is_video || item.isVideo ? "video" : "photo",
           media: item.url,
         };
 
@@ -1544,6 +1562,7 @@ async function sendMediaGroupToTelegram(mediaItems, caption = "") {
 // Function to send video to Telegram (supports both direct URLs and file uploads)
 async function sendVideoToTelegram(videoUrl, caption = "") {
   let tempFilePath = null;
+  let shouldCleanup = false;
 
   try {
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHANNEL_ID) {
@@ -1554,7 +1573,15 @@ async function sendVideoToTelegram(videoUrl, caption = "") {
     const isDirectInstagramUrl =
       videoUrl.includes("scontent-") && videoUrl.includes("cdninstagram.com");
 
-    if (isDirectInstagramUrl) {
+    // Check if videoUrl is a local file path (already downloaded)
+    const isLocalFile = fs.existsSync(videoUrl);
+
+    if (isLocalFile) {
+      // Local file - use it directly for upload
+      console.log("📤 Uploading local video file to Telegram...");
+      tempFilePath = videoUrl;
+      shouldCleanup = false; // Don't cleanup - caller will handle it
+    } else if (isDirectInstagramUrl) {
       // Direct Instagram CDN URL - send directly to Telegram
       console.log("📤 Sending direct Instagram CDN URL to Telegram...");
 
@@ -1590,8 +1617,9 @@ async function sendVideoToTelegram(videoUrl, caption = "") {
         throw new Error(error);
       }
     } else {
-      // Snapsave or other URL - download and upload file
+      // Remote URL - download and upload file
       console.log("📥 Downloading video from URL for Telegram upload...");
+      shouldCleanup = true; // We'll create a temp file, so cleanup after
 
       // Step 1: Download the video
       const videoResponse = await axios({
@@ -1631,63 +1659,70 @@ async function sendVideoToTelegram(videoUrl, caption = "") {
       });
 
       console.log(`📁 Video downloaded to: ${tempFilePath}`);
+    }
 
-      // Check file size (Telegram limit is 50MB)
-      const stats = fs.statSync(tempFilePath);
-      const fileSizeInMB = stats.size / (1024 * 1024);
+    // At this point, tempFilePath is set (either local file or downloaded file)
+    if (!tempFilePath) {
+      throw new Error("No video file available for upload");
+    }
 
-      console.log(`📊 File size: ${fileSizeInMB.toFixed(2)} MB`);
+    // Check file size (Telegram limit is 50MB)
+    const stats = fs.statSync(tempFilePath);
+    const fileSizeInMB = stats.size / (1024 * 1024);
 
-      if (fileSizeInMB > 50) {
-        throw new Error(
-          `Video file too large: ${fileSizeInMB.toFixed(2)}MB (max 50MB)`
-        );
-      }
+    console.log(`📊 File size: ${fileSizeInMB.toFixed(2)} MB`);
 
-      // Step 3: Upload to Telegram
-      console.log("📤 Uploading video file to Telegram...");
-
-      const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendVideo`;
-
-      const form = new FormData();
-      form.append("chat_id", TELEGRAM_CHANNEL_ID);
-      form.append("video", fs.createReadStream(tempFilePath), {
-        filename: fileName,
-        contentType: "video/mp4",
-      });
-      form.append(
-        "caption",
-        caption || `🎬 New Instagram Video\n\nDownloaded via Tyla IG Kapturez`
+    if (fileSizeInMB > 50) {
+      throw new Error(
+        `Video file too large: ${fileSizeInMB.toFixed(2)}MB (max 50MB)`
       );
-      form.append("parse_mode", "HTML");
-      form.append("supports_streaming", "true");
+    }
 
-      const response = await axios.post(telegramApiUrl, form, {
+    // Upload the video to Telegram
+    console.log("📤 Uploading video to Telegram...");
+
+    const form = new FormData();
+    form.append("chat_id", TELEGRAM_CHANNEL_ID);
+    form.append("video", fs.createReadStream(tempFilePath), {
+      filename: path.basename(tempFilePath),
+      contentType: "video/mp4",
+    });
+    form.append(
+      "caption",
+      caption || `🎬 New Instagram Video\n\nDownloaded via Tyla IG Kapturez`
+    );
+    form.append("parse_mode", "HTML");
+    form.append("supports_streaming", "true");
+
+    const response = await axios.post(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendVideo`,
+      form,
+      {
         headers: {
           ...form.getHeaders(),
         },
         timeout: 120000, // 2 minute timeout for upload
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
-      });
-
-      if (response.data.ok) {
-        console.log(
-          "✅ Video uploaded to Telegram successfully via file upload!"
-        );
-        requestTracker.trackTelegram("video", true);
-        return {
-          success: true,
-          message_id: response.data.result.message_id,
-          chat_id: response.data.result.chat.id,
-          file_size_mb: fileSizeInMB.toFixed(2),
-          method: "file_upload",
-        };
-      } else {
-        const error = response.data.description || "Failed to send to Telegram";
-        requestTracker.trackTelegram("video", false, error);
-        throw new Error(error);
       }
+    );
+
+    if (response.data.ok) {
+      console.log(
+        "✅ Video uploaded to Telegram successfully via file upload!"
+      );
+      requestTracker.trackTelegram("video", true);
+      return {
+        success: true,
+        message_id: response.data.result.message_id,
+        chat_id: response.data.result.chat.id,
+        file_size_mb: fileSizeInMB.toFixed(2),
+        method: "file_upload",
+      };
+    } else {
+      const error = response.data.description || "Failed to send to Telegram";
+      requestTracker.trackTelegram("video", false, error);
+      throw new Error(error);
     }
   } catch (error) {
     console.error("❌ Video upload error:", {
@@ -1699,8 +1734,8 @@ async function sendVideoToTelegram(videoUrl, caption = "") {
     requestTracker.trackTelegram("video", false, error.message);
     throw error;
   } finally {
-    // Clean up: delete temporary file
-    if (tempFilePath && fs.existsSync(tempFilePath)) {
+    // Clean up: delete temporary file only if we created it
+    if (shouldCleanup && tempFilePath && fs.existsSync(tempFilePath)) {
       try {
         fs.unlinkSync(tempFilePath);
         console.log("Temporary file cleaned up");
@@ -1733,11 +1768,11 @@ async function scrapeInstagramBrowser(username) {
           "--disable-gpu",
           "--disable-web-security",
           "--disable-features=VizDisplayCompositor",
-          "--single-process",
+          // "--single-process", // Removed - can cause issues with browser loading
           "--disable-extensions",
           "--disable-plugins",
-          "--disable-images",
-          "--disable-javascript",
+          // "--disable-images", // REMOVED - FastDl needs images
+          // "--disable-javascript", // REMOVED - FastDl requires JavaScript
           "--disable-background-timer-throttling",
           "--disable-backgrounding-occluded-windows",
           "--disable-renderer-backgrounding",
@@ -4643,7 +4678,7 @@ function clearUserData(username) {
 async function scrapeInstagramStoriesWithFastDl(session) {
   try {
     console.log(
-      `🎬 Processing stories for @${session.username} with FastDl.app (Grok method)...`
+      `🎬 Processing stories for @${session.username} with FastDl.app...`
     );
 
     if (!session.page) {
@@ -4653,42 +4688,21 @@ async function scrapeInstagramStoriesWithFastDl(session) {
 
     const stories = [];
     const storyUrl = `https://www.instagram.com/stories/${session.username}/`;
-    const fastDlUrl = `https://fastdl.app/en`;
+    const fastDlUrl = `https://fastdl.app/story-saver`;
 
     console.log(`🔍 Navigating to FastDl.app: ${fastDlUrl}`);
 
     try {
-      // Step 1: Navigate to FastDl.app
+      // Step 1: Navigate to FastDl.app story-saver page
       await session.page.goto(fastDlUrl, {
         waitUntil: "networkidle2",
         timeout: 30000,
       });
 
-      await session.applyDelay("navigation");
+      console.log(`⏳ [FASTDL] Waiting 4 seconds after page load...`);
+      await new Promise((resolve) => setTimeout(resolve, 4000));
 
-      // Step 2: Ensure "Stories" tab is selected
-      console.log(`🔍 [FASTDL] Looking for Stories tab...`);
-      const storiesButton = await session.page.waitForSelector(
-        "button.tabs-component_button",
-        {
-          timeout: 10000,
-        }
-      );
-
-      const isActive = await session.page.evaluate(
-        (el) => el.classList.contains("tabs-component_button--active"),
-        storiesButton
-      );
-
-      if (!isActive) {
-        console.log(`🖱️ [FASTDL] Clicking Stories tab...`);
-        await storiesButton.click();
-        await session.page.waitForTimeout(1000); // Brief wait for tab switch
-      } else {
-        console.log(`✅ [FASTDL] Stories tab already active`);
-      }
-
-      // Step 3: Enter the story URL
+      // Step 2: Find and fill the input field
       console.log(`🔍 [FASTDL] Looking for search input field...`);
       await session.page.waitForSelector("#search-form-input", {
         timeout: 10000,
@@ -4697,19 +4711,23 @@ async function scrapeInstagramStoriesWithFastDl(session) {
       console.log(`📝 [FASTDL] Typing story URL: ${storyUrl}`);
       await session.page.type("#search-form-input", storyUrl);
 
+      console.log(`⏳ [FASTDL] Waiting 4 seconds after typing...`);
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+
+      // Step 3: Click Download button to trigger content generation
       console.log(`🖱️ [FASTDL] Clicking Download button...`);
-      await session.page.click('button:has-text("Download")'); // Submit the form
-
-      // Step 4: Wait for results
-      console.log(`⏳ [FASTDL] Waiting for results to load...`);
-      await session.page.waitForSelector("ul.profile-media-list", {
-        timeout: 30000,
+      await session.page.waitForSelector("button.search-form__button", {
+        timeout: 10000,
       });
+      await session.page.click("button.search-form__button");
 
-      // Step 5: Extract download URLs
+      console.log(`⏳ [FASTDL] Waiting 4 seconds for stories to load...`);
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+
+      // Step 4: Extract download URLs directly (no stories tab click needed)
       console.log(`🔍 [FASTDL] Extracting download URLs...`);
       const downloadUrls = await session.page.$$eval(
-        "a.button.button--filled.button_download",
+        "a.button.button--filled.button__download",
         (anchors) => anchors.map((a) => a.href)
       );
 
@@ -4729,12 +4747,71 @@ async function scrapeInstagramStoriesWithFastDl(session) {
           }: ${url}`
         );
 
-        // Generate unique story ID from URL
-        const storyId = require("crypto")
-          .createHash("md5")
-          .update(url)
-          .digest("hex")
-          .substring(0, 16);
+        // Extract Instagram URL and filename from FastDl proxy URL
+        let instagramUrl = null;
+        let instagramFilename = null;
+
+        try {
+          const urlObj = new URL(url);
+          const uri = urlObj.searchParams.get("uri");
+          if (uri) {
+            instagramUrl = decodeURIComponent(uri);
+            console.log(
+              `📌 [FASTDL] Instagram URL: ${instagramUrl.substring(0, 100)}...`
+            );
+
+            // Extract filename from Instagram URL (most stable identifier)
+            // Format: https://.../563364741_1845820536021966_5877384275860222806_n.jpg?params...
+            const urlMatch = instagramUrl.match(
+              /\/([^\/\?]+\.(jpg|mp4|png|webp))/i
+            );
+            if (urlMatch) {
+              instagramFilename = urlMatch[1];
+              console.log(
+                `📌 [FASTDL] Instagram Filename: ${instagramFilename}`
+              );
+            } else {
+              console.log(
+                `⚠️ [FASTDL] Could not extract filename from Instagram URL`
+              );
+            }
+          } else {
+            console.log(`⚠️ [FASTDL] No uri parameter found in FastDl URL`);
+          }
+        } catch (parseError) {
+          console.log(`⚠️ [FASTDL] Could not parse URL: ${parseError.message}`);
+        }
+
+        // Generate story ID from Instagram filename (most stable)
+        let storyId;
+        let idSource;
+        if (instagramFilename) {
+          storyId = require("crypto")
+            .createHash("md5")
+            .update(instagramFilename)
+            .digest("hex")
+            .substring(0, 16);
+          idSource = `filename: ${instagramFilename}`;
+          console.log(`🔑 [FASTDL] Using Instagram filename for ID (STABLE)`);
+        } else if (instagramUrl) {
+          storyId = require("crypto")
+            .createHash("md5")
+            .update(instagramUrl)
+            .digest("hex")
+            .substring(0, 16);
+          idSource = `full Instagram URL`;
+          console.log(`🔑 [FASTDL] Using full Instagram URL for ID`);
+        } else {
+          storyId = require("crypto")
+            .createHash("md5")
+            .update(url)
+            .digest("hex")
+            .substring(0, 16);
+          idSource = `FastDl URL`;
+          console.log(`🔑 [FASTDL] Using FastDl URL for ID (fallback)`);
+        }
+
+        console.log(`🔑 [FASTDL] Story ID: ${storyId} (from ${idSource})`);
 
         // Determine file type from URL
         const isVideo = url.includes(".mp4") || url.includes("video");
@@ -4742,12 +4819,15 @@ async function scrapeInstagramStoriesWithFastDl(session) {
 
         // Create story object
         const story = {
-          url: url,
+          url: url, // FastDl download URL (for downloading)
+          instagramUrl: instagramUrl, // Instagram CDN URL
+          instagramFilename: instagramFilename, // Filename for stable ID
           storyId: storyId,
+          idSource: idSource,
           storyType: storyType,
           isVideo: isVideo,
           index: i + 1,
-          method: "fastdl-grok",
+          method: "fastdl-filename",
         };
 
         stories.push(story);
@@ -5416,10 +5496,22 @@ async function processInstagramURL(url, userAgent = null) {
 
       // Optional: Send to Telegram if configured (MANUAL processing)
       if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHANNEL_ID) {
-        for (const item of carouselResult.data) {
-          try {
+        try {
+          if (carouselResult.data.length > 1) {
+            // Carousel with multiple items - send as media group
             console.log(
-              `📤 [MANUAL] Sending carousel item ${item.carouselIndex} (${
+              `📤 [MANUAL] Sending carousel as media group (${carouselResult.data.length} items)...`
+            );
+            const caption = `✨ New carousel from <a href="https://www.instagram.com/${username}/">@${username}</a>! 📱 <a href="${processedUrl}">View Original Post</a>`;
+            await sendMediaGroupToTelegram(carouselResult.data, caption);
+            console.log(
+              `✅ [MANUAL] Carousel media group sent to Telegram successfully (${carouselResult.data.length} items)`
+            );
+          } else {
+            // Single item - send normally
+            const item = carouselResult.data[0];
+            console.log(
+              `📤 [MANUAL] Sending single item (${
                 item.isVideo ? "video" : "photo"
               }) to Telegram...`
             );
@@ -5432,16 +5524,13 @@ async function processInstagramURL(url, userAgent = null) {
               await sendPhotoToTelegram(item.url, photoCaption);
             }
             console.log(
-              `✅ [MANUAL] Carousel item ${item.carouselIndex} sent to Telegram successfully`
-            );
-
-            // Add delay between Telegram sends
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-          } catch (telegramError) {
-            console.log(
-              `⚠️ [MANUAL] Failed to send carousel item ${item.carouselIndex} to Telegram: ${telegramError.message}`
+              `✅ [MANUAL] Single item sent to Telegram successfully`
             );
           }
+        } catch (telegramError) {
+          console.log(
+            `⚠️ [MANUAL] Failed to send to Telegram: ${telegramError.message}`
+          );
         }
       }
     } else {
@@ -5888,24 +5977,37 @@ async function checkForNewPosts(force = false) {
                     `📤 [AUTO-FALLBACK] Sending fallback result to Telegram...`
                   );
 
-                  for (const item of fallbackResult.data) {
-                    const photoCaption = `✨ New photo from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${originalPost.url}">View Original Post</a>`;
-                    const videoCaption = `✨ New video from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${originalPost.url}">View Original Post</a>`;
+                  if (fallbackResult.data.length > 1) {
+                    // Carousel - send as media group
+                    const caption = `✨ New carousel from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${originalPost.url}">View Original Post</a>`;
+                    await sendMediaGroupToTelegram(
+                      fallbackResult.data,
+                      caption
+                    );
+                    console.log(
+                      `✅ [AUTO-FALLBACK] Carousel media group sent to Telegram successfully (${fallbackResult.data.length} items)`
+                    );
+                  } else {
+                    // Single item - send normally
+                    for (const item of fallbackResult.data) {
+                      const photoCaption = `✨ New photo from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${originalPost.url}">View Original Post</a>`;
+                      const videoCaption = `✨ New video from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${originalPost.url}">View Original Post</a>`;
 
-                    if (item.isVideo) {
-                      await sendVideoToTelegram(item.url, videoCaption);
-                    } else {
-                      await sendPhotoToTelegram(item.url, photoCaption);
+                      if (item.isVideo) {
+                        await sendVideoToTelegram(item.url, videoCaption);
+                      } else {
+                        await sendPhotoToTelegram(item.url, photoCaption);
+                      }
+                      console.log(
+                        `✅ [AUTO-FALLBACK] Item sent to Telegram successfully`
+                      );
+
+                      // Add delay between Telegram sends
+                      console.log(
+                        `⏳ Waiting 3 seconds after Telegram send to prevent rate limiting...`
+                      );
+                      await new Promise((resolve) => setTimeout(resolve, 3000));
                     }
-                    console.log(
-                      `✅ [AUTO-FALLBACK] Item sent to Telegram successfully`
-                    );
-
-                    // Add delay between Telegram sends
-                    console.log(
-                      `⏳ Waiting 3 seconds after Telegram send to prevent rate limiting...`
-                    );
-                    await new Promise((resolve) => setTimeout(resolve, 3000));
                   }
                 } catch (telegramError) {
                   console.log(
@@ -5957,52 +6059,66 @@ async function checkForNewPosts(force = false) {
             `📱 Processing batch result: ${result.shortcode}${pinnedIndicator} | type=${postType}`
           );
 
-          // Process each item in the result (carousel items or single item)
-          for (const item of result.data) {
+          // Send to Telegram for automatic polling (separate from manual processing)
+          if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHANNEL_ID) {
             try {
-              console.log(
-                `🔄 Processing item: ${item.carouselIndex || 1} of ${
-                  result.data.length
-                }`
-              );
+              if (result.data.length > 1) {
+                // Carousel with multiple items - send as media group
+                console.log(
+                  `📤 [AUTO] Sending carousel as media group (${result.data.length} items)...`
+                );
+                const caption = `✨ New carousel from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${result.url}">View Original Post</a>`;
+                await sendMediaGroupToTelegram(result.data, caption);
+                console.log(
+                  `✅ [AUTO] Carousel media group sent to Telegram successfully (${result.data.length} items)`
+                );
+              } else {
+                // Single item - send individually
+                for (const item of result.data) {
+                  try {
+                    console.log(
+                      `🔄 Processing item: ${item.carouselIndex || 1} of ${
+                        result.data.length
+                      }`
+                    );
 
-              // Send to Telegram for automatic polling (separate from manual processing)
-              if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHANNEL_ID) {
-                try {
-                  console.log(
-                    `📤 [AUTO] Sending item ${
-                      item.carouselIndex || 1
-                    } to Telegram...`
-                  );
-                  const photoCaption = `✨ New photo from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${result.url}">View Original Post</a>`;
-                  const videoCaption = `✨ New video from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${result.url}">View Original Post</a>`;
+                    console.log(
+                      `📤 [AUTO] Sending item ${
+                        item.carouselIndex || 1
+                      } to Telegram...`
+                    );
+                    const photoCaption = `✨ New photo from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${result.url}">View Original Post</a>`;
+                    const videoCaption = `✨ New video from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${result.url}">View Original Post</a>`;
 
-                  if (item.isVideo) {
-                    await sendVideoToTelegram(item.url, videoCaption);
-                  } else {
-                    await sendPhotoToTelegram(item.url, photoCaption);
+                    if (item.isVideo) {
+                      await sendVideoToTelegram(item.url, videoCaption);
+                    } else {
+                      await sendPhotoToTelegram(item.url, photoCaption);
+                    }
+                    console.log(
+                      `✅ [AUTO] Item ${
+                        item.carouselIndex || 1
+                      } sent to Telegram successfully`
+                    );
+
+                    // Add delay between Telegram sends to avoid rate limiting
+                    console.log(
+                      `⏳ Waiting 3 seconds after Telegram send to prevent rate limiting...`
+                    );
+                    await new Promise((resolve) => setTimeout(resolve, 3000));
+                  } catch (telegramError) {
+                    console.log(
+                      `⚠️ [AUTO] Failed to send item ${
+                        item.carouselIndex || 1
+                      } to Telegram: ${telegramError.message}`
+                    );
                   }
-                  console.log(
-                    `✅ [AUTO] Item ${
-                      item.carouselIndex || 1
-                    } sent to Telegram successfully`
-                  );
-
-                  // Add delay between Telegram sends to avoid rate limiting
-                  console.log(
-                    `⏳ Waiting 3 seconds after Telegram send to prevent rate limiting...`
-                  );
-                  await new Promise((resolve) => setTimeout(resolve, 3000));
-                } catch (telegramError) {
-                  console.log(
-                    `⚠️ [AUTO] Failed to send item ${
-                      item.carouselIndex || 1
-                    } to Telegram: ${telegramError.message}`
-                  );
                 }
               }
-            } catch (error) {
-              console.log(`⚠️ Error processing item: ${error.message}`);
+            } catch (telegramError) {
+              console.log(
+                `⚠️ [AUTO] Failed to send to Telegram: ${telegramError.message}`
+              );
             }
           }
 
@@ -6964,13 +7080,31 @@ async function processInstagramStories(username, userAgent = null) {
       try {
         console.log(`📱 Processing story ${i + 1}/${stories.length}...`);
 
-        // Check if story was already processed
+        // Check if story was already processed (Supabase only)
         const isProcessed = await checkStoryProcessed(username, story.storyId);
         console.log(
           `🔍 Story ${story.storyId} already processed: ${isProcessed}`
         );
 
         if (!isProcessed) {
+          // Download story file to temp directory
+          let downloadedFile = null;
+          try {
+            downloadedFile = await downloadStoryFile(
+              story.url,
+              story.storyType,
+              story.index,
+              username
+            );
+            story.filePath = downloadedFile.filePath;
+            story.fileName = downloadedFile.fileName;
+          } catch (downloadError) {
+            console.log(
+              `⚠️ [STORY] Download failed, skipping story: ${downloadError.message}`
+            );
+            continue; // Skip this story if download fails
+          }
+
           // Add to processed stories
           processedStories.push({
             ...story,
@@ -6980,7 +7114,7 @@ async function processInstagramStories(username, userAgent = null) {
 
           storyIds.push(story.storyId);
 
-          // Track in database
+          // Track in database (Supabase only)
           await markStoryProcessed(
             username,
             story.url,
@@ -6998,22 +7132,20 @@ async function processInstagramStories(username, userAgent = null) {
               console.log(`📤 [STORY] Telegram sending decision:`);
               console.log(`  - storyType: ${story.storyType}`);
               console.log(`  - isVideo: ${story.isVideo}`);
-              console.log(`  - filePath: ${story.filePath || story.url}`);
+              console.log(`  - filePath: ${story.filePath}`);
               console.log(
                 `  - Will send as: ${story.isVideo ? "VIDEO" : "PHOTO"}`
               );
 
-              // Use file path if available (downloaded file), otherwise use URL
-              const mediaPath = story.filePath || story.url;
-
+              // Always use file path (downloaded file required)
               if (story.isVideo) {
-                await sendVideoToTelegram(mediaPath, storyCaption);
+                await sendVideoToTelegram(story.filePath, storyCaption);
               } else {
-                await sendPhotoToTelegram(mediaPath, storyCaption);
+                await sendPhotoToTelegram(story.filePath, storyCaption);
               }
               console.log(`✅ [STORY] Story sent to Telegram successfully`);
 
-              // Clean up downloaded file after sending
+              // Clean up downloaded file immediately after sending
               if (story.filePath && fs.existsSync(story.filePath)) {
                 try {
                   fs.unlinkSync(story.filePath);
@@ -7036,10 +7168,35 @@ async function processInstagramStories(username, userAgent = null) {
               console.log(
                 `⚠️ [STORY] Failed to send story to Telegram: ${telegramError.message}`
               );
+              // Still cleanup file even if Telegram send fails
+              if (story.filePath && fs.existsSync(story.filePath)) {
+                try {
+                  fs.unlinkSync(story.filePath);
+                  console.log(`🗑️ [STORY] Cleaned up file after error`);
+                } catch (cleanupError) {
+                  console.log(
+                    `⚠️ [STORY] Failed to cleanup: ${cleanupError.message}`
+                  );
+                }
+              }
+            }
+          } else {
+            // No Telegram configured, cleanup downloaded file
+            if (story.filePath && fs.existsSync(story.filePath)) {
+              try {
+                fs.unlinkSync(story.filePath);
+                console.log(
+                  `🗑️ [STORY] Cleaned up file (no Telegram configured)`
+                );
+              } catch (cleanupError) {
+                console.log(
+                  `⚠️ [STORY] Failed to cleanup: ${cleanupError.message}`
+                );
+              }
             }
           }
         } else {
-          // Story already processed, add without Telegram sending
+          // Story already processed, add without processing
           processedStories.push({
             ...story,
             isNew: false,
@@ -7127,6 +7284,119 @@ async function processInstagramStories(username, userAgent = null) {
     if (session) {
       await session.cleanup();
     }
+  }
+}
+
+// Re-encode story video with correct aspect ratio for Telegram
+async function reencodeStoryVideo(inputPath, outputPath) {
+  return new Promise((resolve, reject) => {
+    if (!ffmpegAvailable) {
+      console.log(`⚠️ [FFMPEG] FFmpeg not available, skipping re-encoding`);
+      resolve(false);
+      return;
+    }
+
+    console.log(`🎬 [FFMPEG] Re-encoding video with 9:16 aspect ratio...`);
+
+    ffmpeg(inputPath)
+      .outputOptions([
+        "-c:v copy", // Copy video stream (fast, no quality loss)
+        "-c:a copy", // Copy audio stream
+        "-aspect 9:16", // Set display aspect ratio to 9:16 (vertical)
+        "-metadata:s:v:0 rotate=0", // Clear rotation metadata
+      ])
+      .on("start", (commandLine) => {
+        console.log(`🎬 [FFMPEG] Command: ${commandLine.substring(0, 100)}...`);
+      })
+      .on("progress", (progress) => {
+        if (progress.percent) {
+          console.log(`🎬 [FFMPEG] Progress: ${Math.round(progress.percent)}%`);
+        }
+      })
+      .on("end", () => {
+        console.log(`✅ [FFMPEG] Re-encoding complete`);
+        resolve(true);
+      })
+      .on("error", (err) => {
+        console.log(`❌ [FFMPEG] Re-encoding failed: ${err.message}`);
+        reject(err);
+      })
+      .save(outputPath);
+
+    // Timeout after 30 seconds
+    setTimeout(() => {
+      reject(new Error("FFmpeg re-encoding timeout"));
+    }, 30000);
+  });
+}
+
+// Download story file temporarily for Telegram sending
+async function downloadStoryFile(url, storyType, index, username) {
+  const axios = require("axios");
+  const timestamp = Date.now();
+  const extension = storyType === "video" ? "mp4" : "jpg";
+  const fileName = `story_${username}_${timestamp}_${index}.${extension}`;
+  const filePath = path.join(__dirname, "temp", fileName);
+
+  try {
+    // Ensure temp directory exists
+    if (!fs.existsSync(path.join(__dirname, "temp"))) {
+      fs.mkdirSync(path.join(__dirname, "temp"), { recursive: true });
+    }
+
+    console.log(`📥 [DOWNLOAD] Downloading ${storyType} to temp: ${fileName}`);
+
+    const response = await axios({
+      method: "GET",
+      url: url,
+      responseType: "stream",
+      timeout: 60000,
+    });
+
+    const writer = fs.createWriteStream(filePath);
+    response.data.pipe(writer);
+
+    await new Promise((resolve, reject) => {
+      writer.on("finish", resolve);
+      writer.on("error", reject);
+    });
+
+    console.log(`✅ [DOWNLOAD] Downloaded: ${fileName}`);
+
+    // Re-encode video if it's a video and ffmpeg is available
+    if (storyType === "video" && ffmpegAvailable) {
+      const reencodedFileName = `story_${username}_${timestamp}_${index}_fixed.${extension}`;
+      const reencodedFilePath = path.join(__dirname, "temp", reencodedFileName);
+
+      try {
+        await reencodeStoryVideo(filePath, reencodedFilePath);
+
+        // Delete original file, use re-encoded version
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          console.log(`🗑️ [FFMPEG] Deleted original file`);
+        }
+
+        console.log(`✅ [FFMPEG] Using re-encoded file: ${reencodedFileName}`);
+        return { filePath: reencodedFilePath, fileName: reencodedFileName };
+      } catch (ffmpegError) {
+        console.log(
+          `⚠️ [FFMPEG] Re-encoding failed, using original file: ${ffmpegError.message}`
+        );
+        // Delete re-encoded file if it exists
+        if (fs.existsSync(reencodedFilePath)) {
+          fs.unlinkSync(reencodedFilePath);
+        }
+        // Fall back to original file
+        return { filePath, fileName };
+      }
+    }
+
+    // For images or when ffmpeg not available, return original
+    return { filePath, fileName };
+  } catch (error) {
+    console.log(`❌ [DOWNLOAD] Error: ${error.message}`);
+    throw error;
   }
 }
 
@@ -7276,90 +7546,51 @@ function parseStoriesFromJson(jsonData, username) {
   return stories;
 }
 
-// Check if a story was already processed
+// Check if a story was already processed (Supabase only)
 async function checkStoryProcessed(username, storyId) {
   console.log(`🔍 [DB] Checking if story ${storyId} exists for @${username}`);
 
-  // Use Supabase if available, otherwise fallback to SQLite
-  if (supabaseManager && supabaseManager.isConnected) {
-    try {
-      const exists = await supabaseManager.checkStoryProcessed(
-        username,
-        storyId
-      );
-      console.log(`🔍 [DB] Story ${storyId} exists: ${exists} (Supabase)`);
-      return exists;
-    } catch (error) {
-      console.error(`❌ Supabase story check failed: ${error.message}`);
-      // Fallback to SQLite
-    }
+  // Use Supabase only - no SQLite fallback for stories
+  if (!supabaseManager || !supabaseManager.isConnected) {
+    console.error(
+      `❌ [STORY] Supabase not connected - cannot check story status`
+    );
+    throw new Error("Supabase connection required for story processing");
   }
 
-  // Fallback to SQLite
-  if (db) {
-    return new Promise((resolve, reject) => {
-      db.get(
-        "SELECT id FROM processed_stories WHERE username = ? AND story_id = ?",
-        [username, storyId],
-        (err, row) => {
-          if (err) {
-            console.error("Database error checking story:", err);
-            reject(err);
-          } else {
-            const exists = !!row;
-            console.log(
-              `🔍 [DB] Story ${storyId} exists: ${exists} (row: ${JSON.stringify(
-                row
-              )}) (SQLite)`
-            );
-            resolve(exists);
-          }
-        }
-      );
-    });
+  try {
+    const exists = await supabaseManager.checkStoryProcessed(username, storyId);
+    console.log(`🔍 [DB] Story ${storyId} exists: ${exists} (Supabase)`);
+    return exists;
+  } catch (error) {
+    console.error(`❌ Supabase story check failed: ${error.message}`);
+    throw error; // Don't fallback, throw error to skip story processing
   }
-
-  return false;
 }
 
-// Mark a story as processed
+// Mark a story as processed (Supabase only)
 async function markStoryProcessed(username, storyUrl, storyType, storyId) {
-  // Use Supabase if available, otherwise fallback to SQLite
-  if (supabaseManager && supabaseManager.isConnected) {
-    try {
-      await supabaseManager.markStoryProcessed(
-        username,
-        storyUrl,
-        storyType,
-        storyId
-      );
-      return;
-    } catch (error) {
-      console.error(`❌ Supabase story marking failed: ${error.message}`);
-      // Fallback to SQLite
-    }
+  // Use Supabase only - no SQLite fallback for stories
+  if (!supabaseManager || !supabaseManager.isConnected) {
+    console.error(
+      `❌ [STORY] Supabase not connected - cannot mark story as processed`
+    );
+    throw new Error("Supabase connection required for story processing");
   }
 
-  // Fallback to SQLite
-  if (db) {
-    return new Promise((resolve, reject) => {
-      const id = `${username}_${storyId}`;
-      db.run(
-        "INSERT OR REPLACE INTO processed_stories (id, username, story_url, story_type, story_id) VALUES (?, ?, ?, ?, ?)",
-        [id, username, storyUrl, storyType, storyId],
-        function (err) {
-          if (err) {
-            console.error("Database error marking story processed:", err);
-            reject(err);
-          } else {
-            console.log(
-              `✅ Story ${storyId} marked as processed for @${username} (SQLite)`
-            );
-            resolve();
-          }
-        }
-      );
-    });
+  try {
+    await supabaseManager.markStoryProcessed(
+      username,
+      storyUrl,
+      storyType,
+      storyId
+    );
+    console.log(
+      `✅ Story ${storyId} marked as processed for @${username} (Supabase)`
+    );
+  } catch (error) {
+    console.error(`❌ Supabase story marking failed: ${error.message}`);
+    throw error; // Don't fallback, throw error to skip story processing
   }
 }
 
@@ -7417,6 +7648,15 @@ async function checkForNewStories(force = false) {
   try {
     if (!TARGET_USERNAME) {
       console.log("❌ No target username set for story checking");
+      return;
+    }
+
+    // Check Supabase connection first (required for stories)
+    if (!supabaseManager || !supabaseManager.isConnected) {
+      console.log("⚠️ [STORY] Stories disabled - Supabase not connected");
+      console.log(
+        "💡 [STORY] Stories require Supabase for deduplication tracking"
+      );
       return;
     }
 
@@ -7756,11 +7996,11 @@ const browserPool = {
           "--disable-gpu",
           "--disable-web-security",
           "--disable-features=VizDisplayCompositor",
-          "--single-process",
+          // "--single-process", // Removed - can cause issues with browser loading
           "--disable-extensions",
           "--disable-plugins",
-          "--disable-images",
-          "--disable-javascript",
+          // "--disable-images", // REMOVED - FastDl needs images
+          // "--disable-javascript", // REMOVED - FastDl requires JavaScript
           "--disable-background-timer-throttling",
           "--disable-backgrounding-occluded-windows",
           "--disable-renderer-backgrounding",
