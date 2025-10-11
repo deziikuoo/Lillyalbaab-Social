@@ -4,7 +4,7 @@
   "description": "A simple Node.js API to download Instagram videos using Express and Cheerio.",
   "main": "index.js",
   "scripts": {
-    "start": "npm run build-client && node index.js",
+    "start": "node index.js",
     "build": "echo 'No build step required for Node.js backend'",
     "start:ig": "node index.js",
     "start:snap": "cd ../Snapchat-Service && .\\venv\\Scripts\\uvicorn.exe server.main:app --reload --port 8000",
@@ -23,7 +23,6 @@
     "monitor-health": "node monitor-health.js",
     "test-cache": "node test-cache.js",
     "postinstall": "mkdir -p /opt/render/project/src/data/chrome && PUPPETEER_CACHE_DIR=/opt/render/project/src/data/chrome npx puppeteer browsers install chrome",
-    "build-client": "cd client && npm install && npm run build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
