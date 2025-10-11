@@ -22,7 +22,7 @@
     "keep-alive:render": "HEALTH_URL=https://tyla-social.onrender.com/health node keep-alive.js",
     "monitor-health": "node monitor-health.js",
     "test-cache": "node test-cache.js",
-    "postinstall": "npx puppeteer browsers install chrome || echo 'Puppeteer Chrome install failed, will use system Chrome'",
+    "postinstall": "npx puppeteer browsers install chrome",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
