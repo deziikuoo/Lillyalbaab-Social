@@ -6782,21 +6782,25 @@ app.post("/clear-stories-cache", async (req, res) => {
       // Clear stories cache (Supabase only - no SQLite fallback)
       const clearStoriesCache = new Promise(async (resolve) => {
         try {
-          if (supabase) {
-            const { error } = await supabase
-              .from('recent_stories_cache')
+          if (supabaseManager && supabaseManager.isConnected) {
+            const { error } = await supabaseManager.client
+              .from("recent_stories_cache")
               .delete()
-              .eq('username', username);
-            
+              .eq("username", username);
+
             if (error) {
               console.error("Supabase error clearing stories cache:", error);
               resolve(0);
             } else {
-              console.log(`🗑️ Cleared stories cache for @${username} (Supabase)`);
+              console.log(
+                `🗑️ Cleared stories cache for @${username} (Supabase)`
+              );
               resolve(1); // Assume at least 1 was cleared
             }
           } else {
-            console.log(`⚠️ Supabase not connected, skipping stories cache clear`);
+            console.log(
+              `⚠️ Supabase not connected, skipping stories cache clear`
+            );
             resolve(0);
           }
         } catch (error) {
@@ -6852,12 +6856,12 @@ app.get("/debug-stories", async (req, res) => {
     // Check recent_stories_cache table (Supabase only)
     const storiesCache = new Promise(async (resolve) => {
       try {
-        if (supabase) {
-          const { data, error } = await supabase
-            .from('recent_stories_cache')
-            .select('*', { count: 'exact' })
-            .eq('username', username);
-          
+        if (supabaseManager && supabaseManager.isConnected) {
+          const { data, error } = await supabaseManager.client
+            .from("recent_stories_cache")
+            .select("*", { count: "exact" })
+            .eq("username", username);
+
           if (error) {
             console.error("Supabase error checking stories cache:", error);
             resolve(0);
@@ -6865,7 +6869,9 @@ app.get("/debug-stories", async (req, res) => {
             resolve(data?.length || 0);
           }
         } else {
-          console.log(`⚠️ Supabase not connected, skipping stories cache check`);
+          console.log(
+            `⚠️ Supabase not connected, skipping stories cache check`
+          );
           resolve(0);
         }
       } catch (error) {
@@ -7750,16 +7756,16 @@ async function markStoryProcessed(username, storyUrl, storyType, storyId) {
 // Update stories cache (Supabase only)
 async function updateStoriesCache(username, stories) {
   try {
-    if (!supabase) {
+    if (!supabaseManager || !supabaseManager.isConnected) {
       console.log(`⚠️ Supabase not connected, skipping stories cache update`);
       return;
     }
 
     // Clear old cache for this user
-    const { error: deleteError } = await supabase
-      .from('recent_stories_cache')
+    const { error: deleteError } = await supabaseManager.client
+      .from("recent_stories_cache")
       .delete()
-      .eq('username', username);
+      .eq("username", username);
 
     if (deleteError) {
       console.error("Supabase error clearing stories cache:", deleteError);
@@ -7774,15 +7780,15 @@ async function updateStoriesCache(username, stories) {
     }
 
     // Insert new cache entries
-    const cacheEntries = stories.map(story => ({
+    const cacheEntries = stories.map((story) => ({
       username,
       story_url: story.url,
       story_id: story.storyId,
-      story_type: story.storyType || (story.is_video ? "video" : "photo")
+      story_type: story.storyType || (story.is_video ? "video" : "photo"),
     }));
 
-    const { error: insertError } = await supabase
-      .from('recent_stories_cache')
+    const { error: insertError } = await supabaseManager.client
+      .from("recent_stories_cache")
       .insert(cacheEntries);
 
     if (insertError) {
