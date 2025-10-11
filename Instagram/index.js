@@ -184,7 +184,8 @@ class FastDlSession {
     console.log(`🌐 Using user agent: ${this.userAgent}`);
 
     try {
-      this.browser = await puppeteer.launch({
+      // Puppeteer configuration for Render deployment
+      const launchOptions = {
         headless: true,
         args: [
           "--no-sandbox",
@@ -229,7 +230,17 @@ class FastDlSession {
         ],
         ignoreDefaultArgs: ["--disable-extensions"],
         timeout: 30000,
-      });
+      };
+
+      // Use system Chrome on Render if available (fallback to Puppeteer's bundled Chrome)
+      if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+        console.log(`🌐 Using system Chrome: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
+      } else {
+        console.log(`🌐 Using Puppeteer bundled Chrome`);
+      }
+
+      this.browser = await puppeteer.launch(launchOptions);
 
       this.page = await this.browser.newPage();
       await this.page.setUserAgent(this.userAgent);
