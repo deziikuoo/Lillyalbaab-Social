@@ -234,29 +234,45 @@ class FastDlSession {
 
       // DEBUGGING: Check file system and environment
       console.log(`🔍 [DEBUG] Environment variables:`);
-      console.log(`   PUPPETEER_EXECUTABLE_PATH: ${process.env.PUPPETEER_EXECUTABLE_PATH || 'not set'}`);
-      console.log(`   PUPPETEER_CACHE_DIR: ${process.env.PUPPETEER_CACHE_DIR || 'not set'}`);
-      
+      console.log(
+        `   PUPPETEER_EXECUTABLE_PATH: ${
+          process.env.PUPPETEER_EXECUTABLE_PATH || "not set"
+        }`
+      );
+      console.log(
+        `   PUPPETEER_CACHE_DIR: ${
+          process.env.PUPPETEER_CACHE_DIR || "not set"
+        }`
+      );
+
       // Check if /opt/render/.cache exists and what's in it
-      const fs = require('fs');
-      const path = require('path');
-      
+      const fs = require("fs");
+      const path = require("path");
+
       console.log(`🔍 [DEBUG] Checking /opt/render/.cache directory:`);
       try {
-        if (fs.existsSync('/opt/render/.cache')) {
+        if (fs.existsSync("/opt/render/.cache")) {
           console.log(`   ✅ /opt/render/.cache exists`);
-          const cacheContents = fs.readdirSync('/opt/render/.cache');
-          console.log(`   📁 Contents: ${cacheContents.join(', ')}`);
-          
-          if (fs.existsSync('/opt/render/.cache/puppeteer')) {
+          const cacheContents = fs.readdirSync("/opt/render/.cache");
+          console.log(`   📁 Contents: ${cacheContents.join(", ")}`);
+
+          if (fs.existsSync("/opt/render/.cache/puppeteer")) {
             console.log(`   ✅ /opt/render/.cache/puppeteer exists`);
-            const puppeteerContents = fs.readdirSync('/opt/render/.cache/puppeteer');
-            console.log(`   📁 Puppeteer contents: ${puppeteerContents.join(', ')}`);
-            
-            if (fs.existsSync('/opt/render/.cache/puppeteer/chrome')) {
+            const puppeteerContents = fs.readdirSync(
+              "/opt/render/.cache/puppeteer"
+            );
+            console.log(
+              `   📁 Puppeteer contents: ${puppeteerContents.join(", ")}`
+            );
+
+            if (fs.existsSync("/opt/render/.cache/puppeteer/chrome")) {
               console.log(`   ✅ /opt/render/.cache/puppeteer/chrome exists`);
-              const chromeContents = fs.readdirSync('/opt/render/.cache/puppeteer/chrome');
-              console.log(`   📁 Chrome contents: ${chromeContents.join(', ')}`);
+              const chromeContents = fs.readdirSync(
+                "/opt/render/.cache/puppeteer/chrome"
+              );
+              console.log(
+                `   📁 Chrome contents: ${chromeContents.join(", ")}`
+              );
             }
           }
         } else {
@@ -276,32 +292,38 @@ class FastDlSession {
         // Use Puppeteer's bundled Chrome with explicit path
         if (process.env.PUPPETEER_CACHE_DIR) {
           const chromePath = `${process.env.PUPPETEER_CACHE_DIR}/chrome/linux-139.0.7258.66/chrome-linux64/chrome`;
-          
+
           // DEBUGGING: Check if Chrome file exists and its permissions
           console.log(`🔍 [DEBUG] Checking Chrome executable:`);
           console.log(`   Expected path: ${chromePath}`);
-          
+
           if (fs.existsSync(chromePath)) {
             console.log(`   ✅ Chrome file exists`);
             try {
               const stats = fs.statSync(chromePath);
               console.log(`   📊 File size: ${stats.size} bytes`);
-              console.log(`   📊 Is executable: ${stats.mode & parseInt('111', 8) ? 'Yes' : 'No'}`);
+              console.log(
+                `   📊 Is executable: ${
+                  stats.mode & parseInt("111", 8) ? "Yes" : "No"
+                }`
+              );
               console.log(`   📊 Mode: ${stats.mode.toString(8)}`);
             } catch (error) {
               console.log(`   ❌ Error getting file stats: ${error.message}`);
             }
           } else {
             console.log(`   ❌ Chrome file does not exist`);
-            
+
             // Try to find Chrome in alternative locations
-            console.log(`🔍 [DEBUG] Searching for Chrome in alternative locations:`);
+            console.log(
+              `🔍 [DEBUG] Searching for Chrome in alternative locations:`
+            );
             const alternativePaths = [
-              '/opt/render/.cache/puppeteer/chrome/linux-139.0.7258.66/chrome-linux64/chrome',
-              '/opt/render/project/src/node_modules/puppeteer/.local-chromium/linux-139.0.7258.66/chrome-linux/chrome',
-              '/opt/render/project/src/node_modules/.cache/puppeteer/chrome/linux-139.0.7258.66/chrome-linux64/chrome'
+              "/opt/render/.cache/puppeteer/chrome/linux-139.0.7258.66/chrome-linux64/chrome",
+              "/opt/render/project/src/node_modules/puppeteer/.local-chromium/linux-139.0.7258.66/chrome-linux/chrome",
+              "/opt/render/project/src/node_modules/.cache/puppeteer/chrome/linux-139.0.7258.66/chrome-linux64/chrome",
             ];
-            
+
             for (const altPath of alternativePaths) {
               if (fs.existsSync(altPath)) {
                 console.log(`   ✅ Found Chrome at: ${altPath}`);
@@ -311,12 +333,17 @@ class FastDlSession {
                 console.log(`   ❌ Not found: ${altPath}`);
               }
             }
-            
+
             // If still not found, try Puppeteer's built-in executable path
-            if (!launchOptions.executablePath || !fs.existsSync(launchOptions.executablePath)) {
-              console.log(`🔍 [DEBUG] Trying Puppeteer's built-in executablePath()`);
+            if (
+              !launchOptions.executablePath ||
+              !fs.existsSync(launchOptions.executablePath)
+            ) {
+              console.log(
+                `🔍 [DEBUG] Trying Puppeteer's built-in executablePath()`
+              );
               try {
-                const puppeteerExecPath = require('puppeteer').executablePath();
+                const puppeteerExecPath = require("puppeteer").executablePath();
                 console.log(`   Puppeteer suggests: ${puppeteerExecPath}`);
                 if (fs.existsSync(puppeteerExecPath)) {
                   console.log(`   ✅ Puppeteer's path exists, using it`);
@@ -325,11 +352,13 @@ class FastDlSession {
                   console.log(`   ❌ Puppeteer's path also doesn't exist`);
                 }
               } catch (error) {
-                console.log(`   ❌ Error getting Puppeteer executablePath: ${error.message}`);
+                console.log(
+                  `   ❌ Error getting Puppeteer executablePath: ${error.message}`
+                );
               }
             }
           }
-          
+
           launchOptions.executablePath = chromePath;
           console.log(`🌐 Using Puppeteer bundled Chrome: ${chromePath}`);
         } else {
@@ -6750,23 +6779,30 @@ app.post("/clear-stories-cache", async (req, res) => {
         );
       });
 
-      // Clear stories cache
-      const clearStoriesCache = new Promise((resolve) => {
-        db.run(
-          "DELETE FROM recent_stories_cache WHERE username = ?",
-          [username],
-          function (err) {
-            if (err) {
-              console.error("Database error clearing stories cache:", err);
+      // Clear stories cache (Supabase only - no SQLite fallback)
+      const clearStoriesCache = new Promise(async (resolve) => {
+        try {
+          if (supabase) {
+            const { error } = await supabase
+              .from('recent_stories_cache')
+              .delete()
+              .eq('username', username);
+            
+            if (error) {
+              console.error("Supabase error clearing stories cache:", error);
               resolve(0);
             } else {
-              console.log(
-                `🗑️ Cleared stories cache for @${username} (${this.changes} entries) (SQLite)`
-              );
-              resolve(this.changes);
+              console.log(`🗑️ Cleared stories cache for @${username} (Supabase)`);
+              resolve(1); // Assume at least 1 was cleared
             }
+          } else {
+            console.log(`⚠️ Supabase not connected, skipping stories cache clear`);
+            resolve(0);
           }
-        );
+        } catch (error) {
+          console.error("Error clearing stories cache:", error);
+          resolve(0);
+        }
       });
 
       [processedStoriesDeleted, storiesCacheDeleted] = await Promise.all([
@@ -6813,20 +6849,29 @@ app.get("/debug-stories", async (req, res) => {
       );
     });
 
-    // Check recent_stories_cache table
-    const storiesCache = new Promise((resolve) => {
-      db.all(
-        "SELECT COUNT(*) as count FROM recent_stories_cache WHERE username = ?",
-        [username],
-        (err, rows) => {
-          if (err) {
-            console.error("Database error checking stories cache:", err);
+    // Check recent_stories_cache table (Supabase only)
+    const storiesCache = new Promise(async (resolve) => {
+      try {
+        if (supabase) {
+          const { data, error } = await supabase
+            .from('recent_stories_cache')
+            .select('*', { count: 'exact' })
+            .eq('username', username);
+          
+          if (error) {
+            console.error("Supabase error checking stories cache:", error);
             resolve(0);
           } else {
-            resolve(rows[0]?.count || 0);
+            resolve(data?.length || 0);
           }
+        } else {
+          console.log(`⚠️ Supabase not connected, skipping stories cache check`);
+          resolve(0);
         }
-      );
+      } catch (error) {
+        console.error("Error checking stories cache:", error);
+        resolve(0);
+      }
     });
 
     const [processedCount, cacheCount] = await Promise.all([
@@ -7702,53 +7747,56 @@ async function markStoryProcessed(username, storyUrl, storyType, storyId) {
   }
 }
 
-// Update stories cache
-function updateStoriesCache(username, stories) {
-  return new Promise((resolve, reject) => {
+// Update stories cache (Supabase only)
+async function updateStoriesCache(username, stories) {
+  try {
+    if (!supabase) {
+      console.log(`⚠️ Supabase not connected, skipping stories cache update`);
+      return;
+    }
+
     // Clear old cache for this user
-    db.run(
-      "DELETE FROM recent_stories_cache WHERE username = ?",
-      [username],
-      function (err) {
-        if (err) {
-          console.error("Database error clearing stories cache:", err);
-          reject(err);
-          return;
-        }
+    const { error: deleteError } = await supabase
+      .from('recent_stories_cache')
+      .delete()
+      .eq('username', username);
 
-        // Insert new cache entries (ignore duplicates)
-        const stmt = db.prepare(
-          "INSERT OR IGNORE INTO recent_stories_cache (username, story_url, story_id, story_type) VALUES (?, ?, ?, ?)"
-        );
+    if (deleteError) {
+      console.error("Supabase error clearing stories cache:", deleteError);
+      throw deleteError;
+    }
 
-        let insertedCount = 0;
-        stories.forEach((story, index) => {
-          stmt.run(
-            [username, story.url, story.storyId, story.storyType],
-            function (err) {
-              if (err) {
-                console.error("Database error inserting story cache:", err);
-              } else if (this.changes > 0) {
-                insertedCount++;
-              }
-            }
-          );
-        });
+    if (stories.length === 0) {
+      console.log(
+        `✅ Stories cache updated for @${username} (0 new entries - no new stories)`
+      );
+      return;
+    }
 
-        stmt.finalize((err) => {
-          if (err) {
-            console.error("Database error finalizing story cache:", err);
-            reject(err);
-          } else {
-            console.log(
-              `✅ Stories cache updated for @${username} (${insertedCount} new entries inserted)`
-            );
-            resolve();
-          }
-        });
-      }
+    // Insert new cache entries
+    const cacheEntries = stories.map(story => ({
+      username,
+      story_url: story.url,
+      story_id: story.storyId,
+      story_type: story.storyType || (story.is_video ? "video" : "photo")
+    }));
+
+    const { error: insertError } = await supabase
+      .from('recent_stories_cache')
+      .insert(cacheEntries);
+
+    if (insertError) {
+      console.error("Supabase error inserting stories cache:", insertError);
+      throw insertError;
+    }
+
+    console.log(
+      `✅ Stories cache updated for @${username} (${stories.length} new entries inserted)`
     );
-  });
+  } catch (error) {
+    console.error("Error updating stories cache:", error);
+    throw error;
+  }
 }
 
 // Check for new stories (integrated with main polling)
