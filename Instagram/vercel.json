@@ -75,8 +75,24 @@
       "dest": "index.js"
     },
     {
-      "src": "/(.*)",
+      "src": "/assets/(.*)",
+      "dest": "client/$1"
+    },
+    {
+      "src": "/instagram",
       "dest": "client/index.html"
+    },
+    {
+      "src": "/snapchat",
+      "dest": "client/index.html"
+    },
+    {
+      "src": "/",
+      "dest": "client/index.html"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "client/$1"
     }
   ]
 }
