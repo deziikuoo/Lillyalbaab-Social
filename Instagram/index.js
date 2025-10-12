@@ -4871,28 +4871,57 @@ async function scrapeInstagramStoriesWithFastDl(session) {
       try {
         // Try multiple possible selectors for the stories tab
         const storiesTabSelectors = [
+          'button.tabs-component__button', // Direct button selector from FastDL
           'a[data-tab="stories"]',
           'a.pills__link[href*="stories"]',
           'button[data-tab="stories"]',
-          '.pills__link:nth-child(2)', // Stories is usually the 2nd tab
+          ".pills__link:nth-child(2)", // Stories is usually the 2nd tab
         ];
 
         let tabClicked = false;
-        for (const selector of storiesTabSelectors) {
-          try {
-            await session.page.waitForSelector(selector, { timeout: 3000 });
-            await session.page.click(selector);
-            console.log(`✅ [FASTDL] Clicked Stories tab using selector: ${selector}`);
+        
+        // First try: Find and click button with text "stories"
+        try {
+          const clicked = await session.page.evaluate(() => {
+            const buttons = Array.from(document.querySelectorAll('button.tabs-component__button'));
+            const storiesBtn = buttons.find(btn => btn.textContent.toLowerCase().includes('stories'));
+            if (storiesBtn) {
+              storiesBtn.click();
+              return true;
+            }
+            return false;
+          });
+          
+          if (clicked) {
+            console.log('✅ [FASTDL] Clicked Stories tab using text match');
             tabClicked = true;
-            break;
-          } catch (err) {
-            // Try next selector
-            continue;
+          }
+        } catch (err) {
+          console.log(`⚠️ [FASTDL] Text-based button search failed: ${err.message}`);
+        }
+        
+        // Fallback: Try selector-based approach
+        if (!tabClicked) {
+          for (const selector of storiesTabSelectors) {
+            try {
+              await session.page.waitForSelector(selector, { timeout: 3000 });
+              await session.page.click(selector);
+              console.log(
+                `✅ [FASTDL] Clicked Stories tab using selector: ${selector}`
+              );
+              tabClicked = true;
+              break;
+            } catch (err) {
+              // Try next selector
+              continue;
+            }
           }
         }
 
         if (!tabClicked) {
-          console.log(`⚠️ [FASTDL] Could not find Stories tab, trying direct extraction`);
+          console.log(
+            `⚠️ [FASTDL] Could not find Stories tab, trying direct extraction`
+          );
         }
 
         // Wait for stories content to load after tab click
