@@ -7770,10 +7770,12 @@ async function markStoryProcessed(username, storyUrl, storyType, storyId) {
 // Update stories cache (Supabase only)
 async function updateStoriesCache(username, stories) {
   try {
-    if (!supabase) {
+    if (!supabaseManager || !supabaseManager.isConnected) {
       console.log(`⚠️ Supabase not connected, skipping stories cache update`);
       return;
     }
+
+    const supabase = supabaseManager.supabase;
 
     // Clear old cache for this user
     const { error: deleteError } = await supabase
