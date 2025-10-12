@@ -917,13 +917,18 @@ app.use(express.json());
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   const allowedOrigins = [
-    "https://tyla-social.vercel.app",
-    "https://tyla-social.onrender.com",
-    "http://localhost:5173",
-    "http://localhost:3000",
+    "https://tyla-social.vercel.app", // Production Vercel domain
+    "https://tyla-social.onrender.com", // Backend domain
+    "http://localhost:5173", // Local development (Vite)
+    "http://localhost:3000", // Local development (Node.js)
   ];
 
-  if (allowedOrigins.includes(origin)) {
+  // Check if origin matches allowed origins or preview deployments
+  const isAllowedOrigin =
+    allowedOrigins.includes(origin) ||
+    (origin && origin.match(/^https:\/\/tyla-social-.*\.vercel\.app$/));
+
+  if (isAllowedOrigin) {
     res.header("Access-Control-Allow-Origin", origin);
   } else {
     res.header("Access-Control-Allow-Origin", "*");
@@ -5547,15 +5552,15 @@ async function tryWebProfileInfoFallback(post, userAgent) {
 }
 
 app.get("/", (req, res) => {
-  res.json({ 
-    message: "Tyla Social API Server", 
+  res.json({
+    message: "Tyla Social API Server",
     status: "running",
     endpoints: {
       frontend: "https://tyla-social-frontend.vercel.app",
       health: "/health",
       instagram: "/igdl",
-      snapchat: "/snapchat-status"
-    }
+      snapchat: "/snapchat-status",
+    },
   });
 });
 

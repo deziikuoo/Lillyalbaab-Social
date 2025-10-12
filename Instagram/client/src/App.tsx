@@ -3,15 +3,19 @@ import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import SnapchatPage from "./snapchat/SnapchatPage";
 import "./style.css";
 
-// Instagram API base URL - use Render backend in production, localhost in development
-const INSTAGRAM_API_BASE = import.meta.env.PROD
-  ? "https://tyla-social.onrender.com" // Render backend for production
-  : "http://localhost:3000"; // Local backend for development
+// Instagram API base URL - use environment variable or fallback to defaults
+const INSTAGRAM_API_BASE =
+  import.meta.env.VITE_INSTAGRAM_API_BASE ||
+  (import.meta.env.PROD
+    ? "https://tyla-social.onrender.com" // Render backend for production
+    : "http://localhost:3000"); // Local backend for development
 
-// Snapchat API base URL - use Node.js backend (proxies to Python service)
-const SNAPCHAT_API_BASE = import.meta.env.PROD
-  ? "https://tyla-social.onrender.com" // Same as Instagram backend (proxies to Python)
-  : "http://localhost:8000"; // Direct Python service for development
+// Snapchat API base URL - use environment variable or fallback to defaults
+const SNAPCHAT_API_BASE =
+  import.meta.env.VITE_SNAPCHAT_API_BASE ||
+  (import.meta.env.PROD
+    ? "https://tyla-social.onrender.com" // Same as Instagram backend (proxies to Python)
+    : "http://localhost:8000"); // Direct Python service for development
 
 // Debug: Log the API URL being used
 console.log(
@@ -603,7 +607,9 @@ const App: React.FC = () => {
 
     try {
       // Try direct API call first, fallback to Node.js proxy if needed
-      const directApiUrl = import.meta.env.PROD ? `${SNAPCHAT_API_BASE}/snapchat-download` : "http://localhost:8000/download";
+      const directApiUrl = import.meta.env.PROD
+        ? `${SNAPCHAT_API_BASE}/snapchat-download`
+        : "http://localhost:8000/download";
       const proxyApiUrl = `${SNAPCHAT_API_BASE}/snapchat-download`;
 
       console.log(

@@ -1,7 +1,9 @@
 // Snapchat API base URL with environment-aware configuration and fallbacks
-export const SNAP_BASE: string = import.meta.env.PROD
-  ? "https://tyla-social.onrender.com" // Production: Render (Node.js proxies to Python)
-  : "http://localhost:8000"; // Development: Direct Python service
+export const SNAP_BASE: string =
+  import.meta.env.VITE_SNAPCHAT_API_BASE ||
+  (import.meta.env.PROD
+    ? "https://tyla-social.onrender.com" // Production: Render (Node.js proxies to Python)
+    : "http://localhost:8000"); // Development: Direct Python service
 
 // Fallback URLs for graceful degradation
 const FALLBACK_URLS = {

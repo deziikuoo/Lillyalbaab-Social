@@ -938,10 +938,16 @@ class ResourceManager:
 # Initialize resource manager
 resource_manager = ResourceManager()
 
-# Configure CORS
+# Configure CORS - Allow Vercel frontend and local development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173", "*"],  # React frontend URL
+    allow_origins=[
+        "https://tyla-social.vercel.app",  # Production Vercel domain
+        "http://localhost:5173",  # Local development (Vite)
+        "http://localhost:3000",  # Local development (Node.js proxy)
+        "http://127.0.0.1:5173",  # Local development (alternative)
+    ],
+    allow_origin_regex=r"^https://tyla-social-.*\.vercel\.app$",  # Preview deployments
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*", "Content-Type", "Accept", "Authorization", "Access-Control-Request-Headers", "Access-Control-Request-Method"],
