@@ -4863,10 +4863,46 @@ async function scrapeInstagramStoriesWithFastDl(session) {
       });
       await session.page.click("button.search-form__button");
 
-      console.log(`⏳ [FASTDL] Waiting 4 seconds for stories to load...`);
+      console.log(`⏳ [FASTDL] Waiting 4 seconds for content to load...`);
       await new Promise((resolve) => setTimeout(resolve, 4000));
 
-      // Step 4: Extract download URLs directly (no stories tab click needed)
+      // Step 4: Click on Stories tab to show stories
+      console.log(`📑 [FASTDL] Looking for Stories tab...`);
+      try {
+        // Try multiple possible selectors for the stories tab
+        const storiesTabSelectors = [
+          'a[data-tab="stories"]',
+          'a.pills__link[href*="stories"]',
+          'button[data-tab="stories"]',
+          '.pills__link:nth-child(2)', // Stories is usually the 2nd tab
+        ];
+
+        let tabClicked = false;
+        for (const selector of storiesTabSelectors) {
+          try {
+            await session.page.waitForSelector(selector, { timeout: 3000 });
+            await session.page.click(selector);
+            console.log(`✅ [FASTDL] Clicked Stories tab using selector: ${selector}`);
+            tabClicked = true;
+            break;
+          } catch (err) {
+            // Try next selector
+            continue;
+          }
+        }
+
+        if (!tabClicked) {
+          console.log(`⚠️ [FASTDL] Could not find Stories tab, trying direct extraction`);
+        }
+
+        // Wait for stories content to load after tab click
+        console.log(`⏳ [FASTDL] Waiting 3 seconds for stories to appear...`);
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      } catch (tabError) {
+        console.log(`⚠️ [FASTDL] Stories tab click error: ${tabError.message}`);
+      }
+
+      // Step 5: Extract download URLs
       console.log(`🔍 [FASTDL] Extracting download URLs...`);
       const downloadUrls = await session.page.$$eval(
         "a.button.button--filled.button__download",
