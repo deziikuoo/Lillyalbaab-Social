@@ -7775,7 +7775,7 @@ async function updateStoriesCache(username, stories) {
       return;
     }
 
-    const supabase = supabaseManager.supabase;
+    const supabase = supabaseManager.client;
 
     // Clear old cache for this user
     const { error: deleteError } = await supabase
