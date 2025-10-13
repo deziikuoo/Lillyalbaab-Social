@@ -328,13 +328,16 @@ class HealthCheck:
                     logger.error(f"🚨 Critical memory usage: {memory.percent}% - aggressive cleanup")
                     await self.aggressive_memory_cleanup()
                 
-                # Check disk space (more aggressive on Render)
-                disk = psutil.disk_usage(DOWNLOADS_DIR)
-                if disk.percent > 75:
-                    logger.warning(f"⚠️ High disk usage: {disk.percent}% - cleaning old files")
+                # Check downloads directory size (not system disk - we're on cloud hosting)
+                downloads_size_mb = await self.get_directory_size(DOWNLOADS_DIR)
+                downloads_size_threshold_mb = 500  # Cleanup if downloads exceed 500MB
+                downloads_critical_threshold_mb = 1000  # Aggressive cleanup at 1GB
+                
+                if downloads_size_mb > downloads_size_threshold_mb:
+                    logger.warning(f"⚠️ Downloads directory size: {downloads_size_mb:.1f}MB - cleaning old files")
                     await self.cleanup_downloads()
-                if disk.percent > 85:
-                    logger.error(f"🚨 Critical disk usage: {disk.percent}% - aggressive cleanup")
+                if downloads_size_mb > downloads_critical_threshold_mb:
+                    logger.error(f"🚨 Critical downloads size: {downloads_size_mb:.1f}MB - aggressive cleanup")
                     await self.diagnose_disk_usage()
                     await self.aggressive_disk_cleanup()
                     await self.cleanup_old_logs()
@@ -351,6 +354,22 @@ class HealthCheck:
             if self.consecutive_failures >= self.max_failures:
                 logger.error("🚨 Too many consecutive health check failures")
                 await self.restart_service()
+    
+    async def get_directory_size(self, directory: str) -> float:
+        """Get directory size in MB"""
+        try:
+            total_size = 0
+            for root, dirs, files in os.walk(directory):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    try:
+                        total_size += os.path.getsize(file_path)
+                    except (OSError, FileNotFoundError):
+                        pass  # Skip files that can't be accessed
+            return total_size / (1024 * 1024)  # Convert bytes to MB
+        except Exception as e:
+            logger.error(f"Failed to get directory size: {e}")
+            return 0.0
     
     async def cleanup_memory(self):
         """Clean up memory"""
@@ -440,15 +459,15 @@ class HealthCheck:
                         pass
             
             freed_mb = freed_bytes / (1024 * 1024)
-            disk = psutil.disk_usage(DOWNLOADS_DIR)
-            logger.info(f"🧹 Aggressive cleanup: {removed_count} files removed, {freed_mb:.1f}MB freed. Disk now at {disk.percent}%")
+            downloads_size_mb = await self.get_directory_size(DOWNLOADS_DIR)
+            logger.info(f"🧹 Aggressive cleanup: {removed_count} files removed, {freed_mb:.1f}MB freed. Downloads folder now at {downloads_size_mb:.1f}MB")
         except Exception as e:
             logger.error(f"Aggressive disk cleanup failed: {e}")
     
     async def diagnose_disk_usage(self):
-        """Diagnose what's using disk space"""
+        """Diagnose what's using disk space in application folders"""
         try:
-            logger.info("📊 [DISK] Analyzing disk usage...")
+            logger.info("📊 [DISK] Analyzing application disk usage...")
             
             # Check downloads directory
             downloads_size = sum(
@@ -468,11 +487,25 @@ class HealthCheck:
             # Check log files
             log_dir = os.path.dirname(__file__)
             log_files = ['server.log', 'request-logs.txt', 'error-logs.txt']
+            total_log_size = 0
             for log_file in log_files:
                 log_path = os.path.join(log_dir, log_file)
                 if os.path.exists(log_path):
                     size_mb = os.path.getsize(log_path) / (1024 * 1024)
+                    total_log_size += size_mb
                     logger.info(f"📊 [DISK] {log_file}: {size_mb:.1f} MB")
+            
+            # Check for compressed log archives
+            compressed_logs_count = 0
+            compressed_logs_size = 0
+            for file in os.listdir(log_dir):
+                if file.endswith('.zip') and 'server.log' in file:
+                    compressed_logs_count += 1
+                    file_path = os.path.join(log_dir, file)
+                    compressed_logs_size += os.path.getsize(file_path) / (1024 * 1024)
+            
+            if compressed_logs_count > 0:
+                logger.info(f"📊 [DISK] Compressed logs: {compressed_logs_count} files, {compressed_logs_size:.1f} MB")
             
             # Check database files
             db_files = [
@@ -484,9 +517,10 @@ class HealthCheck:
                     size_mb = os.path.getsize(db_path) / (1024 * 1024)
                     logger.info(f"📊 [DISK] Database {db_path}: {size_mb:.1f} MB")
             
-            # Check system disk usage
-            disk = psutil.disk_usage(DOWNLOADS_DIR)
-            logger.info(f"📊 [DISK] System drive usage: {disk.percent}% ({disk.used / (1024**3):.1f}GB used of {disk.total / (1024**3):.1f}GB)")
+            # Total application usage
+            total_app_usage = downloads_size + total_log_size + compressed_logs_size
+            logger.info(f"📊 [DISK] Total application usage: {total_app_usage:.1f} MB")
+            logger.info(f"📊 [DISK] Note: System disk usage (on cloud hosting) is not monitored as it includes dependencies, OS, and other services")
             
         except Exception as e:
             logger.error(f"❌ [DISK] Diagnostic failed: {e}")
@@ -923,15 +957,30 @@ class ResourceManager:
                 logger.error(f"Failed to get memory usage: {e}")
                 stats["memory_usage"] = {"error": str(e)}
             
-            # Safely get disk usage
+            # Get downloads directory size (not system disk)
             try:
                 if os.path.exists(DOWNLOADS_DIR):
-                    stats["disk_usage"] = psutil.disk_usage(DOWNLOADS_DIR)._asdict()
+                    total_size = 0
+                    file_count = 0
+                    for root, dirs, files in os.walk(DOWNLOADS_DIR):
+                        for file in files:
+                            try:
+                                total_size += os.path.getsize(os.path.join(root, file))
+                                file_count += 1
+                            except (OSError, FileNotFoundError):
+                                pass
+                    
+                    stats["downloads_directory"] = {
+                        "size_bytes": total_size,
+                        "size_mb": round(total_size / (1024 * 1024), 2),
+                        "file_count": file_count,
+                        "path": DOWNLOADS_DIR
+                    }
                 else:
-                    stats["disk_usage"] = {"error": "downloads directory not found"}
+                    stats["downloads_directory"] = {"error": "downloads directory not found"}
             except Exception as e:
-                logger.error(f"Failed to get disk usage: {e}")
-                stats["disk_usage"] = {"error": str(e)}
+                logger.error(f"Failed to get downloads directory size: {e}")
+                stats["downloads_directory"] = {"error": str(e)}
             
             return stats
 
