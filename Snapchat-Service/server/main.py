@@ -3058,6 +3058,108 @@ async def snapchat_download_endpoint(request: DownloadRequest, background_tasks:
         await websocket_manager.broadcast(key, {"overall": progress_data[key], "files": file_progress[key]})
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/debug-api/{username}")
+async def debug_snapchat_api(username: str):
+    """Debug endpoint to see raw Snapchat API response"""
+    try:
+        import re
+        import aiohttp
+        
+        logger.info(f"🔍 [DEBUG] Fetching Snapchat API for @{username}")
+        
+        endpoint = f"https://www.snapchat.com/add/{username}/"
+        regexp = r'<script\s*id="__NEXT_DATA__"\s*type="application\/json">([^<]+)</script>'
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                endpoint,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                }
+            ) as response:
+                if response.status != 200:
+                    return {
+                        "success": False,
+                        "error": f"API returned status {response.status}",
+                        "status_code": response.status
+                    }
+                
+                html = await response.text()
+                
+                # Extract JSON
+                json_match = re.findall(regexp, html)
+                if not json_match:
+                    return {
+                        "success": False,
+                        "error": "Could not find __NEXT_DATA__ JSON in response",
+                        "html_length": len(html)
+                    }
+                
+                # Parse JSON
+                data = json.loads(json_match[0])
+                
+                # Extract key information
+                page_props = data.get("props", {}).get("pageProps", {})
+                
+                result = {
+                    "success": True,
+                    "username": username,
+                    "api_url": endpoint,
+                    "page_props_keys": list(page_props.keys()),
+                    "stories": {},
+                    "highlights": {},
+                    "user_profile": {}
+                }
+                
+                # Extract story information
+                if "story" in page_props:
+                    story_data = page_props["story"]
+                    result["stories"]["has_story"] = True
+                    result["stories"]["keys"] = list(story_data.keys())
+                    
+                    if "snapList" in story_data:
+                        snap_list = story_data["snapList"]
+                        result["stories"]["snap_count"] = len(snap_list)
+                        result["stories"]["snaps"] = []
+                        
+                        for snap in snap_list:
+                            snap_info = {
+                                "snap_id": snap.get("snapId", {}).get("value", "N/A"),
+                                "media_type": snap.get("snapMediaType", "N/A"),
+                                "timestamp": snap.get("timestampInSec", {}).get("value", "N/A"),
+                                "has_media_url": "mediaUrl" in snap.get("snapUrls", {})
+                            }
+                            result["stories"]["snaps"].append(snap_info)
+                            
+                            # Log each snap ID for easy comparison
+                            logger.info(f"   📱 Snap: {snap_info['snap_id']}")
+                else:
+                    result["stories"]["has_story"] = False
+                
+                # Extract highlights
+                if "curatedHighlights" in page_props:
+                    result["highlights"]["curated_count"] = len(page_props["curatedHighlights"])
+                
+                if "spotHighlights" in page_props:
+                    result["highlights"]["spot_count"] = len(page_props["spotHighlights"])
+                
+                # Extract user profile
+                if "userProfile" in page_props:
+                    user_profile = page_props["userProfile"]
+                    result["user_profile"]["exists"] = True
+                    result["user_profile"]["type"] = user_profile.get("$case", "unknown")
+                
+                logger.info(f"✅ [DEBUG] Found {result['stories'].get('snap_count', 0)} snaps in API")
+                
+                return result
+                
+    except Exception as e:
+        logger.error(f"❌ [DEBUG] Error: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 @app.get("/snapchat-poll-now")
 async def snapchat_poll_now_endpoint(force: bool = False):
     """Manual Snapchat polling (frontend compatibility endpoint)"""
