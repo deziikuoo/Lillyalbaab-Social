@@ -7314,147 +7314,136 @@ async function processInstagramStories(username, userAgent = null) {
       `✅ Found ${stories.length} stories for @${username} via FastDl.app`
     );
 
-    // Process each story and track in database
+    // ===== PHASE 1: Filter new stories =====
+    const newStories = await filterNewStories(stories, username);
     const processedStories = [];
     const storyIds = [];
 
-    for (let i = 0; i < stories.length; i++) {
-      const story = stories[i];
+    if (newStories.length === 0) {
+      console.log(`✅ No new stories to process`);
+      // Add all as already processed
+      stories.forEach(story => {
+        processedStories.push({
+          ...story,
+          isNew: false,
+          method: "fastdl",
+        });
+      });
+    } else {
+      console.log(`📱 Processing ${newStories.length} new stories with concurrent downloads...`);
 
-      try {
-        console.log(`📱 Processing story ${i + 1}/${stories.length}...`);
+      // ===== PHASE 2: Download all new stories concurrently (8 threads) =====
+      console.log(`📥 Phase 1/4: Downloading ${newStories.length} stories (8 concurrent)...`);
+      const downloadResults = await Promise.allSettled(
+        newStories.map((story, index) => 
+          downloadStoryFile(story.url, story.storyType, story.index, username)
+            .then(downloaded => ({ ...story, ...downloaded, downloadSuccess: true }))
+            .catch(error => ({ ...story, downloadSuccess: false, downloadError: error.message }))
+        )
+      );
 
-        // Check if story was already processed (Supabase only)
-        const isProcessed = await checkStoryProcessed(username, story.storyId);
-        console.log(
-          `🔍 Story ${story.storyId} already processed: ${isProcessed}`
-        );
+      const successfulDownloads = downloadResults
+        .filter(result => result.status === 'fulfilled' && result.value.downloadSuccess)
+        .map(result => result.value);
 
-        if (!isProcessed) {
-          // Download story file to temp directory
-          let downloadedFile = null;
-          try {
-            downloadedFile = await downloadStoryFile(
-              story.url,
-              story.storyType,
-              story.index,
-              username
-            );
-            story.filePath = downloadedFile.filePath;
-            story.fileName = downloadedFile.fileName;
-          } catch (downloadError) {
-            console.log(
-              `⚠️ [STORY] Download failed, skipping story: ${downloadError.message}`
-            );
-            continue; // Skip this story if download fails
-          }
+      const failedDownloads = downloadResults
+        .filter(result => result.status === 'fulfilled' && !result.value.downloadSuccess);
 
-          // Add to processed stories
-          processedStories.push({
-            ...story,
-            isNew: true,
-            method: "fastdl",
-          });
+      console.log(`✅ Downloaded: ${successfulDownloads.length}/${newStories.length} stories`);
+      if (failedDownloads.length > 0) {
+        console.log(`⚠️ Failed: ${failedDownloads.length} downloads`);
+      }
 
-          storyIds.push(story.storyId);
+      // ===== PHASE 3: FFmpeg processing (2-3 concurrent) =====
+      console.log(`🎬 Phase 2/4: Processing videos with FFmpeg (2 concurrent)...`);
+      const ffmpegProcessed = await processFfmpegBatches(successfulDownloads, 2);
 
-          // Track in database (Supabase only)
-          await markStoryProcessed(
-            username,
-            story.url,
-            story.storyType,
-            story.storyId
-          );
+      // ===== PHASE 4: Mark as processed in database =====
+      console.log(`💾 Phase 3/4: Marking ${ffmpegProcessed.length} stories as processed...`);
+      await Promise.allSettled(
+        ffmpegProcessed.map(story =>
+          markStoryProcessed(username, story.url, story.storyType, story.storyId)
+            .then(() => {
+              storyIds.push(story.storyId);
+              console.log(`✅ Marked ${story.storyId} as processed`);
+            })
+            .catch(error => console.log(`⚠️ Failed to mark ${story.storyId}: ${error.message}`))
+        )
+      );
 
-          // Send to Telegram if configured
-          if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHANNEL_ID) {
+      // ===== PHASE 5: Send to Telegram concurrently (8 threads) =====
+      if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHANNEL_ID) {
+        console.log(`📤 Phase 4/4: Sending ${ffmpegProcessed.length} stories to Telegram (8 concurrent)...`);
+        
+        const telegramResults = await Promise.allSettled(
+          ffmpegProcessed.map(async (story) => {
             try {
-              console.log(`📤 [STORY] Sending new story to Telegram...`);
-
               const storyCaption = `💫 View Story: <a href="https://www.instagram.com/${username}/">@${username}</a>`;
-
-              console.log(`📤 [STORY] Telegram sending decision:`);
-              console.log(`  - storyType: ${story.storyType}`);
-              console.log(`  - isVideo: ${story.isVideo}`);
-              console.log(`  - filePath: ${story.filePath}`);
-              console.log(
-                `  - Will send as: ${story.isVideo ? "VIDEO" : "PHOTO"}`
-              );
-
-              // Always use file path (downloaded file required)
-              if (story.isVideo) {
+              
+              if (story.isVideo || story.storyType === 'video') {
                 await sendVideoToTelegram(story.filePath, storyCaption);
               } else {
                 await sendPhotoToTelegram(story.filePath, storyCaption);
               }
-              console.log(`✅ [STORY] Story sent to Telegram successfully`);
-
-              // Clean up downloaded file immediately after sending
-              if (story.filePath && fs.existsSync(story.filePath)) {
-                try {
-                  fs.unlinkSync(story.filePath);
-                  console.log(
-                    `🗑️ [STORY] Cleaned up downloaded file: ${story.fileName}`
-                  );
-                } catch (cleanupError) {
-                  console.log(
-                    `⚠️ [STORY] Failed to cleanup file: ${cleanupError.message}`
-                  );
-                }
-              }
-
-              // Add delay after Telegram send to prevent overwhelming the API
-              console.log(
-                `⏳ Waiting 3 seconds after Telegram send to prevent rate limiting...`
-              );
-              await new Promise((resolve) => setTimeout(resolve, 3000));
-            } catch (telegramError) {
-              console.log(
-                `⚠️ [STORY] Failed to send story to Telegram: ${telegramError.message}`
-              );
-              // Still cleanup file even if Telegram send fails
-              if (story.filePath && fs.existsSync(story.filePath)) {
-                try {
-                  fs.unlinkSync(story.filePath);
-                  console.log(`🗑️ [STORY] Cleaned up file after error`);
-                } catch (cleanupError) {
-                  console.log(
-                    `⚠️ [STORY] Failed to cleanup: ${cleanupError.message}`
-                  );
-                }
-              }
+              
+              console.log(`✅ Sent ${story.fileName} to Telegram`);
+              return { ...story, telegramSuccess: true };
+            } catch (error) {
+              console.log(`⚠️ Telegram failed for ${story.fileName}: ${error.message}`);
+              return { ...story, telegramSuccess: false, telegramError: error.message };
             }
-          } else {
-            // No Telegram configured, cleanup downloaded file
-            if (story.filePath && fs.existsSync(story.filePath)) {
-              try {
-                fs.unlinkSync(story.filePath);
-                console.log(
-                  `🗑️ [STORY] Cleaned up file (no Telegram configured)`
-                );
-              } catch (cleanupError) {
-                console.log(
-                  `⚠️ [STORY] Failed to cleanup: ${cleanupError.message}`
-                );
-              }
+          })
+        );
+
+        const sentCount = telegramResults.filter(r => r.status === 'fulfilled' && r.value.telegramSuccess).length;
+        console.log(`✅ Telegram: ${sentCount}/${ffmpegProcessed.length} stories sent`);
+
+        // ===== PHASE 6: Cleanup temp files =====
+        console.log(`🗑️ Cleaning up ${ffmpegProcessed.length} temp files...`);
+        ffmpegProcessed.forEach(story => {
+          if (story.filePath && fs.existsSync(story.filePath)) {
+            try {
+              fs.unlinkSync(story.filePath);
+            } catch (cleanupError) {
+              console.log(`⚠️ Cleanup failed for ${story.fileName}`);
             }
           }
-        } else {
-          // Story already processed, add without processing
-          processedStories.push({
-            ...story,
-            isNew: false,
-            method: "fastdl",
-          });
-        }
-      } catch (storyError) {
-        console.log(
-          `⚠️ Error processing individual story: ${storyError.message}`
-        );
+        });
+      } else {
+        console.log(`⚠️ No Telegram configured, cleaning up files...`);
+        // Cleanup if no Telegram
+        ffmpegProcessed.forEach(story => {
+          if (story.filePath && fs.existsSync(story.filePath)) {
+            try {
+              fs.unlinkSync(story.filePath);
+            } catch (cleanupError) {
+              console.log(`⚠️ Cleanup failed for ${story.fileName}`);
+            }
+          }
+        });
       }
 
-      console.log(`✅ Story ${i + 1}/${stories.length} processing completed`);
+      // Add successfully processed stories
+      ffmpegProcessed.forEach(story => {
+        processedStories.push({
+          ...story,
+          isNew: true,
+          method: "fastdl",
+        });
+      });
     }
+
+    // Add already-processed stories
+    const alreadyProcessed = stories.filter(s => 
+      !newStories.some(ns => ns.storyId === s.storyId)
+    );
+    alreadyProcessed.forEach(story => {
+      processedStories.push({
+        ...story,
+        isNew: false,
+        method: "fastdl",
+      });
+    });
 
     // Update cache
     await updateStoriesCache(username, processedStories);
@@ -7574,6 +7563,74 @@ async function reencodeStoryVideo(inputPath, outputPath) {
   });
 }
 
+// Helper: Filter stories to find which are new (need processing)
+async function filterNewStories(stories, username) {
+  console.log(`🔍 Checking which of ${stories.length} stories are new...`);
+  const newStories = [];
+  
+  for (const story of stories) {
+    try {
+      const isProcessed = await checkStoryProcessed(username, story.storyId);
+      if (!isProcessed) {
+        newStories.push(story);
+      }
+    } catch (error) {
+      console.log(`⚠️ Error checking story ${story.storyId}: ${error.message}`);
+      // Assume not processed if check fails
+      newStories.push(story);
+    }
+  }
+  
+  console.log(`📊 Found ${newStories.length} new stories (${stories.length - newStories.length} already processed)`);
+  return newStories;
+}
+
+// Helper: Process FFmpeg in controlled batches
+async function processFfmpegBatches(downloadedStories, batchSize = 2) {
+  console.log(`🎬 Processing ${downloadedStories.length} videos with FFmpeg (${batchSize} concurrent)...`);
+  const results = [];
+  
+  for (let i = 0; i < downloadedStories.length; i += batchSize) {
+    const batch = downloadedStories.slice(i, i + batchSize);
+    console.log(`🎬 FFmpeg batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(downloadedStories.length/batchSize)} (${batch.length} files)`);
+    
+    const batchResults = await Promise.allSettled(
+      batch.map(async (story) => {
+        // Only process videos that need FFmpeg
+        if (story.storyType === 'video' && ffmpegAvailable && story.filePath) {
+          try {
+            const reencodedFileName = `${path.basename(story.filePath, path.extname(story.filePath))}_fixed${path.extname(story.filePath)}`;
+            const reencodedFilePath = path.join(path.dirname(story.filePath), reencodedFileName);
+            
+            await reencodeStoryVideo(story.filePath, reencodedFilePath);
+            
+            // Delete original, use re-encoded
+            if (fs.existsSync(story.filePath)) {
+              fs.unlinkSync(story.filePath);
+            }
+            
+            return { ...story, filePath: reencodedFilePath, fileName: reencodedFileName };
+          } catch (ffmpegError) {
+            console.log(`⚠️ FFmpeg failed for ${story.fileName}, using original: ${ffmpegError.message}`);
+            return story; // Use original file
+          }
+        }
+        return story; // Images or no FFmpeg
+      })
+    );
+    
+    // Collect successful results
+    batchResults.forEach((result) => {
+      if (result.status === 'fulfilled') {
+        results.push(result.value);
+      }
+    });
+  }
+  
+  console.log(`✅ FFmpeg processing complete: ${results.length}/${downloadedStories.length} files ready`);
+  return results;
+}
+
 // Download story file temporarily for Telegram sending
 async function downloadStoryFile(url, storyType, index, username) {
   const axios = require("axios");
@@ -7607,37 +7664,8 @@ async function downloadStoryFile(url, storyType, index, username) {
 
     console.log(`✅ [DOWNLOAD] Downloaded: ${fileName}`);
 
-    // Re-encode video if it's a video and ffmpeg is available
-    if (storyType === "video" && ffmpegAvailable) {
-      const reencodedFileName = `story_${username}_${timestamp}_${index}_fixed.${extension}`;
-      const reencodedFilePath = path.join(__dirname, "temp", reencodedFileName);
-
-      try {
-        await reencodeStoryVideo(filePath, reencodedFilePath);
-
-        // Delete original file, use re-encoded version
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-          console.log(`🗑️ [FFMPEG] Deleted original file`);
-        }
-
-        console.log(`✅ [FFMPEG] Using re-encoded file: ${reencodedFileName}`);
-        return { filePath: reencodedFilePath, fileName: reencodedFileName };
-      } catch (ffmpegError) {
-        console.log(
-          `⚠️ [FFMPEG] Re-encoding failed, using original file: ${ffmpegError.message}`
-        );
-        // Delete re-encoded file if it exists
-        if (fs.existsSync(reencodedFilePath)) {
-          fs.unlinkSync(reencodedFilePath);
-        }
-        // Fall back to original file
-        return { filePath, fileName };
-      }
-    }
-
-    // For images or when ffmpeg not available, return original
-    return { filePath, fileName };
+    // Return file info (FFmpeg processing moved to separate phase)
+    return { filePath, fileName, storyType };
   } catch (error) {
     console.log(`❌ [DOWNLOAD] Error: ${error.message}`);
     throw error;
