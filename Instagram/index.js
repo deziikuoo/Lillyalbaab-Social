@@ -4871,7 +4871,7 @@ async function scrapeInstagramStoriesWithFastDl(session) {
       try {
         // Try multiple possible selectors for the stories tab
         const storiesTabSelectors = [
-          'button.tabs-component__button', // Direct button selector from FastDL
+          "button.tabs-component__button", // Direct button selector from FastDL
           'a[data-tab="stories"]',
           'a.pills__link[href*="stories"]',
           'button[data-tab="stories"]',
@@ -4879,27 +4879,33 @@ async function scrapeInstagramStoriesWithFastDl(session) {
         ];
 
         let tabClicked = false;
-        
+
         // First try: Find and click button with text "stories"
         try {
           const clicked = await session.page.evaluate(() => {
-            const buttons = Array.from(document.querySelectorAll('button.tabs-component__button'));
-            const storiesBtn = buttons.find(btn => btn.textContent.toLowerCase().includes('stories'));
+            const buttons = Array.from(
+              document.querySelectorAll("button.tabs-component__button")
+            );
+            const storiesBtn = buttons.find((btn) =>
+              btn.textContent.toLowerCase().includes("stories")
+            );
             if (storiesBtn) {
               storiesBtn.click();
               return true;
             }
             return false;
           });
-          
+
           if (clicked) {
-            console.log('✅ [FASTDL] Clicked Stories tab using text match');
+            console.log("✅ [FASTDL] Clicked Stories tab using text match");
             tabClicked = true;
           }
         } catch (err) {
-          console.log(`⚠️ [FASTDL] Text-based button search failed: ${err.message}`);
+          console.log(
+            `⚠️ [FASTDL] Text-based button search failed: ${err.message}`
+          );
         }
-        
+
         // Fallback: Try selector-based approach
         if (!tabClicked) {
           for (const selector of storiesTabSelectors) {

@@ -1,0 +1,599 @@
+≡ƒöì Supabase Database Scanner
+============================
+
+≡ƒôí Connected to: https://tuvyckzfwdtaieajlszb.supabase.co
+≡ƒöæ Using service key: eyJhbGciOiJIUzI1NiIs...HuDRumkbG8
+
+
+
+≡ƒƒú INSTAGRAM TABLES
+================================================================================
+
+================================================================================
+≡ƒôè Table: cache_cleanup_log
+================================================================================
+(node:22152) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+≡ƒôê Total rows: 5
+
+≡ƒôï Columns: id, cleaned_at, posts_removed, username
+
+≡ƒôä First 5 rows:
+
+
+--- Row 1 ---
+  id: 5
+  cleaned_at: 2025-10-10T23:53:46.352+00:00
+  posts_removed: 0
+  username: wolftyla
+
+--- Row 2 ---
+  id: 4
+  cleaned_at: 2025-10-10T23:53:41.457+00:00
+  posts_removed: 0
+  username: wolftyla
+
+--- Row 3 ---
+  id: 3
+  cleaned_at: 2025-10-10T23:53:29.003+00:00
+  posts_removed: 0
+  username: wolftyla
+
+--- Row 4 ---
+  id: 2
+  cleaned_at: 2025-10-10T23:53:22.456+00:00
+  posts_removed: 8
+  username: wolftyla
+
+--- Row 5 ---
+  id: 1
+  cleaned_at: 2025-10-10T23:53:10.936+00:00
+  posts_removed: 6
+  username: wolftyla
+
+≡ƒôè Statistics:
+  Unique usernames: 1
+  Usernames: wolftyla
+  Counts per username:
+    @wolftyla: 5 entries
+  Date range (cleaned_at):
+    Oldest: 2025-10-10T23:53:10.936Z
+    Newest: 2025-10-10T23:53:46.352Z
+
+
+================================================================================
+≡ƒôè Table: processed_posts
+================================================================================
+≡ƒôê Total rows: 31
+
+≡ƒôï Columns: id, username, post_url, post_type, is_pinned, pinned_at, processed_at
+
+≡ƒôä First 10 rows:
+
+
+--- Row 1 ---
+  id: DQsgivOASZr
+  username: wolftyla
+  post_url: https://www.instagram.com/p/DQsgivOASZr/
+  post_type: video
+  is_pinned: false
+  pinned_at: NULL
+  processed_at: 2025-11-07T00:43:44.2+00:00
+
+--- Row 2 ---
+  id: DQR4Se_icvP
+  username: wolftyla
+  post_url: https://www.instagram.com/p/DQR4Se_icvP/
+  post_type: video
+  is_pinned: false
+  pinned_at: NULL
+  processed_at: 2025-11-01T01:37:18.085+00:00
+
+--- Row 3 ---
+  id: DQr0dqAki9j
+  username: wolftyla
+  post_url: https://www.instagram.com/p/DQr0dqAki9j/
+  post_type: video
+  is_pinned: false
+  pinned_at: NULL
+  processed_at: 2025-11-07T00:43:48.969+00:00
+
+--- Row 4 ---
+  id: DQqcdsHjhog
+  username: wolftyla
+  post_url: https://www.instagram.com/p/DQqcdsHjhog/
+  post_type: carousel
+  is_pinned: false
+  pinned_at: NULL
+  processed_at: 2025-11-05T05:53:51.51+00:00
+
+--- Row 5 ---
+  id: DQNEntfEh2l
+  username: wolftyla
+  post_url: https://www.instagram.com/p/DQNEntfEh2l/
+  post_type: video
+  is_pinned: false
+  pinned_at: NULL
+  processed_at: 2025-10-24T20:26:57.344+00:00
+
+--- Row 6 ---
+  id: DQLjefeDsjZ
+  username: wolftyla
+  post_url: https://www.instagram.com/p/DQLjefeDsjZ/
+  post_type: video
+  is_pinned: false
+  pinned_at: NULL
+  processed_at: 2025-10-24T05:44:06.002+00:00
+
+--- Row 7 ---
+  id: DQKz9OAEmmI
+  username: wolftyla
+  post_url: https://www.instagram.com/p/DQKz9OAEmmI/
+  post_type: carousel
+  is_pinned: false
+  pinned_at: NULL
+  processed_at: 2025-10-23T23:30:15.384+00:00
+
+--- Row 8 ---
+  id: DQKwxfxEqk5
+  username: wolftyla
+  post_url: https://www.instagram.com/p/DQKwxfxEqk5/
+  post_type: video
+  is_pinned: false
+  pinned_at: NULL
+  processed_at: 2025-10-23T22:41:25.045+00:00
+
+--- Row 9 ---
+  id: DQKjf-skmdp
+  username: wolftyla
+  post_url: https://www.instagram.com/p/DQKjf-skmdp/
+  post_type: video
+  is_pinned: false
+  pinned_at: NULL
+  processed_at: 2025-10-23T20:23:40.649+00:00
+
+--- Row 10 ---
+  id: DQjFYtEkUxT
+  username: wolftyla
+  post_url: https://www.instagram.com/p/DQjFYtEkUxT/
+  post_type: video
+  is_pinned: false
+  pinned_at: NULL
+  processed_at: 2025-11-02T10:04:23.28+00:00
+
+... and 21 more rows
+
+≡ƒôè Statistics:
+  Unique usernames: 1
+  Usernames: wolftyla
+  Counts per username:
+    @wolftyla: 31 entries
+  Date range (processed_at):
+    Oldest: 2025-10-10T23:56:45.023Z
+    Newest: 2025-11-10T01:28:49.065Z
+
+
+================================================================================
+≡ƒôè Table: processed_stories
+================================================================================
+≡ƒôê Total rows: 108
+
+≡ƒôï Columns: id, username, story_url, story_type, story_id, processed_at
+
+≡ƒôä First 10 rows:
+
+
+--- Row 1 ---
+  id: wolftyla_fdde7a2fe601d58a
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=02KFPGMesEnajyNe13xyBA&__expires=1760896089&uri=https%3A%2F%2Fsco...
+  story_type: image
+  story_id: fdde7a2fe601d58a
+  processed_at: 2025-10-19T17:28:41.62+00:00
+
+--- Row 2 ---
+  id: wolftyla_fbc9fe9aaf07d3ae
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=SglPn-hBagqLefKrMk1POQ&__expires=1760848721&uri=https%3A%2F%2Fsco...
+  story_type: video
+  story_id: fbc9fe9aaf07d3ae
+  processed_at: 2025-10-19T04:19:08.545+00:00
+
+--- Row 3 ---
+  id: wolftyla_f51ff0aaa182b6a7
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=G-1gFnkpzpd5dFt91DscTg&__expires=1761198771&uri=https%3A%2F%2Fins...
+  story_type: video
+  story_id: f51ff0aaa182b6a7
+  processed_at: 2025-10-23T05:33:13.588+00:00
+
+--- Row 4 ---
+  id: wolftyla_f4e25b1466bf81bf
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=NO0A8_IWXt5O-IgF41el5g&__expires=1762305397&uri=https%3A%2F%2Fins...
+  story_type: video
+  story_id: f4e25b1466bf81bf
+  processed_at: 2025-11-05T00:57:29.748+00:00
+
+--- Row 5 ---
+  id: wolftyla_eff1bea1280d66fe
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=KxfCotsYEHYlQDVqNkFQag&__expires=1762477334&uri=https%3A%2F%2Fsco...
+  story_type: video
+  story_id: eff1bea1280d66fe
+  processed_at: 2025-11-07T00:42:56.834+00:00
+
+--- Row 6 ---
+  id: wolftyla_ea0d2cb73c9fda3a
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=tHCpaV7Hx6inAoc9wbsutQ&__expires=1760146486&uri=https%3A%2F%2Fsco...
+  story_type: video
+  story_id: ea0d2cb73c9fda3a
+  processed_at: 2025-10-11T01:15:47.911+00:00
+
+--- Row 7 ---
+  id: wolftyla_e7f1c126a6275de5
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=-bm9h7KbwbQQksGQuvjF1Q&__expires=1760748251&uri=https%3A%2F%2Fsco...
+  story_type: video
+  story_id: e7f1c126a6275de5
+  processed_at: 2025-10-18T00:24:50.739+00:00
+
+--- Row 8 ---
+  id: wolftyla_e6283439c7143f4d
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=kDgfq2yZa5vRD98NMRx3Mw&__expires=1760416389&uri=https%3A%2F%2Fins...
+  story_type: video
+  story_id: e6283439c7143f4d
+  processed_at: 2025-10-14T04:14:03.021+00:00
+
+--- Row 9 ---
+  id: wolftyla_e5edcc1b73a919b7
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=9LsKXbzSOeBDwj4t8dhqRg&__expires=1760461851&uri=https%3A%2F%2Fins...
+  story_type: video
+  story_id: e5edcc1b73a919b7
+  processed_at: 2025-10-14T16:51:19.326+00:00
+
+--- Row 10 ---
+  id: wolftyla_e464bb19682d7cd8
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=4GpjeNESC6DlNTZlN4O7dA&__expires=1761344487&uri=https%3A%2F%2Fins...
+  story_type: video
+  story_id: e464bb19682d7cd8
+  processed_at: 2025-10-24T22:01:50.368+00:00
+
+... and 98 more rows
+
+≡ƒôè Statistics:
+  Unique usernames: 1
+  Usernames: wolftyla
+  Counts per username:
+    @wolftyla: 108 entries
+  Date range (processed_at):
+    Oldest: 2025-10-10T23:55:04.757Z
+    Newest: 2025-11-10T05:23:44.136Z
+
+
+================================================================================
+≡ƒôè Table: recent_posts_cache
+================================================================================
+≡ƒôê Total rows: 0
+≡ƒô¡ Table is empty
+
+
+================================================================================
+≡ƒôè Table: recent_stories_cache
+================================================================================
+≡ƒôê Total rows: 6
+
+≡ƒôï Columns: id, username, story_url, story_id, story_type, cached_at
+
+≡ƒôä First 6 rows:
+
+
+--- Row 1 ---
+  id: 1485
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=fJJjX01mADXZwQBeW3Mm_w&__expires=1762764712&uri=https%3A%2F%2Fins...
+  story_id: 39b13b9df301a73e
+  story_type: video
+  cached_at: 2025-11-10T08:32:21.559982+00:00
+
+--- Row 2 ---
+  id: 1484
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=N58HfxMAM-AsMOvDrZtiiQ&__expires=1762764712&uri=https%3A%2F%2Fsco...
+  story_id: 8dd70d9f3d01903c
+  story_type: image
+  cached_at: 2025-11-10T08:32:21.559982+00:00
+
+--- Row 3 ---
+  id: 1483
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=2ml8b9T-uURu8xupvsPqMg&__expires=1762764712&uri=https%3A%2F%2Fins...
+  story_id: d44c3f6bbc5663b8
+  story_type: video
+  cached_at: 2025-11-10T08:32:21.559982+00:00
+
+--- Row 4 ---
+  id: 1482
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=0tsvxTsE8payEJPWPRT3Lw&__expires=1762764712&uri=https%3A%2F%2Fins...
+  story_id: da58c2219dafc7d1
+  story_type: video
+  cached_at: 2025-11-10T08:32:21.559982+00:00
+
+--- Row 5 ---
+  id: 1481
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=7nRIF_wQjgppydHIpd7_9Q&__expires=1762764712&uri=https%3A%2F%2Fsco...
+  story_id: d2acc941100464d4
+  story_type: image
+  cached_at: 2025-11-10T08:32:21.559982+00:00
+
+--- Row 6 ---
+  id: 1480
+  username: wolftyla
+  story_url: https://media.fastdl.app/get?__sig=OSgL4XL1_Q10IAzBK5T6Ow&__expires=1762764712&uri=https%3A%2F%2Fins...
+  story_id: 4226d8652d289c84
+  story_type: video
+  cached_at: 2025-11-10T08:32:21.559982+00:00
+
+≡ƒôè Statistics:
+  Unique usernames: 1
+  Usernames: wolftyla
+  Counts per username:
+    @wolftyla: 6 entries
+  Date range (cached_at):
+    Oldest: 2025-11-10T08:32:21.559Z
+    Newest: 2025-11-10T08:32:21.559Z
+
+
+
+
+≡ƒƒí SNAPCHAT TABLES
+================================================================================
+
+================================================================================
+≡ƒôè Table: snapchat_cache_cleanup_log
+================================================================================
+≡ƒôê Total rows: 0
+≡ƒô¡ Table is empty
+
+
+================================================================================
+≡ƒôè Table: snapchat_processed_stories
+================================================================================
+≡ƒôê Total rows: 201
+
+≡ƒôï Columns: id, username, story_url, story_type, snap_id, processed_at
+
+≡ƒôä First 10 rows:
+
+
+--- Row 1 ---
+  id: wolftyla_pWHqAhPcRT6rrYfCQJc_zwAAgZXNqam9pc21kAZpTDJlgAZpSuKcAAAAAAA
+  username: wolftyla
+  story_url: https://bolt-gcdn.sc-cdn.net/3/lH6E4tPMnTDmAKPiZXYZ2.1034.IRZXSOY?mo=GmEaFDIBfToBBEIGCOuKrMgGSAJQS2A...
+  story_type: video
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgZXNqam9pc21kAZpTDJlgAZpSuKcAAAAAAA
+  processed_at: 2025-11-05T08:39:43.432721+00:00
+
+--- Row 2 ---
+  id: wolftyla_pWHqAhPcRT6rrYfCQJc_zwAAgZXJsaGhkcnNyAZnARd2eAZnARdkmAAAAAA
+  username: wolftyla
+  story_url: https://bolt-gcdn.sc-cdn.net/3/yupkoGoVNcEUoC9N6vOFN.1034.IRZXSOY?mo=GlQaFDIBfToBBEIGCMTklccGSAJQS2A...
+  story_type: photo
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgZXJsaGhkcnNyAZnARd2eAZnARdkmAAAAAA
+  processed_at: 2025-10-08T23:18:17.286447+00:00
+
+--- Row 3 ---
+  id: wolftyla_pWHqAhPcRT6rrYfCQJc_zwAAgZWZraXVldmJzAZnC48VNAZnC3_w2AAAAAA
+  username: wolftyla
+  story_url: https://bolt-gcdn.sc-cdn.net/3/XVgZ081hPOQOj8QnUThsr.1034.IRZXSOY?mo=GlQaFDIBfToBBEIGCMS7mMcGSAJQS2A...
+  story_type: video
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgZWZraXVldmJzAZnC48VNAZnC3_w2AAAAAA
+  processed_at: 2025-10-08T23:56:45.38825+00:00
+
+--- Row 4 ---
+  id: wolftyla_pWHqAhPcRT6rrYfCQJc_zwAAgZWxwbnh0anJ5AZo4ux04AZo4uxuGAAAAAA
+  username: wolftyla
+  story_url: https://bolt-gcdn.sc-cdn.net/3/PKmTxNMaLLsiTQsFBEa3s.1034.IRZXSOY?mo=GlQaFDIBfToBBEIGCJ2RkcgGSAJQS2A...
+  story_type: video
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgZWxwbnh0anJ5AZo4ux04AZo4uxuGAAAAAA
+  processed_at: 2025-11-01T01:36:12.752859+00:00
+
+--- Row 5 ---
+  id: wolftyla_pWHqAhPcRT6rrYfCQJc_zwAAgZWp1Ymxhdm5yAZpHQuxRAZpHJxW1AAAAAA
+  username: wolftyla
+  story_url: https://bolt-gcdn.sc-cdn.net/3/lXp2TuOf7KLY6L649iy54.1034.IRZXSOY?mo=GlQaFDIBfToBBEIGCPWBoMgGSAJQS2A...
+  story_type: video
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgZWp1Ymxhdm5yAZpHQuxRAZpHJxW1AAAAAA
+  processed_at: 2025-11-03T05:11:01.275124+00:00
+
+--- Row 6 ---
+  id: wolftyla_pWHqAhPcRT6rrYfCQJc_zwAAgZnpjZmNwbXJmAZo4uyWNAZo4uxu4AAAAAA
+  username: wolftyla
+  story_url: https://bolt-gcdn.sc-cdn.net/3/36PeFfnTa2DS6JfPgXAZH.1034.IRZXSOY?mo=GlQaFDIBfToBBEIGCJyRkcgGSAJQS2A...
+  story_type: video
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgZnpjZmNwbXJmAZo4uyWNAZo4uxu4AAAAAA
+  processed_at: 2025-11-01T01:36:12.933949+00:00
+
+--- Row 7 ---
+  id: wolftyla_pWHqAhPcRT6rrYfCQJc_zwAAgZnFjbGZsZGF6AZjmsb53AZjkOC_MAAAAAA
+  username: wolftyla
+  story_url: https://cf-st.sc-cdn.net/d/S0SoiRDio3KWGt4gLA5G2.1023.IRZXSOY?mo=GlgaCjICBH1IAlBLYAFaEVBvcHVsYXJJbWF...
+  story_type: photo
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgZnFjbGZsZGF6AZjmsb53AZjkOC_MAAAAAA
+  processed_at: 2025-08-29T22:35:45.76515+00:00
+
+--- Row 8 ---
+  id: wolftyla_pWHqAhPcRT6rrYfCQJc_zwAAgZmxydG5jcWVvAZprYQhPAZprYKbMAAAAAA
+  username: wolftyla
+  story_url: https://bolt-gcdn.sc-cdn.net/3/R9cyda9CYozgtGHow6sSC.1034.IRZXSOY?mo=GlwaFDIBfToBBEIGCOT_xMgGSAJQS2A...
+  story_type: video
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgZmxydG5jcWVvAZprYQhPAZprYKbMAAAAAA
+  processed_at: 2025-11-10T06:50:20.242783+00:00
+
+--- Row 9 ---
+  id: wolftyla_pWHqAhPcRT6rrYfCQJc_zwAAgZmtjZWx1aXF0AZnc1t0XAZnc1tv9AAAAAA
+  username: wolftyla
+  story_url: https://cf-st.sc-cdn.net/d/1q7wevxFh84alm6wCmsjH.1023.IRZXSOY?mo=GlgaCjICBH1IAlBLYAFaEVBvcHVsYXJJbWF...
+  story_type: photo
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgZmtjZWx1aXF0AZnc1t0XAZnc1tv9AAAAAA
+  processed_at: 2025-10-13T09:13:21.635585+00:00
+
+--- Row 10 ---
+  id: wolftyla_pWHqAhPcRT6rrYfCQJc_zwAAgZmFza2Vrdnl0AZpHJ0deAZpHJxWrAAAAAA
+  username: wolftyla
+  story_url: https://bolt-gcdn.sc-cdn.net/3/ZUUHq4O6EawSPMfPOpmFZ.1034.IRZXSOY?mo=GlQaFDIBfToBBEIGCNPzn8gGSAJQS2A...
+  story_type: video
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgZmFza2Vrdnl0AZpHJ0deAZpHJxWrAAAAAA
+  processed_at: 2025-11-03T01:25:02.259771+00:00
+
+... and 191 more rows
+
+≡ƒôè Statistics:
+  Unique usernames: 2
+  Usernames: wolftyla, test_user
+  Counts per username:
+    @wolftyla: 200 entries
+    @test_user: 1 entries
+  Date range (processed_at):
+    Oldest: 2025-08-29T22:35:45.341Z
+    Newest: 2025-11-10T08:21:27.323Z
+
+
+================================================================================
+≡ƒôè Table: snapchat_recent_stories_cache
+================================================================================
+≡ƒôê Total rows: 11
+
+≡ƒôï Columns: id, username, story_url, snap_id, story_type, story_order, cached_at
+
+≡ƒôä First 10 rows:
+
+
+--- Row 1 ---
+  id: 18709
+  username: wolftyla
+  story_url: https://bolt-gcdn.sc-cdn.net/3/QeYWML9vMS7dIQMbEmoAx.1034.IRZXSOY?mo=GlwaFDIBfToBBEIGCJO0xsgGSAJQS2A...
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgc2xhY252aWJrAZpswS-EAZpsfLRoAAAAAA
+  story_type: video
+  story_order: 9
+  cached_at: 2025-11-10T08:43:00.472885+00:00
+
+--- Row 2 ---
+  id: 18708
+  username: wolftyla
+  story_url: https://bolt-gcdn.sc-cdn.net/3/TKTEZVRMv9FqoI8D1MOHW.1034.IRZXSOY?mo=GlwaFDIBfToBBEIGCK-RxsgGSAJQS2A...
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgcnJ1dWd0em1wAZpsfSj4AZpsfLReAAAAAA
+  story_type: video
+  story_order: 8
+  cached_at: 2025-11-10T08:43:00.472885+00:00
+
+--- Row 3 ---
+  id: 18707
+  username: wolftyla
+  story_url: https://bolt-gcdn.sc-cdn.net/3/4iIp78y3iFBN8BbXhGLzr.1034.IRZXSOY?mo=GlwaFDIBfToBBEIGCIqRxsgGSAJQS2A...
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAga3Rid3R0YnprAZpsfMvRAZpsfLRUAAAAAA
+  story_type: video
+  story_order: 7
+  cached_at: 2025-11-10T08:43:00.472885+00:00
+
+--- Row 4 ---
+  id: 18706
+  username: wolftyla
+  story_url: https://bolt-gcdn.sc-cdn.net/3/lucQ5DZWXjd0lGV4TRgDr.1034.IRZXSOY?mo=GlsaFDIBfToBBEIGCOP_xMgGSAJQS2A...
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgdWx6eG5mc3VxAZprYSDLAZprYKbgAAAAAA
+  story_type: video
+  story_order: 6
+  cached_at: 2025-11-10T08:43:00.472885+00:00
+
+--- Row 5 ---
+  id: 18705
+  username: wolftyla
+  story_url: https://bolt-gcdn.sc-cdn.net/3/lCLSpFwv6I1sdAtEexau0.1034.IRZXSOY?mo=GlwaFDIBfToBBEIGCOv_xMgGSAJQS2A...
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAga3R2ZGppcGxhAZprYR_BAZprYKbWAAAAAA
+  story_type: video
+  story_order: 5
+  cached_at: 2025-11-10T08:43:00.472885+00:00
+
+--- Row 6 ---
+  id: 18704
+  username: wolftyla
+  story_url: https://bolt-gcdn.sc-cdn.net/3/R9cyda9CYozgtGHow6sSC.1034.IRZXSOY?mo=GlwaFDIBfToBBEIGCOT_xMgGSAJQS2A...
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgZmxydG5jcWVvAZprYQhPAZprYKbMAAAAAA
+  story_type: video
+  story_order: 4
+  cached_at: 2025-11-10T08:43:00.472885+00:00
+
+--- Row 7 ---
+  id: 18703
+  username: wolftyla
+  story_url: https://cf-st.sc-cdn.net/d/cpVviKmofZhqBaCo8f5wf.1023.IRZXSOY?mo=GloaCjICBH1IAlBLYAFQYFoRUG9wdWxhckl...
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgdWJra3hmbG5wAZpUEpAQAZpUEo2YAAAAAA
+  story_type: photo
+  story_order: 3
+  cached_at: 2025-11-10T08:43:00.472885+00:00
+
+--- Row 8 ---
+  id: 18702
+  username: wolftyla
+  story_url: https://cf-st.sc-cdn.net/d/0BG00i1B3IETd0QQKNm8P.1023.IRZXSOY?mo=GloaCjICBH1IAlBLYAFQYFoRUG9wdWxhckl...
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAgbGFud2RwbmZ0AZpTNosAAZpSuT7mAAAAAA
+  story_type: photo
+  story_order: 2
+  cached_at: 2025-11-10T08:43:00.472885+00:00
+
+--- Row 9 ---
+  id: 18701
+  username: wolftyla
+  story_url: https://cf-st.sc-cdn.net/d/BbKIO4GKreCOlSlck0fYT.1023.IRZXSOY?mo=GloaCjICBH1IAlBLYAFQYFoRUG9wdWxhckl...
+  snap_id: pWHqAhPcRT6rrYfCQJc_zwAAganBxamFnemlwAZpTNoobAZpSuT4FAAAAAA
+  story_type: photo
+  story_order: 1
+  cached_at: 2025-11-10T08:43:00.472885+00:00
+
+--- Row 10 ---
+  id: 27
+  username: test_user
+  story_url: https://example.com/story2.mp4
+  snap_id: test_snap_2
+  story_type: video
+  story_order: 2
+  cached_at: 2025-08-30T03:21:17.645516+00:00
+
+... and 1 more rows
+
+≡ƒôè Statistics:
+  Unique usernames: 2
+  Usernames: wolftyla, test_user
+  Counts per username:
+    @wolftyla: 9 entries
+    @test_user: 2 entries
+  Date range (cached_at):
+    Oldest: 2025-08-30T03:21:17.645Z
+    Newest: 2025-11-10T08:43:00.472Z
+
+
+
+
+Γ£à Database scan complete!
+
+≡ƒôè Summary:
+
+INSTAGRAM:
+  cache_cleanup_log: 5 rows
+  processed_posts: 31 rows
+  processed_stories: 108 rows
+  recent_posts_cache: 0 rows
+  recent_stories_cache: 6 rows
+
+SNAPCHAT:
+  snapchat_cache_cleanup_log: 0 rows
+  snapchat_processed_stories: 201 rows
+  snapchat_recent_stories_cache: 11 rows
+
+

@@ -3098,6 +3098,10 @@ async def debug_snapchat_api(username: str):
                 # Parse JSON
                 data = json.loads(json_match[0])
                 
+                # Log JSON size for debugging
+                logger.info(f"📊 [DEBUG] JSON size: {len(json_match[0])} characters")
+                logger.info(f"📊 [DEBUG] HTML size: {len(html)} characters")
+                
                 # Extract key information
                 page_props = data.get("props", {}).get("pageProps", {})
                 
@@ -3105,6 +3109,8 @@ async def debug_snapchat_api(username: str):
                     "success": True,
                     "username": username,
                     "api_url": endpoint,
+                    "html_size": len(html),
+                    "json_size": len(json_match[0]),
                     "page_props_keys": list(page_props.keys()),
                     "stories": {},
                     "highlights": {},
@@ -3122,7 +3128,9 @@ async def debug_snapchat_api(username: str):
                         result["stories"]["snap_count"] = len(snap_list)
                         result["stories"]["snaps"] = []
                         
-                        for snap in snap_list:
+                        logger.info(f"\n🔍 [DEBUG] Processing {len(snap_list)} snaps from snapList:")
+                        
+                        for i, snap in enumerate(snap_list, 1):
                             snap_info = {
                                 "snap_id": snap.get("snapId", {}).get("value", "N/A"),
                                 "media_type": snap.get("snapMediaType", "N/A"),
@@ -3131,8 +3139,8 @@ async def debug_snapchat_api(username: str):
                             }
                             result["stories"]["snaps"].append(snap_info)
                             
-                            # Log each snap ID for easy comparison
-                            logger.info(f"   📱 Snap: {snap_info['snap_id']}")
+                            # Log each snap ID with position for easy comparison
+                            logger.info(f"   📱 Snap {i}/{len(snap_list)}: {snap_info['snap_id']}")
                 else:
                     result["stories"]["has_story"] = False
                 
