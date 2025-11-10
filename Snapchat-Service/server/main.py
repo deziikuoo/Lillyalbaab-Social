@@ -3007,11 +3007,11 @@ async def snapchat_download_endpoint(request: DownloadRequest, background_tasks:
             
             media_urls = []
             if request.download_type == "stories":
-                media_urls = await snapchat.download_story(request.username)
+                media_urls = await snapchat.download(request.username)
             elif request.download_type == "highlights":
                 media_urls = await snapchat.download_highlights(request.username)
             elif request.download_type == "spotlights":
-                media_urls = await snapchat.download_spotlight(request.username)
+                media_urls = await snapchat.download_spotlights(request.username)
             
             logger.info(f"Downloaded {len(media_urls)} files")
             
