@@ -7894,7 +7894,7 @@ async function updateStoriesCache(username, stories) {
       return;
     }
 
-    // Insert new cache entries
+    // Insert new cache entries (UPSERT to handle duplicates)
     const cacheEntries = stories.map((story) => ({
       username,
       story_url: story.url,
@@ -7904,10 +7904,13 @@ async function updateStoriesCache(username, stories) {
 
     const { error: insertError } = await supabase
       .from("recent_stories_cache")
-      .insert(cacheEntries);
+      .upsert(cacheEntries, {
+        onConflict: 'username,story_id',
+        ignoreDuplicates: false
+      });
 
     if (insertError) {
-      console.error("Supabase error inserting stories cache:", insertError);
+      console.error("Supabase error upserting stories cache:", insertError);
       throw insertError;
     }
 
