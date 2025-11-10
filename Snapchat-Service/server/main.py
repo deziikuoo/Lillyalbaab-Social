@@ -2979,6 +2979,85 @@ async def stop_snapchat_polling_endpoint():
         logger.error(f"Error stopping Snapchat polling: {error}")
         raise HTTPException(status_code=500, detail=str(error))
 
+@app.post("/snapchat-download", response_model=DownloadResponse)
+async def snapchat_download_endpoint(request: DownloadRequest, background_tasks: BackgroundTasks):
+    """Download Snapchat content (frontend compatibility endpoint - wraps /download)"""
+    try:
+        logger.info(f"📥 [SNAPCHAT-DOWNLOAD] Request for @{request.username} - {request.download_type}")
+        
+        # Call the existing download function
+        snapchat = SnapchatDL(directory_prefix=DOWNLOADS_DIR)
+        key = f"{request.username}:{request.download_type}"
+        
+        # Reset progress
+        with progress_lock:
+            progress_data[key] = {"current": 0, "total": 0, "status": "Starting..."}
+            file_progress[key] = {}
+        
+        # Notify all connected clients that we're starting
+        await websocket_manager.broadcast(key, {"overall": progress_data[key], "files": file_progress[key]})
+        
+        try:
+            logger.info(f"Starting {request.download_type} download for {request.username}")
+            
+            # Update progress
+            with progress_lock:
+                progress_data[key]["status"] = "Downloading..."
+            await websocket_manager.broadcast(key, {"overall": progress_data[key], "files": file_progress[key]})
+            
+            media_urls = []
+            if request.download_type == "stories":
+                media_urls = await snapchat.download_story(request.username)
+            elif request.download_type == "highlights":
+                media_urls = await snapchat.download_highlights(request.username)
+            elif request.download_type == "spotlights":
+                media_urls = await snapchat.download_spotlight(request.username)
+            
+            logger.info(f"Downloaded {len(media_urls)} files")
+            
+            # Update final progress
+            with progress_lock:
+                progress_data[key]["status"] = f"Completed - {len(media_urls)} files"
+                progress_data[key]["current"] = len(media_urls)
+                progress_data[key]["total"] = len(media_urls)
+            await websocket_manager.broadcast(key, {"overall": progress_data[key], "files": file_progress[key]})
+            
+            # Send to Telegram if requested
+            if request.send_to_telegram:
+                logger.info(f"📤 [SNAPCHAT-DOWNLOAD] Sending to Telegram for @{request.username}")
+                background_tasks.add_task(send_downloaded_content_to_telegram, request.username, request.download_type, request.telegram_caption)
+            
+            return DownloadResponse(
+                status="success",
+                message=f"Successfully downloaded {len(media_urls)} {request.download_type}",
+                media_urls=media_urls,
+                download_count=len(media_urls)
+            )
+            
+        except NoStoriesFound as e:
+            logger.warning(f"⚠️ No stories found for @{request.username}: {str(e)}")
+            with progress_lock:
+                progress_data[key]["status"] = "No content found"
+            await websocket_manager.broadcast(key, {"overall": progress_data[key], "files": file_progress[key]})
+            
+            return DownloadResponse(
+                status="success",
+                message=f"No {request.download_type} found for {request.username}",
+                media_urls=[],
+                download_count=0
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ [SNAPCHAT-DOWNLOAD] Error: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        # Update progress with error
+        key = f"{request.username}:{request.download_type}"
+        with progress_lock:
+            progress_data[key]["status"] = f"Error: {str(e)}"
+        await websocket_manager.broadcast(key, {"overall": progress_data[key], "files": file_progress[key]})
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/snapchat-poll-now")
 async def snapchat_poll_now_endpoint(force: bool = False):
     """Manual Snapchat polling (frontend compatibility endpoint)"""
