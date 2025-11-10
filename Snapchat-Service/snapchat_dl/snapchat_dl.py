@@ -323,11 +323,13 @@ class SnapchatDL:
                     await progress_callback(ws_message)
 
             # Process and download files concurrently
+            media_urls = []  # Track URLs for return value
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 futures = []
                 for story, user_info in stories:
                     snap_id = story["snapId"]["value"]
                     media_url = story["snapUrls"]["mediaUrl"]
+                    media_urls.append(media_url)  # Collect URL
                     media_type = story["snapMediaType"]
                     timestamp = int(story["timestampInSec"]["value"])
                     filename = strf_time(timestamp, "%Y-%m-%d_%H-%M-%S_{}_{}.{}").format(
@@ -441,6 +443,8 @@ class SnapchatDL:
 
             if not self.quiet:
                 logger.info(f"[✓] {downloaded} stories downloaded for {username}")
+            
+            return media_urls  # Return list of media URLs
 
         except Exception as e:
             logger.error(f"[Download] Error in download process: {e}, completed {downloaded}/{total} downloads")
@@ -485,12 +489,14 @@ class SnapchatDL:
                 await progress_callback(ws_message)
 
             # Process and download files
+            media_urls = []  # Track URLs for return value
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 futures = []
                 for media in media_list:
                     media_url = media.get("snapUrls", {}).get("mediaUrl")
                     if not media_url:
                         continue
+                    media_urls.append(media_url)  # Collect URL
                     snap_id = media_url.split("/")[-1].split(".")[0]
                     timestamp = int(os.path.getmtime(dir_name)) if os.path.exists(dir_name) else int(asyncio.get_event_loop().time())
                     extension = "mp4" if "video" in media_url.lower() else "jpg"
@@ -591,6 +597,8 @@ class SnapchatDL:
 
             if not self.quiet:
                 logger.info(f"[✓] {downloaded} highlights downloaded for {username}")
+            
+            return media_urls  # Return list of media URLs
 
         except Exception as e:
             logger.error(f"[Download] Error in highlights download process: {e}, completed {downloaded}/{total} downloads")
@@ -635,12 +643,14 @@ class SnapchatDL:
                 await progress_callback(ws_message)
 
             # Process and download files
+            media_urls = []  # Track URLs for return value
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 futures = []
                 for media in media_list:
                     media_url = media.get("snapUrls", {}).get("mediaUrl")
                     if not media_url:
                         continue
+                    media_urls.append(media_url)  # Collect URL
                     snap_id = media_url.split("/")[-1].split(".")[0]
                     timestamp = int(os.path.getmtime(dir_name)) if os.path.exists(dir_name) else int(asyncio.get_event_loop().time())
                     extension = "mp4" if "video" in media_url.lower() else "jpg"
@@ -741,6 +751,8 @@ class SnapchatDL:
 
             if not self.quiet:
                 logger.info(f"[✓] {downloaded} spotlights downloaded for {username}")
+            
+            return media_urls  # Return list of media URLs
 
         except Exception as e:
             logger.error(f"[Download] Error in spotlights download process: {e}, completed {downloaded}/{total} downloads")
