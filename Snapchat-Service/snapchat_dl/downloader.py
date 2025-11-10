@@ -10,7 +10,7 @@ class DownloadError(Exception):
     """Custom exception for download errors."""
     pass
 
-def download_url(url: str, output: str, sleep_interval: float, progress_callback: Optional[Callable] = None, max_retries: int = 3) -> Optional[str]:
+def download_url(url: str, output: str, sleep_interval: float, progress_callback: Optional[Callable] = None, max_retries: int = 5) -> Optional[str]:
     """
     Download file from URL to specified output path with progress tracking and retry logic.
     

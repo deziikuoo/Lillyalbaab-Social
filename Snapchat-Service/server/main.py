@@ -1392,7 +1392,7 @@ async def websocket_endpoint(websocket: WebSocket, username: str, media_type: st
 @app.post("/download", response_model=DownloadResponse)
 async def download_content(request: DownloadRequest, background_tasks: BackgroundTasks):
     try:
-        snapchat = SnapchatDL(directory_prefix=DOWNLOADS_DIR)
+        snapchat = SnapchatDL(directory_prefix=DOWNLOADS_DIR, max_workers=8)
         key = f"{request.username}:{request.download_type}"
         
         # Initialize progress data
@@ -1451,7 +1451,7 @@ async def download_content(request: DownloadRequest, background_tasks: Backgroun
             logger.info(f"🔍 [MANUAL] Starting direct download for {request.username} ({request.download_type})")
             
             # Create SnapchatDL instance for fetching
-            snapchat = SnapchatDL()
+            snapchat = SnapchatDL(max_workers=8)
             
             # Fetch stories based on type
             stories_to_send = []
@@ -1664,7 +1664,7 @@ async def schedule_download(request: ScheduleRequest):
         job_id = f"{request.username}_{datetime.now().timestamp()}"
         
         async def download_job():
-            snapchat = SnapchatDL(directory_prefix=DOWNLOADS_DIR)
+            snapchat = SnapchatDL(directory_prefix=DOWNLOADS_DIR, max_workers=8)
             media_urls = []
             
             if request.download_type in ["all", "stories"]:
@@ -2526,7 +2526,7 @@ async def check_for_new_stories(force=False):
             logger.warning("⚠️ [CACHE] Supabase connection is not available, using fallback")
         
         # Use existing Snapchat downloader to get stories
-        snapchat_dl = SnapchatDL()
+        snapchat_dl = SnapchatDL(max_workers=8)
         
         try:
             # Fetch stories without downloading (same as manual)
@@ -2986,7 +2986,7 @@ async def snapchat_download_endpoint(request: DownloadRequest, background_tasks:
         logger.info(f"📥 [SNAPCHAT-DOWNLOAD] Request for @{request.username} - {request.download_type}")
         
         # Call the existing download function
-        snapchat = SnapchatDL(directory_prefix=DOWNLOADS_DIR)
+        snapchat = SnapchatDL(directory_prefix=DOWNLOADS_DIR, max_workers=8)
         key = f"{request.username}:{request.download_type}"
         
         # Reset progress
