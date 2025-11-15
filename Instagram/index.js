@@ -630,7 +630,7 @@ const healthCheck = {
       console.log("🔄 Restarting polling due to health check failure...");
       stopPolling();
       await new Promise((resolve) => setTimeout(resolve, 5000));
-      startPolling(TARGET_USERNAME);
+      startPolling(TARGET_USERNAMES);
     } catch (error) {
       console.error("Failed to restart polling:", error);
     }
@@ -949,7 +949,7 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID;
 
 // Instagram polling configuration
-let TARGET_USERNAME = null; // Will be set via console prompt or API
+let TARGET_USERNAMES = []; // Array of usernames to poll (supports multiple targets)
 const POLLING_ENABLED = true;
 let currentPollingTimeout = null; // Track current polling timeout for restart
 let pollingStarted = false; // Track if polling has been started
@@ -1357,17 +1357,26 @@ async function promptForTarget() {
   });
 }
 
-// Start polling for the selected target
-function startPolling(username) {
+// Start polling for the selected target(s) - accepts single username or array
+function startPolling(usernames) {
   if (pollingStarted) {
     console.log("⚠️ Polling already started");
     return;
   }
 
-  TARGET_USERNAME = username;
+  // Accept single username or array of usernames
+  if (Array.isArray(usernames)) {
+    TARGET_USERNAMES = usernames;
+  } else {
+    TARGET_USERNAMES = [usernames];
+  }
+
   pollingStarted = true;
 
-  console.log(`🚀 Instagram polling started for @${TARGET_USERNAME}`);
+  const targetsList = TARGET_USERNAMES.map((u) => `@${u}`).join(", ");
+  console.log(
+    `🚀 Instagram polling started for ${TARGET_USERNAMES.length} target(s): ${targetsList}`
+  );
   console.log("📍 Manual poll: GET /poll-now");
   console.log("🌐 Frontend available: http://localhost:" + port);
 
@@ -5562,7 +5571,12 @@ async function tryWebProfileInfoFallback(post, userAgent) {
     );
 
     // Use the existing Web Profile Info API logic but for individual post
-    const profileUrl = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${TARGET_USERNAME}`;
+    // Note: This fallback function may need username passed as parameter in future
+    const username = TARGET_USERNAMES.length > 0 ? TARGET_USERNAMES[0] : null;
+    if (!username) {
+      throw new Error("No target username available for fallback");
+    }
+    const profileUrl = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`;
 
     const response = await axios.get(profileUrl, {
       headers: {
@@ -5642,8 +5656,9 @@ async function processInstagramURL(url, userAgent = null) {
       return { success: false, error: "URL parameter is missing" };
     }
 
-    // Use TARGET_USERNAME from polling context or fallback to default
-    let username = TARGET_USERNAME || "User Not Found";
+    // Use TARGET_USERNAMES from polling context or fallback to default
+    let username =
+      TARGET_USERNAMES.length > 0 ? TARGET_USERNAMES[0] : "User Not Found";
 
     console.log(`📱 Using username from polling context: @${username}`);
 
@@ -6083,11 +6098,17 @@ app.post("/send-to-telegram", async (req, res) => {
 // Main polling function
 async function checkForNewPosts(force = false) {
   try {
+    // Check if any usernames are set
+    if (TARGET_USERNAMES.length === 0) {
+      console.log("❌ No target usernames set for post checking");
+      return;
+    }
+
     // Set consistent user agent for this poll cycle - will be used consistently for all API calls
     const pollUserAgent = getRandomUserAgent();
     setPollingUserAgent(pollUserAgent);
     console.log(
-      `\n🔍 Checking for new posts from @${TARGET_USERNAME} ${
+      `\n🔍 Checking for new posts from ${TARGET_USERNAMES.length} target(s) ${
         force ? "(force send enabled)" : ""
       }`
     );
@@ -6104,291 +6125,341 @@ async function checkForNewPosts(force = false) {
     // Reset GraphQL call counter for new polling cycle
     resetGraphQLCallCounter();
 
-    const { pinnedPosts, regularPosts } = await scrapeInstagramPosts(
-      TARGET_USERNAME,
-      pollUserAgent
-    );
-
-    console.log(
-      `Found ${pinnedPosts.length} pinned posts and ${regularPosts.length} regular posts`
-    );
-
-    // Process pinned posts first
-    console.log(`📌 Processing pinned posts first...`);
-    const newPinnedPosts = await findNewPosts(TARGET_USERNAME, pinnedPosts);
-    console.log(`📌 Found ${newPinnedPosts.length} new pinned posts`);
-
-    // Process regular posts
-    console.log(`📱 Processing regular posts...`);
-    const newRegularPosts = await findNewPosts(TARGET_USERNAME, regularPosts);
-    console.log(`📱 Found ${newRegularPosts.length} new regular posts`);
-
-    // DON'T update cache yet - wait until after successful Telegram sending
-    const allPosts = [...pinnedPosts, ...regularPosts];
-
-    const totalNewPosts = newPinnedPosts.length + newRegularPosts.length;
-    if (totalNewPosts === 0 && !force) {
-      console.log(`✅ No new posts found, skipping post processing...`);
-      // Update cache even when no new posts (refreshes timestamps)
-      await updateRecentPostsCache(TARGET_USERNAME, allPosts);
-      // Continue to check stories even if no new posts
-      return;
-    }
-
-    console.log(
-      `📱 Processing ${totalNewPosts} new posts (${newPinnedPosts.length} pinned + ${newRegularPosts.length} regular)`
-    );
-
-    // Process pinned posts first, then regular posts
-    let allBatchResults = [];
-
-    if (newPinnedPosts.length > 0) {
-      console.log(`📌 Processing ${newPinnedPosts.length} new pinned posts...`);
-      const pinnedBatchResults = await batchGraphQLCall(
-        newPinnedPosts,
-        pollUserAgent
-      );
-      allBatchResults = [...pinnedBatchResults];
-    }
-
-    if (newRegularPosts.length > 0) {
-      console.log(
-        `📱 Processing ${newRegularPosts.length} new regular posts...`
-      );
-      const regularBatchResults = await batchGraphQLCall(
-        newRegularPosts,
-        pollUserAgent
-      );
-      allBatchResults = [...allBatchResults, ...regularBatchResults];
-    }
-
-    // Process batch results with fallback
-    for (const result of allBatchResults) {
+    // Loop through all target usernames
+    let totalActivityCount = 0;
+    for (const currentUsername of TARGET_USERNAMES) {
       try {
-        if (result.error) {
+        console.log(
+          `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        );
+        console.log(
+          `🔍 Processing @${currentUsername} (${
+            TARGET_USERNAMES.indexOf(currentUsername) + 1
+          }/${TARGET_USERNAMES.length})`
+        );
+        console.log(
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        );
+
+        const { pinnedPosts, regularPosts } = await scrapeInstagramPosts(
+          currentUsername,
+          pollUserAgent
+        );
+
+        console.log(
+          `Found ${pinnedPosts.length} pinned posts and ${regularPosts.length} regular posts for @${currentUsername}`
+        );
+
+        // Process pinned posts first
+        console.log(`📌 Processing pinned posts first...`);
+        const newPinnedPosts = await findNewPosts(currentUsername, pinnedPosts);
+        console.log(`📌 Found ${newPinnedPosts.length} new pinned posts`);
+
+        // Process regular posts
+        console.log(`📱 Processing regular posts...`);
+        const newRegularPosts = await findNewPosts(
+          currentUsername,
+          regularPosts
+        );
+        console.log(`📱 Found ${newRegularPosts.length} new regular posts`);
+
+        // DON'T update cache yet - wait until after successful Telegram sending
+        const allPosts = [...pinnedPosts, ...regularPosts];
+
+        const totalNewPosts = newPinnedPosts.length + newRegularPosts.length;
+        if (totalNewPosts === 0 && !force) {
           console.log(
-            `⚠️ Batch result error for ${result.url}: ${result.error}`
+            `✅ No new posts found for @${currentUsername}, skipping post processing...`
           );
+          // Update cache even when no new posts (refreshes timestamps)
+          await updateRecentPostsCache(currentUsername, allPosts);
+          continue; // Move to next username
+        }
 
-          // Try individual processing as fallback
-          const allNewPosts = [...newPinnedPosts, ...newRegularPosts];
-          const originalPost = allNewPosts.find((p) => p.url === result.url);
-          if (originalPost) {
-            console.log(
-              `🔄 Attempting individual processing fallback for ${result.url}`
-            );
-            const fallbackResult = await processIndividualPost(
-              originalPost,
-              pollUserAgent
-            );
+        console.log(
+          `📱 Processing ${totalNewPosts} new posts for @${currentUsername} (${newPinnedPosts.length} pinned + ${newRegularPosts.length} regular)`
+        );
 
-            if (fallbackResult.success) {
-              // Process fallback result
+        // Process pinned posts first, then regular posts
+        let allBatchResults = [];
+
+        if (newPinnedPosts.length > 0) {
+          console.log(
+            `📌 Processing ${newPinnedPosts.length} new pinned posts...`
+          );
+          const pinnedBatchResults = await batchGraphQLCall(
+            newPinnedPosts,
+            pollUserAgent
+          );
+          allBatchResults = [...pinnedBatchResults];
+        }
+
+        if (newRegularPosts.length > 0) {
+          console.log(
+            `📱 Processing ${newRegularPosts.length} new regular posts...`
+          );
+          const regularBatchResults = await batchGraphQLCall(
+            newRegularPosts,
+            pollUserAgent
+          );
+          allBatchResults = [...allBatchResults, ...regularBatchResults];
+        }
+
+        // Process batch results with fallback
+        for (const result of allBatchResults) {
+          try {
+            if (result.error) {
+              console.log(
+                `⚠️ Batch result error for ${result.url}: ${result.error}`
+              );
+
+              // Try individual processing as fallback
+              const allNewPosts = [...newPinnedPosts, ...newRegularPosts];
+              const originalPost = allNewPosts.find(
+                (p) => p.url === result.url
+              );
+              if (originalPost) {
+                console.log(
+                  `🔄 Attempting individual processing fallback for ${result.url}`
+                );
+                const fallbackResult = await processIndividualPost(
+                  originalPost,
+                  pollUserAgent
+                );
+
+                if (fallbackResult.success) {
+                  // Process fallback result
+                  const postType =
+                    fallbackResult.data.length > 1
+                      ? "carousel"
+                      : fallbackResult.data[0]?.isVideo
+                      ? "video"
+                      : "photo";
+                  const isPinned = originalPost.is_pinned || false;
+
+                  // Send to Telegram for automatic polling fallback
+                  if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHANNEL_ID) {
+                    try {
+                      console.log(
+                        `📤 [AUTO-FALLBACK] Sending fallback result to Telegram...`
+                      );
+
+                      if (fallbackResult.data.length > 1) {
+                        // Carousel - send as media group
+                        const caption = `✨ New carousel from <a href="https://www.instagram.com/${currentUsername}/">@${currentUsername}</a>! 📱 <a href="${originalPost.url}">View Original Post</a>`;
+                        await sendMediaGroupToTelegram(
+                          fallbackResult.data,
+                          caption
+                        );
+                        console.log(
+                          `✅ [AUTO-FALLBACK] Carousel media group sent to Telegram successfully (${fallbackResult.data.length} items)`
+                        );
+                      } else {
+                        // Single item - send normally
+                        for (const item of fallbackResult.data) {
+                          const photoCaption = `✨ New photo from <a href="https://www.instagram.com/${currentUsername}/">@${currentUsername}</a>! 📱 <a href="${originalPost.url}">View Original Post</a>`;
+                          const videoCaption = `✨ New video from <a href="https://www.instagram.com/${currentUsername}/">@${currentUsername}</a>! 📱 <a href="${originalPost.url}">View Original Post</a>`;
+
+                          if (item.isVideo) {
+                            await sendVideoToTelegram(item.url, videoCaption);
+                          } else {
+                            await sendPhotoToTelegram(item.url, photoCaption);
+                          }
+                          console.log(
+                            `✅ [AUTO-FALLBACK] Item sent to Telegram successfully`
+                          );
+
+                          // Add delay between Telegram sends
+                          console.log(
+                            `⏳ Waiting 3 seconds after Telegram send to prevent rate limiting...`
+                          );
+                          await new Promise((resolve) =>
+                            setTimeout(resolve, 3000)
+                          );
+                        }
+                      }
+                    } catch (telegramError) {
+                      console.log(
+                        `⚠️ [AUTO-FALLBACK] Failed to send to Telegram: ${telegramError.message}`
+                      );
+                    }
+                  }
+
+                  // Mark as processed
+                  await markPostAsProcessed(
+                    originalPost.id,
+                    currentUsername,
+                    originalPost.url,
+                    postType,
+                    isPinned
+                  );
+                  console.log(
+                    `✅ Fallback processing completed for ${originalPost.url}`
+                  );
+                } else {
+                  console.log(
+                    `❌ Fallback processing also failed for ${result.url}`
+                  );
+                }
+              }
+              continue;
+            }
+
+            // Check if post was already processed
+            let alreadyProcessed = await isPostProcessed(
+              result.shortcode,
+              currentUsername
+            );
+            if (force) {
+              alreadyProcessed = false;
+            }
+
+            if (!alreadyProcessed) {
               const postType =
-                fallbackResult.data.length > 1
+                result.data.length > 1
                   ? "carousel"
-                  : fallbackResult.data[0]?.isVideo
+                  : result.data[0]?.isVideo
                   ? "video"
                   : "photo";
-              const isPinned = originalPost.is_pinned || false;
+              const isPinned = result.isPinned || false;
+              const pinnedIndicator = isPinned ? " (PINNED)" : "";
 
-              // Send to Telegram for automatic polling fallback
+              console.log(
+                `📱 Processing batch result: ${result.shortcode}${pinnedIndicator} | type=${postType}`
+              );
+
+              // Send to Telegram for automatic polling (separate from manual processing)
               if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHANNEL_ID) {
                 try {
-                  console.log(
-                    `📤 [AUTO-FALLBACK] Sending fallback result to Telegram...`
-                  );
-
-                  if (fallbackResult.data.length > 1) {
-                    // Carousel - send as media group
-                    const caption = `✨ New carousel from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${originalPost.url}">View Original Post</a>`;
-                    await sendMediaGroupToTelegram(
-                      fallbackResult.data,
-                      caption
-                    );
+                  if (result.data.length > 1) {
+                    // Carousel with multiple items - send as media group
                     console.log(
-                      `✅ [AUTO-FALLBACK] Carousel media group sent to Telegram successfully (${fallbackResult.data.length} items)`
+                      `📤 [AUTO] Sending carousel as media group (${result.data.length} items)...`
+                    );
+                    const caption = `✨ New carousel from <a href="https://www.instagram.com/${currentUsername}/">@${currentUsername}</a>! 📱 <a href="${result.url}">View Original Post</a>`;
+                    await sendMediaGroupToTelegram(result.data, caption);
+                    console.log(
+                      `✅ [AUTO] Carousel media group sent to Telegram successfully (${result.data.length} items)`
                     );
                   } else {
-                    // Single item - send normally
-                    for (const item of fallbackResult.data) {
-                      const photoCaption = `✨ New photo from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${originalPost.url}">View Original Post</a>`;
-                      const videoCaption = `✨ New video from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${originalPost.url}">View Original Post</a>`;
+                    // Single item - send individually
+                    for (const item of result.data) {
+                      try {
+                        console.log(
+                          `🔄 Processing item: ${item.carouselIndex || 1} of ${
+                            result.data.length
+                          }`
+                        );
 
-                      if (item.isVideo) {
-                        await sendVideoToTelegram(item.url, videoCaption);
-                      } else {
-                        await sendPhotoToTelegram(item.url, photoCaption);
+                        console.log(
+                          `📤 [AUTO] Sending item ${
+                            item.carouselIndex || 1
+                          } to Telegram...`
+                        );
+                        const photoCaption = `✨ New photo from <a href="https://www.instagram.com/${currentUsername}/">@${currentUsername}</a>! 📱 <a href="${result.url}">View Original Post</a>`;
+                        const videoCaption = `✨ New video from <a href="https://www.instagram.com/${currentUsername}/">@${currentUsername}</a>! 📱 <a href="${result.url}">View Original Post</a>`;
+
+                        if (item.isVideo) {
+                          await sendVideoToTelegram(item.url, videoCaption);
+                        } else {
+                          await sendPhotoToTelegram(item.url, photoCaption);
+                        }
+                        console.log(
+                          `✅ [AUTO] Item ${
+                            item.carouselIndex || 1
+                          } sent to Telegram successfully`
+                        );
+
+                        // Add delay between Telegram sends to avoid rate limiting
+                        console.log(
+                          `⏳ Waiting 3 seconds after Telegram send to prevent rate limiting...`
+                        );
+                        await new Promise((resolve) =>
+                          setTimeout(resolve, 3000)
+                        );
+                      } catch (telegramError) {
+                        console.log(
+                          `⚠️ [AUTO] Failed to send item ${
+                            item.carouselIndex || 1
+                          } to Telegram: ${telegramError.message}`
+                        );
                       }
-                      console.log(
-                        `✅ [AUTO-FALLBACK] Item sent to Telegram successfully`
-                      );
-
-                      // Add delay between Telegram sends
-                      console.log(
-                        `⏳ Waiting 3 seconds after Telegram send to prevent rate limiting...`
-                      );
-                      await new Promise((resolve) => setTimeout(resolve, 3000));
                     }
                   }
                 } catch (telegramError) {
                   console.log(
-                    `⚠️ [AUTO-FALLBACK] Failed to send to Telegram: ${telegramError.message}`
+                    `⚠️ [AUTO] Failed to send to Telegram: ${telegramError.message}`
                   );
                 }
               }
 
-              // Mark as processed
+              // Mark post as processed
               await markPostAsProcessed(
-                originalPost.id,
-                TARGET_USERNAME,
-                originalPost.url,
+                result.shortcode,
+                currentUsername,
+                result.url,
                 postType,
                 isPinned
               );
               console.log(
-                `✅ Fallback processing completed for ${originalPost.url}`
+                `✅ Post marked as processed: ${result.shortcode}${
+                  isPinned ? " (PINNED)" : ""
+                }`
               );
+
+              // Success - decrease error multiplier
+              decreaseErrorMultiplier();
             } else {
-              console.log(
-                `❌ Fallback processing also failed for ${result.url}`
-              );
+              console.log(`⏭️ Post already processed: ${result.shortcode}`);
             }
+          } catch (error) {
+            console.error(
+              `Error processing batch result ${result.shortcode}:`,
+              error.message
+            );
+            increaseErrorMultiplier();
           }
-          continue;
         }
 
-        // Check if post was already processed
-        let alreadyProcessed = await isPostProcessed(
-          result.shortcode,
-          TARGET_USERNAME
+        // Update cache AFTER successful Telegram sending (allows retry on failure)
+        console.log(
+          `📊 [CACHE] Updating cache with ${allPosts.length} posts for @${currentUsername} after successful processing...`
         );
-        if (force) {
-          alreadyProcessed = false;
+        await updateRecentPostsCache(currentUsername, allPosts);
+        console.log(
+          `✅ [CACHE] Cache updated successfully for @${currentUsername}`
+        );
+
+        // Track activity for this username
+        if (totalNewPosts > 0) {
+          totalActivityCount += totalNewPosts;
+          console.log(
+            `📊 Activity for @${currentUsername}: +${totalNewPosts} new posts processed (${newPinnedPosts.length} pinned + ${newRegularPosts.length} regular)`
+          );
         }
 
-        if (!alreadyProcessed) {
-          const postType =
-            result.data.length > 1
-              ? "carousel"
-              : result.data[0]?.isVideo
-              ? "video"
-              : "photo";
-          const isPinned = result.isPinned || false;
-          const pinnedIndicator = isPinned ? " (PINNED)" : "";
-
-          console.log(
-            `📱 Processing batch result: ${result.shortcode}${pinnedIndicator} | type=${postType}`
-          );
-
-          // Send to Telegram for automatic polling (separate from manual processing)
-          if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHANNEL_ID) {
-            try {
-              if (result.data.length > 1) {
-                // Carousel with multiple items - send as media group
-                console.log(
-                  `📤 [AUTO] Sending carousel as media group (${result.data.length} items)...`
-                );
-                const caption = `✨ New carousel from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${result.url}">View Original Post</a>`;
-                await sendMediaGroupToTelegram(result.data, caption);
-                console.log(
-                  `✅ [AUTO] Carousel media group sent to Telegram successfully (${result.data.length} items)`
-                );
-              } else {
-                // Single item - send individually
-                for (const item of result.data) {
-                  try {
-                    console.log(
-                      `🔄 Processing item: ${item.carouselIndex || 1} of ${
-                        result.data.length
-                      }`
-                    );
-
-                    console.log(
-                      `📤 [AUTO] Sending item ${
-                        item.carouselIndex || 1
-                      } to Telegram...`
-                    );
-                    const photoCaption = `✨ New photo from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${result.url}">View Original Post</a>`;
-                    const videoCaption = `✨ New video from <a href="https://www.instagram.com/${TARGET_USERNAME}/">@${TARGET_USERNAME}</a>! 📱 <a href="${result.url}">View Original Post</a>`;
-
-                    if (item.isVideo) {
-                      await sendVideoToTelegram(item.url, videoCaption);
-                    } else {
-                      await sendPhotoToTelegram(item.url, photoCaption);
-                    }
-                    console.log(
-                      `✅ [AUTO] Item ${
-                        item.carouselIndex || 1
-                      } sent to Telegram successfully`
-                    );
-
-                    // Add delay between Telegram sends to avoid rate limiting
-                    console.log(
-                      `⏳ Waiting 3 seconds after Telegram send to prevent rate limiting...`
-                    );
-                    await new Promise((resolve) => setTimeout(resolve, 3000));
-                  } catch (telegramError) {
-                    console.log(
-                      `⚠️ [AUTO] Failed to send item ${
-                        item.carouselIndex || 1
-                      } to Telegram: ${telegramError.message}`
-                    );
-                  }
-                }
-              }
-            } catch (telegramError) {
-              console.log(
-                `⚠️ [AUTO] Failed to send to Telegram: ${telegramError.message}`
-              );
-            }
-          }
-
-          // Mark post as processed
-          await markPostAsProcessed(
-            result.shortcode,
-            TARGET_USERNAME,
-            result.url,
-            postType,
-            isPinned
-          );
-          console.log(
-            `✅ Post marked as processed: ${result.shortcode}${
-              isPinned ? " (PINNED)" : ""
-            }`
-          );
-
-          // Success - decrease error multiplier
-          decreaseErrorMultiplier();
-        } else {
-          console.log(`⏭️ Post already processed: ${result.shortcode}`);
-        }
-      } catch (error) {
+        console.log(`✅ Completed processing for @${currentUsername}`);
+      } catch (usernameError) {
         console.error(
-          `Error processing batch result ${result.shortcode}:`,
-          error.message
+          `❌ Error processing @${currentUsername}:`,
+          usernameError.message
         );
-        increaseErrorMultiplier();
+        console.log(
+          `⚠️ [CACHE] Cache NOT updated for @${currentUsername} due to processing error - will retry next poll`
+        );
+        // Continue to next username even if this one fails
       }
     }
 
-    // Update cache AFTER successful Telegram sending (allows retry on failure)
-    console.log(
-      `📊 [CACHE] Updating cache with ${allPosts.length} posts after successful processing...`
-    );
-    await updateRecentPostsCache(TARGET_USERNAME, allPosts);
-    console.log(`✅ [CACHE] Cache updated successfully`);
-
-    // Update activity tracker with new posts found
-    if (totalNewPosts > 0) {
-      // Count all new posts as activity (since they're new to our system)
-      activityTracker.updateActivity(totalNewPosts);
+    // Update activity tracker with total new posts found across all usernames
+    if (totalActivityCount > 0) {
+      activityTracker.updateActivity(totalActivityCount);
       console.log(
-        `📊 Activity updated: +${totalNewPosts} new posts processed (${newPinnedPosts.length} pinned + ${newRegularPosts.length} regular)`
+        `📊 Total activity updated: +${totalActivityCount} new posts processed across all targets`
       );
     }
 
-    console.log("✅ Polling check completed");
+    console.log("✅ Polling check completed for all targets");
     // Always print request statistics after each polling run
     requestTracker.printStats();
 
@@ -6421,10 +6492,14 @@ function scheduleNextPoll() {
     hour12: true,
     timeZone: "America/New_York",
   });
+  const targetsList =
+    TARGET_USERNAMES.length > 0
+      ? TARGET_USERNAMES.map((u) => `@${u}`).join(", ")
+      : "no targets";
   console.log(
     `⏰ Next poll scheduled in ${finalMinutes} minutes (smart: ${baseMinutes} ± ${Math.abs(
       variation
-    )}) for @${TARGET_USERNAME} at ${timeString} EDT`
+    )}) for ${targetsList} at ${timeString} EDT`
   );
 
   currentPollingTimeout = setTimeout(async () => {
@@ -6486,7 +6561,11 @@ function stopPolling() {
 // Restart polling immediately
 function restartPolling() {
   stopPolling();
-  console.log(`🔄 Restarting polling for @${TARGET_USERNAME}`);
+  const targetsList =
+    TARGET_USERNAMES.length > 0
+      ? TARGET_USERNAMES.map((u) => `@${u}`).join(", ")
+      : "no targets";
+  console.log(`🔄 Restarting polling for ${targetsList}`);
 
   // Start new poll after 5 seconds
   setTimeout(async () => {
@@ -6504,7 +6583,8 @@ function restartPolling() {
 // Get current target status
 app.get("/target", (req, res) => {
   res.json({
-    current_target: TARGET_USERNAME || "",
+    current_targets: TARGET_USERNAMES || [],
+    current_target: TARGET_USERNAMES.length > 0 ? TARGET_USERNAMES[0] : "", // Backward compatibility
     polling_enabled: POLLING_ENABLED,
     polling_active: currentPollingTimeout !== null,
     polling_started: pollingStarted,
@@ -6514,7 +6594,9 @@ app.get("/target", (req, res) => {
 // Get cache status
 app.get("/cache-status", async (req, res) => {
   try {
-    const username = req.query.username || TARGET_USERNAME;
+    const username =
+      req.query.username ||
+      (TARGET_USERNAMES.length > 0 ? TARGET_USERNAMES[0] : null);
 
     if (!username) {
       return res.status(400).json({ error: "No username specified" });
@@ -6604,7 +6686,8 @@ app.get("/health", (req, res) => {
       enabled: POLLING_ENABLED,
       active: currentPollingTimeout !== null,
       started: pollingStarted,
-      target: TARGET_USERNAME,
+      targets: TARGET_USERNAMES,
+      target: TARGET_USERNAMES.length > 0 ? TARGET_USERNAMES[0] : "", // Backward compatibility
     },
     database: db ? "connected" : "disconnected",
     consecutiveFailures: healthCheck.consecutiveFailures,
@@ -6655,48 +6738,89 @@ app.get("/logs", (req, res) => {
   }
 });
 
-// Change target username
+// Change target username(s) - supports single or multiple usernames
 app.post("/target", async (req, res) => {
   try {
-    const { username, url } = req.body;
-    const input = username || url;
+    const { username, url, usernames } = req.body;
 
-    if (!input) {
-      return res.status(400).json({
-        error: "Username or URL required",
-        examples: [
-          "instagram",
-          "@instagram",
-          "https://instagram.com/instagram",
-          "instagram.com/instagram",
-        ],
-      });
+    let newTargets = [];
+    const oldTargets = [...TARGET_USERNAMES];
+
+    // Support both single username/url and array of usernames
+    if (usernames && Array.isArray(usernames)) {
+      // Multiple usernames provided
+      if (usernames.length === 0) {
+        return res.status(400).json({
+          error: "At least one username is required",
+        });
+      }
+
+      // Parse all usernames
+      for (const input of usernames) {
+        try {
+          const parsed = parseInstagramTarget(input);
+          if (!newTargets.includes(parsed)) {
+            newTargets.push(parsed);
+          }
+        } catch (parseError) {
+          return res.status(400).json({
+            error: `Invalid username in array: ${input}`,
+            details: parseError.message,
+          });
+        }
+      }
+    } else {
+      // Single username (backward compatible)
+      const input = username || url;
+      if (!input) {
+        return res.status(400).json({
+          error: "Username, URL, or usernames array required",
+          examples: [
+            "instagram",
+            "@instagram",
+            "https://instagram.com/instagram",
+            "instagram.com/instagram",
+            '["instagram", "another_user"]',
+          ],
+        });
+      }
+
+      const newTarget = parseInstagramTarget(input);
+      newTargets = [newTarget];
     }
 
-    // Parse and validate the new target
-    const newTarget = parseInstagramTarget(input);
-    const oldTarget = TARGET_USERNAME;
+    // Check if targets are the same (order-independent comparison)
+    const oldTargetsSorted = [...oldTargets].sort().join(",");
+    const newTargetsSorted = [...newTargets].sort().join(",");
 
-    if (newTarget === oldTarget) {
+    if (oldTargetsSorted === newTargetsSorted) {
       return res.json({
         success: true,
-        message: `Target is already set to @${newTarget}`,
-        target: newTarget,
+        message: `Target(s) already set to: ${newTargets
+          .map((u) => `@${u}`)
+          .join(", ")}`,
+        targets: newTargets,
         changed: false,
       });
     }
 
-    // Update target
-    TARGET_USERNAME = newTarget;
+    // Update targets
+    TARGET_USERNAMES = newTargets;
     console.log(
-      `🎯 Target changed from @${oldTarget || "none"} to @${newTarget}`
+      `🎯 Target(s) changed from ${
+        oldTargets.length > 0
+          ? oldTargets.map((u) => `@${u}`).join(", ")
+          : "none"
+      } to ${newTargets.map((u) => `@${u}`).join(", ")}`
     );
 
     res.json({
       success: true,
-      message: `Target changed to @${newTarget}`,
-      old_target: oldTarget,
-      new_target: newTarget,
+      message: `Target(s) changed to: ${newTargets
+        .map((u) => `@${u}`)
+        .join(", ")}`,
+      old_targets: oldTargets,
+      new_targets: newTargets,
       changed: true,
       polling_restarted: false,
     });
@@ -6709,22 +6833,75 @@ app.post("/target", async (req, res) => {
         "@instagram",
         "https://instagram.com/instagram",
         "instagram.com/instagram",
+        '["instagram", "another_user"]',
       ],
     });
   }
 });
 
-// Reset processed posts for current username (dangerous)
+// Remove a single target from the targets list
+app.delete("/target/:username", async (req, res) => {
+  try {
+    const { username } = req.params;
+
+    if (!username) {
+      return res.status(400).json({
+        error: "Username parameter is required",
+      });
+    }
+
+    // Parse the username to ensure it matches the format
+    const parsedUsername = parseInstagramTarget(username);
+    const oldTargets = [...TARGET_USERNAMES];
+
+    // Check if the target exists
+    if (!TARGET_USERNAMES.includes(parsedUsername)) {
+      return res.status(404).json({
+        error: `Target @${parsedUsername} not found in current targets`,
+        current_targets: TARGET_USERNAMES,
+      });
+    }
+
+    // Remove the target
+    TARGET_USERNAMES = TARGET_USERNAMES.filter((u) => u !== parsedUsername);
+
+    console.log(
+      `🗑️ Removed target @${parsedUsername}. Remaining targets: ${
+        TARGET_USERNAMES.length > 0
+          ? TARGET_USERNAMES.map((u) => `@${u}`).join(", ")
+          : "none"
+      }`
+    );
+
+    res.json({
+      success: true,
+      message: `Target @${parsedUsername} removed successfully`,
+      removed_target: parsedUsername,
+      old_targets: oldTargets,
+      new_targets: TARGET_USERNAMES,
+    });
+  } catch (error) {
+    console.error("Error removing target:", error.message);
+    res.status(400).json({
+      error: error.message,
+    });
+  }
+});
+
+// Reset processed posts for current username(s) (dangerous)
 app.post("/reset-processed", async (req, res) => {
   try {
-    const username = TARGET_USERNAME;
-    if (!username) return res.status(400).json({ error: "No target set" });
+    const { username } = req.body;
+    const targetUsername =
+      username || (TARGET_USERNAMES.length > 0 ? TARGET_USERNAMES[0] : null);
+    if (!targetUsername)
+      return res.status(400).json({ error: "No target set" });
 
     // Clear both processed posts and cache
     const clearProcessed = new Promise((resolve, reject) => {
       db.run(
         "DELETE FROM processed_posts WHERE username = ?",
-        [username],
+        [targetUsername],
         function (err) {
           if (err) reject(err);
           else resolve(this.changes);
@@ -6732,7 +6909,7 @@ app.post("/reset-processed", async (req, res) => {
       );
     });
 
-    const clearCache = clearUserCache(username);
+    const clearCache = clearUserCache(targetUsername);
 
     const [processedDeleted, cacheDeleted] = await Promise.all([
       clearProcessed,
@@ -6740,15 +6917,17 @@ app.post("/reset-processed", async (req, res) => {
     ]);
 
     console.log(
-      `🧹 Cleared processed posts for @${username} (deleted=${processedDeleted})`
+      `🧹 Cleared processed posts for @${targetUsername} (deleted=${processedDeleted})`
     );
-    console.log(`🗑️ Cleared cache for @${username} (deleted=${cacheDeleted})`);
+    console.log(
+      `🗑️ Cleared cache for @${targetUsername} (deleted=${cacheDeleted})`
+    );
 
     res.json({
       success: true,
       processed_deleted: processedDeleted,
       cache_deleted: cacheDeleted,
-      username,
+      username: targetUsername,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -6758,11 +6937,14 @@ app.post("/reset-processed", async (req, res) => {
 // Clear cache for current username
 app.post("/clear-cache", async (req, res) => {
   try {
-    const username = TARGET_USERNAME;
-    if (!username) return res.status(400).json({ error: "No target set" });
+    const { username } = req.body;
+    const targetUsername =
+      username || (TARGET_USERNAMES.length > 0 ? TARGET_USERNAMES[0] : null);
+    if (!targetUsername)
+      return res.status(400).json({ error: "No target set" });
 
-    const deleted = await clearUserCache(username);
-    res.json({ success: true, deleted, username });
+    const deleted = await clearUserCache(targetUsername);
+    res.json({ success: true, deleted, username: targetUsername });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -6771,15 +6953,18 @@ app.post("/clear-cache", async (req, res) => {
 // Clear all data for current username (processed posts + cache)
 app.post("/clear-all", async (req, res) => {
   try {
-    const username = TARGET_USERNAME;
-    if (!username) return res.status(400).json({ error: "No target set" });
+    const { username } = req.body;
+    const targetUsername =
+      username || (TARGET_USERNAMES.length > 0 ? TARGET_USERNAMES[0] : null);
+    if (!targetUsername)
+      return res.status(400).json({ error: "No target set" });
 
-    const result = await clearUserData(username);
+    const result = await clearUserData(targetUsername);
     res.json({
       success: true,
       processed_deleted: result.processedDeleted,
       cache_deleted: result.cacheDeleted,
-      username,
+      username: targetUsername,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -6821,8 +7006,11 @@ app.get("/storage-status", (req, res) => {
 // Clear stories data for current username (processed stories + stories cache)
 app.post("/clear-stories-cache", async (req, res) => {
   try {
-    const username = TARGET_USERNAME;
-    if (!username) return res.status(400).json({ error: "No target set" });
+    const { username } = req.body;
+    const targetUsername =
+      username || (TARGET_USERNAMES.length > 0 ? TARGET_USERNAMES[0] : null);
+    if (!targetUsername)
+      return res.status(400).json({ error: "No target set" });
 
     let processedStoriesDeleted = 0;
     let storiesCacheDeleted = 0;
@@ -6831,9 +7019,11 @@ app.post("/clear-stories-cache", async (req, res) => {
     if (supabaseManager && supabaseManager.isConnected) {
       try {
         console.log(
-          `🗑️ Clearing stories data for @${username} using Supabase...`
+          `🗑️ Clearing stories data for @${targetUsername} using Supabase...`
         );
-        const result = await supabaseManager.clearUserStoriesData(username);
+        const result = await supabaseManager.clearUserStoriesData(
+          targetUsername
+        );
         processedStoriesDeleted = result.processedStoriesDeleted;
         storiesCacheDeleted = result.storiesCacheDeleted;
       } catch (error) {
@@ -6849,14 +7039,14 @@ app.post("/clear-stories-cache", async (req, res) => {
       const clearProcessedStories = new Promise((resolve) => {
         db.run(
           "DELETE FROM processed_stories WHERE username = ?",
-          [username],
+          [targetUsername],
           function (err) {
             if (err) {
               console.error("Database error clearing processed stories:", err);
               resolve(0);
             } else {
               console.log(
-                `🗑️ Cleared processed stories for @${username} (${this.changes} entries) (SQLite)`
+                `🗑️ Cleared processed stories for @${targetUsername} (${this.changes} entries) (SQLite)`
               );
               resolve(this.changes);
             }
@@ -6871,14 +7061,14 @@ app.post("/clear-stories-cache", async (req, res) => {
             const { error } = await supabase
               .from("recent_stories_cache")
               .delete()
-              .eq("username", username);
+              .eq("username", targetUsername);
 
             if (error) {
               console.error("Supabase error clearing stories cache:", error);
               resolve(0);
             } else {
               console.log(
-                `🗑️ Cleared stories cache for @${username} (Supabase)`
+                `🗑️ Cleared stories cache for @${targetUsername} (Supabase)`
               );
               resolve(1); // Assume at least 1 was cleared
             }
@@ -6903,11 +7093,11 @@ app.post("/clear-stories-cache", async (req, res) => {
     const totalDeleted = processedStoriesDeleted + storiesCacheDeleted;
     res.json({
       success: true,
-      username: username,
+      username: targetUsername,
       processed_stories_deleted: processedStoriesDeleted,
       stories_cache_deleted: storiesCacheDeleted,
       total_deleted: totalDeleted,
-      message: `Cleared ${totalDeleted} stories data entries for @${username}`,
+      message: `Cleared ${totalDeleted} stories data entries for @${targetUsername}`,
     });
   } catch (error) {
     console.error("Error clearing stories data:", error);
@@ -6918,7 +7108,9 @@ app.post("/clear-stories-cache", async (req, res) => {
 // Debug endpoint to check story tables
 app.get("/debug-stories", async (req, res) => {
   try {
-    const username = req.query.username || TARGET_USERNAME;
+    const username =
+      req.query.username ||
+      (TARGET_USERNAMES.length > 0 ? TARGET_USERNAMES[0] : null);
     if (!username)
       return res.status(400).json({ error: "No username provided" });
 
@@ -6986,28 +7178,32 @@ app.get("/debug-stories", async (req, res) => {
 // Start polling endpoint
 app.post("/start-polling", async (req, res) => {
   try {
-    if (!TARGET_USERNAME) {
+    if (TARGET_USERNAMES.length === 0) {
       return res
         .status(400)
         .json({ error: "No target set. Please set a target first." });
     }
 
     if (pollingStarted) {
+      const targetsList = TARGET_USERNAMES.map((u) => `@${u}`).join(", ");
       return res.json({
         success: true,
         message: "Polling already started",
-        target: TARGET_USERNAME,
+        targets: TARGET_USERNAMES,
+        target: TARGET_USERNAMES[0], // Backward compatibility
         polling_active: true,
       });
     }
 
-    console.log(`🚀 Starting polling for @${TARGET_USERNAME}`);
-    startPolling(TARGET_USERNAME);
+    const targetsList = TARGET_USERNAMES.map((u) => `@${u}`).join(", ");
+    console.log(`🚀 Starting polling for ${targetsList}`);
+    startPolling(TARGET_USERNAMES);
 
     res.json({
       success: true,
-      message: `Polling started for @${TARGET_USERNAME}`,
-      target: TARGET_USERNAME,
+      message: `Polling started for ${targetsList}`,
+      targets: TARGET_USERNAMES,
+      target: TARGET_USERNAMES[0], // Backward compatibility
       polling_active: true,
     });
   } catch (error) {
@@ -7026,7 +7222,11 @@ app.post("/stop-polling", async (req, res) => {
       });
     }
 
-    console.log(`🛑 Stopping polling for @${TARGET_USERNAME}`);
+    const targetsList =
+      TARGET_USERNAMES.length > 0
+        ? TARGET_USERNAMES.map((u) => `@${u}`).join(", ")
+        : "targets";
+    console.log(`🛑 Stopping polling for ${targetsList}`);
     stopPolling();
 
     res.json({
@@ -7048,7 +7248,8 @@ app.get("/poll-now", async (req, res) => {
     res.json({
       success: true,
       message: "Polling completed",
-      target: TARGET_USERNAME,
+      targets: TARGET_USERNAMES,
+      target: TARGET_USERNAMES.length > 0 ? TARGET_USERNAMES[0] : "", // Backward compatibility
       force,
     });
   } catch (error) {
@@ -7322,7 +7523,7 @@ async function processInstagramStories(username, userAgent = null) {
     if (newStories.length === 0) {
       console.log(`✅ No new stories to process`);
       // Add all as already processed
-      stories.forEach(story => {
+      stories.forEach((story) => {
         processedStories.push({
           ...story,
           isNew: false,
@@ -7330,77 +7531,124 @@ async function processInstagramStories(username, userAgent = null) {
         });
       });
     } else {
-      console.log(`📱 Processing ${newStories.length} new stories with concurrent downloads...`);
+      console.log(
+        `📱 Processing ${newStories.length} new stories with concurrent downloads...`
+      );
 
       // ===== PHASE 2: Download all new stories concurrently (8 threads) =====
-      console.log(`📥 Phase 1/4: Downloading ${newStories.length} stories (8 concurrent)...`);
+      console.log(
+        `📥 Phase 1/4: Downloading ${newStories.length} stories (8 concurrent)...`
+      );
       const downloadResults = await Promise.allSettled(
-        newStories.map((story, index) => 
+        newStories.map((story, index) =>
           downloadStoryFile(story.url, story.storyType, story.index, username)
-            .then(downloaded => ({ ...story, ...downloaded, downloadSuccess: true }))
-            .catch(error => ({ ...story, downloadSuccess: false, downloadError: error.message }))
+            .then((downloaded) => ({
+              ...story,
+              ...downloaded,
+              downloadSuccess: true,
+            }))
+            .catch((error) => ({
+              ...story,
+              downloadSuccess: false,
+              downloadError: error.message,
+            }))
         )
       );
 
       const successfulDownloads = downloadResults
-        .filter(result => result.status === 'fulfilled' && result.value.downloadSuccess)
-        .map(result => result.value);
+        .filter(
+          (result) =>
+            result.status === "fulfilled" && result.value.downloadSuccess
+        )
+        .map((result) => result.value);
 
-      const failedDownloads = downloadResults
-        .filter(result => result.status === 'fulfilled' && !result.value.downloadSuccess);
+      const failedDownloads = downloadResults.filter(
+        (result) =>
+          result.status === "fulfilled" && !result.value.downloadSuccess
+      );
 
-      console.log(`✅ Downloaded: ${successfulDownloads.length}/${newStories.length} stories`);
+      console.log(
+        `✅ Downloaded: ${successfulDownloads.length}/${newStories.length} stories`
+      );
       if (failedDownloads.length > 0) {
         console.log(`⚠️ Failed: ${failedDownloads.length} downloads`);
       }
 
       // ===== PHASE 3: FFmpeg processing (2-3 concurrent) =====
-      console.log(`🎬 Phase 2/4: Processing videos with FFmpeg (2 concurrent)...`);
-      const ffmpegProcessed = await processFfmpegBatches(successfulDownloads, 2);
+      console.log(
+        `🎬 Phase 2/4: Processing videos with FFmpeg (2 concurrent)...`
+      );
+      const ffmpegProcessed = await processFfmpegBatches(
+        successfulDownloads,
+        2
+      );
 
       // ===== PHASE 4: Mark as processed in database =====
-      console.log(`💾 Phase 3/4: Marking ${ffmpegProcessed.length} stories as processed...`);
+      console.log(
+        `💾 Phase 3/4: Marking ${ffmpegProcessed.length} stories as processed...`
+      );
       await Promise.allSettled(
-        ffmpegProcessed.map(story =>
-          markStoryProcessed(username, story.url, story.storyType, story.storyId)
+        ffmpegProcessed.map((story) =>
+          markStoryProcessed(
+            username,
+            story.url,
+            story.storyType,
+            story.storyId
+          )
             .then(() => {
               storyIds.push(story.storyId);
               console.log(`✅ Marked ${story.storyId} as processed`);
             })
-            .catch(error => console.log(`⚠️ Failed to mark ${story.storyId}: ${error.message}`))
+            .catch((error) =>
+              console.log(
+                `⚠️ Failed to mark ${story.storyId}: ${error.message}`
+              )
+            )
         )
       );
 
       // ===== PHASE 5: Send to Telegram concurrently (8 threads) =====
       if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHANNEL_ID) {
-        console.log(`📤 Phase 4/4: Sending ${ffmpegProcessed.length} stories to Telegram (8 concurrent)...`);
-        
+        console.log(
+          `📤 Phase 4/4: Sending ${ffmpegProcessed.length} stories to Telegram (8 concurrent)...`
+        );
+
         const telegramResults = await Promise.allSettled(
           ffmpegProcessed.map(async (story) => {
             try {
               const storyCaption = `💫 View Story: <a href="https://www.instagram.com/${username}/">@${username}</a>`;
-              
-              if (story.isVideo || story.storyType === 'video') {
+
+              if (story.isVideo || story.storyType === "video") {
                 await sendVideoToTelegram(story.filePath, storyCaption);
               } else {
                 await sendPhotoToTelegram(story.filePath, storyCaption);
               }
-              
+
               console.log(`✅ Sent ${story.fileName} to Telegram`);
               return { ...story, telegramSuccess: true };
             } catch (error) {
-              console.log(`⚠️ Telegram failed for ${story.fileName}: ${error.message}`);
-              return { ...story, telegramSuccess: false, telegramError: error.message };
+              console.log(
+                `⚠️ Telegram failed for ${story.fileName}: ${error.message}`
+              );
+              return {
+                ...story,
+                telegramSuccess: false,
+                telegramError: error.message,
+              };
             }
           })
         );
 
-        const sentCount = telegramResults.filter(r => r.status === 'fulfilled' && r.value.telegramSuccess).length;
-        console.log(`✅ Telegram: ${sentCount}/${ffmpegProcessed.length} stories sent`);
+        const sentCount = telegramResults.filter(
+          (r) => r.status === "fulfilled" && r.value.telegramSuccess
+        ).length;
+        console.log(
+          `✅ Telegram: ${sentCount}/${ffmpegProcessed.length} stories sent`
+        );
 
         // ===== PHASE 6: Cleanup temp files =====
         console.log(`🗑️ Cleaning up ${ffmpegProcessed.length} temp files...`);
-        ffmpegProcessed.forEach(story => {
+        ffmpegProcessed.forEach((story) => {
           if (story.filePath && fs.existsSync(story.filePath)) {
             try {
               fs.unlinkSync(story.filePath);
@@ -7412,7 +7660,7 @@ async function processInstagramStories(username, userAgent = null) {
       } else {
         console.log(`⚠️ No Telegram configured, cleaning up files...`);
         // Cleanup if no Telegram
-        ffmpegProcessed.forEach(story => {
+        ffmpegProcessed.forEach((story) => {
           if (story.filePath && fs.existsSync(story.filePath)) {
             try {
               fs.unlinkSync(story.filePath);
@@ -7424,7 +7672,7 @@ async function processInstagramStories(username, userAgent = null) {
       }
 
       // Add successfully processed stories
-      ffmpegProcessed.forEach(story => {
+      ffmpegProcessed.forEach((story) => {
         processedStories.push({
           ...story,
           isNew: true,
@@ -7434,10 +7682,10 @@ async function processInstagramStories(username, userAgent = null) {
     }
 
     // Add already-processed stories
-    const alreadyProcessed = stories.filter(s => 
-      !newStories.some(ns => ns.storyId === s.storyId)
+    const alreadyProcessed = stories.filter(
+      (s) => !newStories.some((ns) => ns.storyId === s.storyId)
     );
-    alreadyProcessed.forEach(story => {
+    alreadyProcessed.forEach((story) => {
       processedStories.push({
         ...story,
         isNew: false,
@@ -7567,7 +7815,7 @@ async function reencodeStoryVideo(inputPath, outputPath) {
 async function filterNewStories(stories, username) {
   console.log(`🔍 Checking which of ${stories.length} stories are new...`);
   const newStories = [];
-  
+
   for (const story of stories) {
     try {
       const isProcessed = await checkStoryProcessed(username, story.storyId);
@@ -7580,54 +7828,78 @@ async function filterNewStories(stories, username) {
       newStories.push(story);
     }
   }
-  
-  console.log(`📊 Found ${newStories.length} new stories (${stories.length - newStories.length} already processed)`);
+
+  console.log(
+    `📊 Found ${newStories.length} new stories (${
+      stories.length - newStories.length
+    } already processed)`
+  );
   return newStories;
 }
 
 // Helper: Process FFmpeg in controlled batches
 async function processFfmpegBatches(downloadedStories, batchSize = 2) {
-  console.log(`🎬 Processing ${downloadedStories.length} videos with FFmpeg (${batchSize} concurrent)...`);
+  console.log(
+    `🎬 Processing ${downloadedStories.length} videos with FFmpeg (${batchSize} concurrent)...`
+  );
   const results = [];
-  
+
   for (let i = 0; i < downloadedStories.length; i += batchSize) {
     const batch = downloadedStories.slice(i, i + batchSize);
-    console.log(`🎬 FFmpeg batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(downloadedStories.length/batchSize)} (${batch.length} files)`);
-    
+    console.log(
+      `🎬 FFmpeg batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(
+        downloadedStories.length / batchSize
+      )} (${batch.length} files)`
+    );
+
     const batchResults = await Promise.allSettled(
       batch.map(async (story) => {
         // Only process videos that need FFmpeg
-        if (story.storyType === 'video' && ffmpegAvailable && story.filePath) {
+        if (story.storyType === "video" && ffmpegAvailable && story.filePath) {
           try {
-            const reencodedFileName = `${path.basename(story.filePath, path.extname(story.filePath))}_fixed${path.extname(story.filePath)}`;
-            const reencodedFilePath = path.join(path.dirname(story.filePath), reencodedFileName);
-            
+            const reencodedFileName = `${path.basename(
+              story.filePath,
+              path.extname(story.filePath)
+            )}_fixed${path.extname(story.filePath)}`;
+            const reencodedFilePath = path.join(
+              path.dirname(story.filePath),
+              reencodedFileName
+            );
+
             await reencodeStoryVideo(story.filePath, reencodedFilePath);
-            
+
             // Delete original, use re-encoded
             if (fs.existsSync(story.filePath)) {
               fs.unlinkSync(story.filePath);
             }
-            
-            return { ...story, filePath: reencodedFilePath, fileName: reencodedFileName };
+
+            return {
+              ...story,
+              filePath: reencodedFilePath,
+              fileName: reencodedFileName,
+            };
           } catch (ffmpegError) {
-            console.log(`⚠️ FFmpeg failed for ${story.fileName}, using original: ${ffmpegError.message}`);
+            console.log(
+              `⚠️ FFmpeg failed for ${story.fileName}, using original: ${ffmpegError.message}`
+            );
             return story; // Use original file
           }
         }
         return story; // Images or no FFmpeg
       })
     );
-    
+
     // Collect successful results
     batchResults.forEach((result) => {
-      if (result.status === 'fulfilled') {
+      if (result.status === "fulfilled") {
         results.push(result.value);
       }
     });
   }
-  
-  console.log(`✅ FFmpeg processing complete: ${results.length}/${downloadedStories.length} files ready`);
+
+  console.log(
+    `✅ FFmpeg processing complete: ${results.length}/${downloadedStories.length} files ready`
+  );
   return results;
 }
 
@@ -7905,8 +8177,8 @@ async function updateStoriesCache(username, stories) {
     const { error: insertError } = await supabase
       .from("recent_stories_cache")
       .upsert(cacheEntries, {
-        onConflict: 'username,story_id',
-        ignoreDuplicates: false
+        onConflict: "username,story_id",
+        ignoreDuplicates: false,
       });
 
     if (insertError) {
@@ -7926,8 +8198,9 @@ async function updateStoriesCache(username, stories) {
 // Check for new stories (integrated with main polling)
 async function checkForNewStories(force = false) {
   try {
-    if (!TARGET_USERNAME) {
-      console.log("❌ No target username set for story checking");
+    // Check if any usernames are set
+    if (TARGET_USERNAMES.length === 0) {
+      console.log("❌ No target usernames set for story checking");
       return;
     }
 
@@ -7943,9 +8216,9 @@ async function checkForNewStories(force = false) {
     const pollUserAgent = getRandomUserAgent();
     setPollingUserAgent(pollUserAgent);
     console.log(
-      `\n📱 Checking for new stories from @${TARGET_USERNAME} ${
-        force ? "(force send enabled)" : ""
-      }`
+      `\n📱 Checking for new stories from ${
+        TARGET_USERNAMES.length
+      } target(s) ${force ? "(force send enabled)" : ""}`
     );
     console.log(
       `🌐 Stories polling cycle using consistent user agent: ${pollUserAgent.substring(
@@ -7960,27 +8233,54 @@ async function checkForNewStories(force = false) {
     // Reset GraphQL call counter for stories polling cycle
     resetGraphQLCallCounter();
 
-    const result = await processInstagramStories(
-      TARGET_USERNAME,
-      pollUserAgent
-    );
-
-    if (result.success) {
-      const { summary } = result.data;
-      console.log(
-        `📊 Stories summary: ${summary.total} total, ${summary.new} new, ${summary.existing} existing`
-      );
-
-      if (summary.new > 0) {
+    // Loop through all target usernames
+    for (const currentUsername of TARGET_USERNAMES) {
+      try {
         console.log(
-          `✅ Found ${summary.new} new stories from @${TARGET_USERNAME}`
+          `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
         );
-      } else {
-        console.log(`ℹ️ No new stories found from @${TARGET_USERNAME}`);
+        console.log(
+          `📱 Processing stories for @${currentUsername} (${
+            TARGET_USERNAMES.indexOf(currentUsername) + 1
+          }/${TARGET_USERNAMES.length})`
+        );
+        console.log(
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        );
+
+        const result = await processInstagramStories(
+          currentUsername,
+          pollUserAgent
+        );
+
+        if (result.success) {
+          const { summary } = result.data;
+          console.log(
+            `📊 Stories summary for @${currentUsername}: ${summary.total} total, ${summary.new} new, ${summary.existing} existing`
+          );
+
+          if (summary.new > 0) {
+            console.log(
+              `✅ Found ${summary.new} new stories from @${currentUsername}`
+            );
+          } else {
+            console.log(`ℹ️ No new stories found from @${currentUsername}`);
+          }
+        } else {
+          console.error(
+            `❌ Story processing failed for @${currentUsername}: ${result.error}`
+          );
+        }
+      } catch (usernameError) {
+        console.error(
+          `❌ Error processing stories for @${currentUsername}:`,
+          usernameError.message
+        );
+        // Continue to next username even if this one fails
       }
-    } else {
-      console.error(`❌ Story processing failed: ${result.error}`);
     }
+
+    console.log("✅ Story checking completed for all targets");
   } catch (error) {
     console.error("❌ Story checking error:", error);
     increaseErrorMultiplier();
@@ -8013,24 +8313,41 @@ app.get("/stories", async (req, res) => {
   }
 });
 
-// Get stories for target user (uses TARGET_USERNAME from polling context)
+// Get stories for target user(s) (uses TARGET_USERNAMES from polling context)
 app.get("/stories/target", async (req, res) => {
   try {
-    if (!TARGET_USERNAME) {
-      return res
-        .status(400)
-        .json({ error: "No target username set. Use /target endpoint first." });
+    if (TARGET_USERNAMES.length === 0) {
+      return res.status(400).json({
+        error: "No target username(s) set. Use /target endpoint first.",
+      });
     }
 
-    const result = await processInstagramStories(
-      TARGET_USERNAME,
-      getPollingUserAgent()
-    );
+    // Process stories for all targets (or just first one if single target expected)
+    const { all } = req.query;
+    const usernamesToProcess =
+      all === "true" ? TARGET_USERNAMES : [TARGET_USERNAMES[0]];
 
-    if (result.success) {
-      res.json(result.data);
+    const results = [];
+    for (const username of usernamesToProcess) {
+      const result = await processInstagramStories(
+        username,
+        getPollingUserAgent()
+      );
+      results.push({ username, ...result });
+    }
+
+    // Return single result for backward compatibility, or array if multiple
+    if (usernamesToProcess.length === 1) {
+      const singleResult = results[0];
+      if (singleResult.success) {
+        res.json(singleResult.data);
+      } else {
+        res
+          .status(500)
+          .json({ error: singleResult.error || "Internal Server Error" });
+      }
     } else {
-      res.status(500).json({ error: result.error || "Internal Server Error" });
+      res.json({ results });
     }
   } catch (err) {
     console.error("Target stories error:", err.message);

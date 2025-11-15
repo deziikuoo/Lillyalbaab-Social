@@ -86,8 +86,10 @@ const App: React.FC = () => {
   }>({});
 
   // Target management state (separate for Instagram and Snapchat)
+  const [instagramCurrentTargets, setInstagramCurrentTargets] =
+    useState<string[]>([]);
   const [instagramCurrentTarget, setInstagramCurrentTarget] =
-    useState<string>("");
+    useState<string>(""); // Backward compatibility - first target
   const [snapchatCurrentTarget, setSnapchatCurrentTarget] =
     useState<string>("");
   const [newTarget, setNewTarget] = useState<string>("");
@@ -159,7 +161,10 @@ const App: React.FC = () => {
     try {
       const response = await fetch(`${INSTAGRAM_API_BASE}/target`);
       const data = await response.json();
-      setInstagramCurrentTarget(data.current_target || "");
+      // Support both new array format and old single target format
+      const targets = data.current_targets || (data.current_target ? [data.current_target] : []);
+      setInstagramCurrentTargets(targets);
+      setInstagramCurrentTarget(targets.length > 0 ? targets[0] : ""); // Backward compatibility
       setInstagramPollingStatus({
         enabled: data.polling_enabled || false,
         active: data.polling_active || false,
@@ -189,7 +194,42 @@ const App: React.FC = () => {
     }
   };
 
-  // Set Instagram target
+  // Remove a single Instagram target
+  const removeInstagramTarget = async (targetToRemove: string) => {
+    if (!targetToRemove) {
+      setTargetError("No target specified to remove");
+      return;
+    }
+
+    setTargetLoading(true);
+    setTargetError(null);
+
+    try {
+      const response = await fetch(`${INSTAGRAM_API_BASE}/target/${targetToRemove}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Update state with remaining targets
+        setInstagramCurrentTargets(data.new_targets || []);
+        setInstagramCurrentTarget(data.new_targets && data.new_targets.length > 0 ? data.new_targets[0] : "");
+        await fetchInstagramCurrentTarget();
+      } else {
+        setTargetError(data.error || "Failed to remove target");
+      }
+    } catch (error) {
+      setTargetError("Network error. Please try again.");
+    } finally {
+      setTargetLoading(false);
+    }
+  };
+
+  // Set Instagram target(s) - supports single or multiple
   const changeInstagramTarget = async () => {
     if (!newTarget.trim()) {
       setTargetError("Please enter a username or URL");
@@ -200,18 +240,29 @@ const App: React.FC = () => {
     setTargetError(null);
 
     try {
+      // Check if multiple usernames (comma or newline separated)
+      const input = newTarget.trim();
+      const usernames = input.split(/[,\n]/).map(u => u.trim()).filter(u => u.length > 0);
+      
+      const requestBody = usernames.length > 1 
+        ? { usernames } 
+        : { username: usernames[0] };
+
       const response = await fetch(`${INSTAGRAM_API_BASE}/target`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ username: newTarget.trim() }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
 
       if (data.success) {
-        setInstagramCurrentTarget(data.new_target);
+        // Update state with new targets
+        const newTargets = data.new_targets || (data.new_target ? [data.new_target] : []);
+        setInstagramCurrentTargets(newTargets);
+        setInstagramCurrentTarget(newTargets.length > 0 ? newTargets[0] : "");
         setNewTarget("");
         setShowTargetManager(false);
         await fetchInstagramCurrentTarget();
@@ -1095,15 +1146,51 @@ const App: React.FC = () => {
                 )}
                 <div className="target-examples">
                   <small>
-                    Examples: instagram, @instagram, instagram.com/instagram
+                    Examples: instagram, @instagram, instagram.com/instagram<br/>
+                    Multiple targets: Separate with commas or newlines (e.g., "user1, user2" or "user1\nuser2")
                   </small>
                 </div>
+                {instagramCurrentTargets.length > 0 && (
+                  <div className="current-targets" style={{ marginTop: "10px", padding: "10px", backgroundColor: "#f0f0f0", borderRadius: "4px" }}>
+                    <strong>Current Targets ({instagramCurrentTargets.length}):</strong>
+                    <ul style={{ margin: "5px 0", paddingLeft: "20px", listStyle: "none" }}>
+                      {instagramCurrentTargets.map((target, idx) => (
+                        <li key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "5px" }}>
+                          <span>@{target}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Are you sure you want to remove @${target} from the targets?`)) {
+                                removeInstagramTarget(target);
+                              }
+                            }}
+                            disabled={targetLoading}
+                            style={{
+                              marginLeft: "10px",
+                              padding: "2px 8px",
+                              fontSize: "12px",
+                              backgroundColor: "#ff4444",
+                              color: "white",
+                              border: "none",
+                              borderRadius: "3px",
+                              cursor: targetLoading ? "not-allowed" : "pointer",
+                              opacity: targetLoading ? 0.6 : 1,
+                            }}
+                            title={`Remove @${target}`}
+                          >
+                            ✕
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </form>
             </div>
           )}
 
           {/* Polling Manager */}
-          {showPollingManager && instagramCurrentTarget && (
+          {showPollingManager && instagramCurrentTargets.length > 0 && (
             <div className="polling-manager">
               <div className="polling-controls">
                 <div className="polling-buttons">
