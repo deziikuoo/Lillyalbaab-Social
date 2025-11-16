@@ -124,7 +124,7 @@ async function resumeRenderServices(which) {
       console.error(`[Render] Failed to resume ${id}: ${resp.status} ${text}`);
     } else {
       console.log(`[Render] Service ${id} resumed successfully`);
-      
+
       // Trigger a manual deploy to get the latest commit
       console.log(`[Render] Triggering manual deploy for service ${id}...`);
       await triggerManualDeploy(apiKey, id);
@@ -135,25 +135,32 @@ async function resumeRenderServices(which) {
 async function triggerManualDeploy(apiKey, serviceId) {
   try {
     // Trigger manual deploy
-    const deployResp = await fetch(`${RENDER_API_BASE}/services/${serviceId}/deploys`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        clearCache: false,
-      }),
-    });
-    
+    const deployResp = await fetch(
+      `${RENDER_API_BASE}/services/${serviceId}/deploys`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          clearCache: false,
+        }),
+      }
+    );
+
     if (!deployResp.ok) {
       const text = await deployResp.text();
-      console.warn(`[Render] Failed to trigger deploy for ${serviceId}: ${text}`);
+      console.warn(
+        `[Render] Failed to trigger deploy for ${serviceId}: ${text}`
+      );
     } else {
       console.log(`[Render] Manual deploy triggered for service ${serviceId}`);
     }
   } catch (error) {
-    console.warn(`[Render] Error triggering deploy for ${serviceId}: ${error.message}`);
+    console.warn(
+      `[Render] Error triggering deploy for ${serviceId}: ${error.message}`
+    );
   }
 }
 
@@ -217,6 +224,89 @@ async function setUptimeMonitorsStatus(which, status) {
   }
 }
 
+async function checkServiceHealth(serviceUrl, serviceName) {
+  try {
+    const healthUrl = `${serviceUrl}/health`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    
+    const resp = await fetch(healthUrl, {
+      method: "GET",
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Render-Rotation-Controller/1.0",
+      },
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (resp.ok && resp.status < 500) {
+      // Try to parse JSON response if available
+      try {
+        const data = await resp.json();
+        return { healthy: true, status: resp.status, data };
+      } catch {
+        // If not JSON, just check status code
+        return { healthy: true, status: resp.status };
+      }
+    }
+    
+    return { healthy: false, status: resp.status, error: `HTTP ${resp.status}` };
+  } catch (error) {
+    if (error.name === "AbortError") {
+      return { healthy: false, error: "Request timeout" };
+    }
+    return { healthy: false, error: error.message };
+  }
+}
+
+async function waitForServicesReady(instagramUrl, snapchatUrl, maxWaitTime = 300000) {
+  // maxWaitTime: 5 minutes default
+  const startTime = Date.now();
+  const checkInterval = 15000; // Check every 15 seconds
+  
+  console.log(`[Health Check] Waiting for both services to be healthy...`);
+  console.log(`[Health Check]   Instagram: ${instagramUrl}`);
+  console.log(`[Health Check]   Snapchat: ${snapchatUrl}`);
+  
+  while (Date.now() - startTime < maxWaitTime) {
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    
+    // Check Instagram service
+    const instagramHealth = await checkServiceHealth(instagramUrl, "Instagram");
+    const snapchatHealth = await checkServiceHealth(snapchatUrl, "Snapchat");
+    
+    if (instagramHealth.healthy && snapchatHealth.healthy) {
+      console.log(`[Health Check] ✅ Both services are healthy! (${elapsed}s elapsed)`);
+      return true;
+    }
+    
+    // Log status
+    const instagramStatus = instagramHealth.healthy 
+      ? "✅ Healthy" 
+      : `❌ Unhealthy (${instagramHealth.error || `HTTP ${instagramHealth.status}`})`;
+    const snapchatStatus = snapchatHealth.healthy 
+      ? "✅ Healthy" 
+      : `❌ Unhealthy (${snapchatHealth.error || `HTTP ${snapchatHealth.status}`})`;
+    
+    console.log(
+      `[Health Check] Services not ready yet (${elapsed}s elapsed):`
+    );
+    console.log(`[Health Check]   Instagram: ${instagramStatus}`);
+    console.log(`[Health Check]   Snapchat: ${snapchatStatus}`);
+    
+    await new Promise((resolve) => setTimeout(resolve, checkInterval));
+  }
+  
+  console.warn(
+    `[Health Check] ⚠️ Services did not become healthy within ${maxWaitTime / 1000}s timeout`
+  );
+  console.warn(
+    `[Health Check] Proceeding with Vercel update anyway - services may still be deploying`
+  );
+  return false;
+}
+
 async function switchVercelBackend(activeWhich) {
   const token = process.env.VERCEL_TOKEN;
   const projectId = process.env.VERCEL_PROJECT_ID;
@@ -227,14 +317,16 @@ async function switchVercelBackend(activeWhich) {
     activeWhich === "A"
       ? process.env.INSTAGRAM_ACCOUNT1_URL
       : process.env.INSTAGRAM_ACCOUNT2_URL;
-  
+
   const snapchatUrl =
     activeWhich === "A"
       ? process.env.SNAPCHAT_ACCOUNT1_URL
       : process.env.SNAPCHAT_ACCOUNT2_URL;
 
   if (!token || !projectId || !instagramUrl || !snapchatUrl) {
-    throw new Error("Missing Vercel configuration (need INSTAGRAM_ACCOUNT*_URL and SNAPCHAT_ACCOUNT*_URL)");
+    throw new Error(
+      "Missing Vercel configuration (need INSTAGRAM_ACCOUNT*_URL and SNAPCHAT_ACCOUNT*_URL)"
+    );
   }
 
   console.log(`[Vercel] Updating backend URLs:`);
@@ -274,7 +366,7 @@ async function switchVercelBackend(activeWhich) {
   // Update or create env vars
   for (const { key, value } of envVars) {
     const existing = envMap.get(key);
-    
+
     if (existing) {
       // Update existing env var - preserve existing targets
       const url = new URL(
@@ -297,7 +389,11 @@ async function switchVercelBackend(activeWhich) {
         const text = await resp.text();
         console.error(`[Vercel] Failed to update env ${key}: ${text}`);
       } else {
-        console.log(`[Vercel] Updated env ${key} (preserved targets: ${existing.target?.join(", ") || "none"})`);
+        console.log(
+          `[Vercel] Updated env ${key} (preserved targets: ${
+            existing.target?.join(", ") || "none"
+          })`
+        );
       }
     } else {
       // Create new env var
@@ -356,6 +452,27 @@ async function handleAccount(kind) {
 
   await suspendRenderServices(exhausted);
   await resumeRenderServices(active);
+  
+  // Get service URLs for health checks
+  const instagramUrl =
+    active === "A"
+      ? process.env.INSTAGRAM_ACCOUNT1_URL
+      : process.env.INSTAGRAM_ACCOUNT2_URL;
+  
+  const snapchatUrl =
+    active === "A"
+      ? process.env.SNAPCHAT_ACCOUNT1_URL
+      : process.env.SNAPCHAT_ACCOUNT2_URL;
+  
+  if (!instagramUrl || !snapchatUrl) {
+    console.warn(
+      `[Health Check] Service URLs not configured, skipping health check`
+    );
+  } else {
+    // Wait for both services to be healthy before updating Vercel
+    await waitForServicesReady(instagramUrl, snapchatUrl);
+  }
+  
   await switchVercelBackend(active);
 
   // Toggle UptimeRobot monitors
