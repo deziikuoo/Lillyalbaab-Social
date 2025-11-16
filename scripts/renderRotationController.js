@@ -222,39 +222,69 @@ async function switchVercelBackend(activeWhich) {
 
   const existingEnvs = await listResp.json();
   const envMap = new Map();
+  // Find env vars that apply to production (may have multiple targets)
   existingEnvs.envs?.forEach((env) => {
     if (env.target?.includes("production")) {
-      envMap.set(env.key, env);
+      // If multiple env vars with same key exist, prefer the one with production
+      if (!envMap.has(env.key) || env.target.includes("production")) {
+        envMap.set(env.key, env);
+      }
     }
   });
 
   // Update or create env vars
   for (const { key, value } of envVars) {
     const existing = envMap.get(key);
-    const url = new URL(
-      `${VERCEL_API_BASE}/v9/projects/${projectId}/env${existing ? `/${existing.id}` : ""}`
-    );
-    if (teamId) url.searchParams.set("teamId", teamId);
+    
+    if (existing) {
+      // Update existing env var - preserve existing targets
+      const url = new URL(
+        `${VERCEL_API_BASE}/v9/projects/${projectId}/env/${existing.id}`
+      );
+      if (teamId) url.searchParams.set("teamId", teamId);
 
-    const resp = await fetch(url.toString(), {
-      method: existing ? "PATCH" : "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        key,
-        value,
-        target: ["production"],
-        type: "plain",
-      }),
-    });
+      const resp = await fetch(url.toString(), {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          value, // Only update the value, preserve existing targets
+        }),
+      });
 
-    if (!resp.ok) {
-      const text = await resp.text();
-      console.error(`[Vercel] Failed to update env ${key}: ${text}`);
+      if (!resp.ok) {
+        const text = await resp.text();
+        console.error(`[Vercel] Failed to update env ${key}: ${text}`);
+      } else {
+        console.log(`[Vercel] Updated env ${key} (preserved targets: ${existing.target?.join(", ") || "none"})`);
+      }
     } else {
-      console.log(`[Vercel] ${existing ? "Updated" : "Created"} env ${key}`);
+      // Create new env var
+      const url = new URL(`${VERCEL_API_BASE}/v9/projects/${projectId}/env`);
+      if (teamId) url.searchParams.set("teamId", teamId);
+
+      const resp = await fetch(url.toString(), {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          key,
+          value,
+          target: ["production"],
+          type: "plain",
+        }),
+      });
+
+      if (!resp.ok) {
+        const text = await resp.text();
+        console.error(`[Vercel] Failed to create env ${key}: ${text}`);
+      } else {
+        console.log(`[Vercel] Created env ${key}`);
+      }
     }
   }
 
