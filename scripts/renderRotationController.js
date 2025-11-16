@@ -222,20 +222,28 @@ async function switchVercelBackend(activeWhich) {
   const projectId = process.env.VERCEL_PROJECT_ID;
   const teamId = process.env.VERCEL_TEAM_ID || "";
 
-  const backendUrl =
+  // Get separate URLs for Instagram and Snapchat
+  const instagramUrl =
     activeWhich === "A"
-      ? process.env.BACKEND_ACCOUNT1_URL
-      : process.env.BACKEND_ACCOUNT2_URL;
+      ? process.env.INSTAGRAM_ACCOUNT1_URL
+      : process.env.INSTAGRAM_ACCOUNT2_URL;
+  
+  const snapchatUrl =
+    activeWhich === "A"
+      ? process.env.SNAPCHAT_ACCOUNT1_URL
+      : process.env.SNAPCHAT_ACCOUNT2_URL;
 
-  if (!token || !projectId || !backendUrl) {
-    throw new Error("Missing Vercel configuration");
+  if (!token || !projectId || !instagramUrl || !snapchatUrl) {
+    throw new Error("Missing Vercel configuration (need INSTAGRAM_ACCOUNT*_URL and SNAPCHAT_ACCOUNT*_URL)");
   }
 
-  console.log(`[Vercel] Updating backend URL to ${backendUrl}`);
+  console.log(`[Vercel] Updating backend URLs:`);
+  console.log(`[Vercel]   Instagram: ${instagramUrl}`);
+  console.log(`[Vercel]   Snapchat: ${snapchatUrl}`);
 
   const envVars = [
-    { key: "VITE_INSTAGRAM_API_BASE", value: backendUrl },
-    { key: "VITE_SNAPCHAT_API_BASE", value: backendUrl },
+    { key: "VITE_INSTAGRAM_API_BASE", value: instagramUrl },
+    { key: "VITE_SNAPCHAT_API_BASE", value: snapchatUrl },
   ];
 
   // First, get existing env vars to find their IDs
