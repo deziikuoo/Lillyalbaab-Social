@@ -6173,10 +6173,12 @@ app.post("/send-to-telegram", async (req, res) => {
 });
 
 // Main polling function
-async function checkForNewPosts(force = false) {
+async function checkForNewPosts(force = false, usernamesOverride = null) {
   try {
+    const usernames = usernamesOverride || TARGET_USERNAMES;
+
     // Check if any usernames are set
-    if (TARGET_USERNAMES.length === 0) {
+    if (usernames.length === 0) {
       console.log("❌ No target usernames set for post checking");
       return;
     }
@@ -6185,7 +6187,7 @@ async function checkForNewPosts(force = false) {
     const pollUserAgent = getRandomUserAgent();
     setPollingUserAgent(pollUserAgent);
     console.log(
-      `\n🔍 Checking for new posts from ${TARGET_USERNAMES.length} target(s) ${
+      `\n🔍 Checking for new posts from ${usernames.length} target(s) ${
         force ? "(force send enabled)" : ""
       }`
     );
@@ -6204,7 +6206,7 @@ async function checkForNewPosts(force = false) {
 
     // Loop through all target usernames
     let totalActivityCount = 0;
-    for (const currentUsername of TARGET_USERNAMES) {
+    for (const currentUsername of usernames) {
       try {
         console.log(
           `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
@@ -6532,15 +6534,6 @@ async function checkForNewPosts(force = false) {
         );
         // Continue to next username even if this one fails
       }
-
-      // If there are more targets, add a delay before processing the next one
-      const currentIndex = TARGET_USERNAMES.indexOf(currentUsername);
-      if (currentIndex < TARGET_USERNAMES.length - 1) {
-        console.log(
-          `⏳ Completed polling for @${currentUsername}. Sleeping 5 minutes before next target...`
-        );
-        await sleep(5 * 60 * 1000);
-      }
     }
 
     // Update activity tracker with total new posts found across all usernames
@@ -6561,6 +6554,36 @@ async function checkForNewPosts(force = false) {
     console.log(
       "⚠️ [CACHE] Cache NOT updated due to processing error - posts will retry next poll"
     );
+  }
+}
+
+// Run full poll (stories + posts) per user, with delays between users
+async function runFullPollCycle(force = false) {
+  const usernames = [...TARGET_USERNAMES];
+
+  if (usernames.length === 0) {
+    console.log("❌ No target usernames set for polling");
+    return;
+  }
+
+  for (let i = 0; i < usernames.length; i++) {
+    const username = usernames[i];
+    console.log(
+      `\n🔁 Starting full poll cycle for @${username} (${i + 1}/${
+        usernames.length
+      })`
+    );
+
+    // Stories first, then posts for this single user
+    await checkForNewStories(force, [username]);
+    await checkForNewPosts(force, [username]);
+
+    if (i < usernames.length - 1) {
+      console.log(
+        `⏳ Completed full poll for @${username}. Sleeping 5 minutes before next target...`
+      );
+      await sleep(5 * 60 * 1000);
+    }
   }
 }
 
@@ -6600,9 +6623,8 @@ function scheduleNextPoll() {
         // Check if cleanup operations are running and wait if needed
         await cleanupQueue.waitForCompletion();
 
-        // Check for new stories first, then posts
-        await checkForNewStories();
-        await checkForNewPosts();
+        // Run full poll per user (stories + posts) with delay between users
+        await runFullPollCycle();
 
         // Reset activity counter for next poll cycle
         activityTracker.resetActivityCounter();
@@ -6620,8 +6642,7 @@ function scheduleNextPoll() {
         setTimeout(async () => {
           if (POLLING_ENABLED) {
             try {
-              await checkForNewStories();
-              await checkForNewPosts();
+              await runFullPollCycle();
 
               // Reset activity counter for next poll cycle
               activityTracker.resetActivityCounter();
@@ -6662,8 +6683,7 @@ function restartPolling() {
   // Start new poll after 5 seconds
   setTimeout(async () => {
     try {
-      await checkForNewStories();
-      await checkForNewPosts();
+      await runFullPollCycle();
       scheduleNextPoll();
     } catch (error) {
       console.error("❌ Restart polling failed:", error);
@@ -8307,10 +8327,12 @@ async function updateStoriesCache(username, stories) {
 }
 
 // Check for new stories (integrated with main polling)
-async function checkForNewStories(force = false) {
+async function checkForNewStories(force = false, usernamesOverride = null) {
   try {
+    const usernames = usernamesOverride || TARGET_USERNAMES;
+
     // Check if any usernames are set
-    if (TARGET_USERNAMES.length === 0) {
+    if (usernames.length === 0) {
       console.log("❌ No target usernames set for story checking");
       return;
     }
@@ -8328,7 +8350,7 @@ async function checkForNewStories(force = false) {
     setPollingUserAgent(pollUserAgent);
     console.log(
       `\n📱 Checking for new stories from ${
-        TARGET_USERNAMES.length
+        usernames.length
       } target(s) ${force ? "(force send enabled)" : ""}`
     );
     console.log(
@@ -8345,7 +8367,7 @@ async function checkForNewStories(force = false) {
     resetGraphQLCallCounter();
 
     // Loop through all target usernames
-    for (const currentUsername of TARGET_USERNAMES) {
+    for (const currentUsername of usernames) {
       try {
         console.log(
           `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
@@ -8388,15 +8410,6 @@ async function checkForNewStories(force = false) {
           usernameError.message
         );
         // Continue to next username even if this one fails
-      }
-
-      // If there are more targets, add a delay before processing the next one
-      const currentIndex = TARGET_USERNAMES.indexOf(currentUsername);
-      if (currentIndex < TARGET_USERNAMES.length - 1) {
-        console.log(
-          `⏳ Completed story polling for @${currentUsername}. Sleeping 5 minutes before next target...`
-        );
-        await sleep(5 * 60 * 1000);
       }
     }
 
