@@ -1,4 +1,4 @@
-// Instagram Backend Service - Health check test v2
+// Instagram Backend Service - Health check test v3 (with fallback)
 const express = require("express");
 const axios = require("axios");
 const fs = require("fs");

@@ -1,4 +1,4 @@
-﻿# Snapchat Backend Service - Health check test v2
+﻿# Snapchat Backend Service - Health check test v3 (with fallback)
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
