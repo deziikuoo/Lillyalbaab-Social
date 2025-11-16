@@ -1710,6 +1710,11 @@ async function sendMediaGroupToTelegram(mediaItems, caption = "") {
   }
 }
 
+// Simple sleep helper for async delays
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // Function to send video to Telegram (supports both direct URLs and file uploads)
 async function sendVideoToTelegram(videoUrl, caption = "") {
   let tempFilePath = null;
@@ -1893,6 +1898,78 @@ async function sendVideoToTelegram(videoUrl, caption = "") {
       } catch (cleanupError) {
         console.error("Failed to cleanup temp file:", cleanupError.message);
       }
+    }
+  }
+}
+
+// Wrapper with retry logic for Telegram video sends
+async function sendVideoToTelegramWithRetry(
+  videoUrl,
+  caption = "",
+  maxRetries = 3
+) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      if (attempt > 0) {
+        console.log(
+          `🔁 Retrying Telegram video send (attempt ${
+            attempt + 1
+          }/${maxRetries})...`
+        );
+      }
+
+      const result = await sendVideoToTelegram(videoUrl, caption);
+
+      if (attempt > 0) {
+        console.log(
+          `✅ Telegram video send succeeded on attempt ${
+            attempt + 1
+          }/${maxRetries}`
+        );
+      }
+
+      return result;
+    } catch (error) {
+      const status = error.response?.status;
+      const msg = error.message || "Unknown Telegram error";
+
+      console.log("❌ Telegram video send failed", {
+        attempt: attempt + 1,
+        maxRetries,
+        status,
+        message: msg,
+      });
+
+      // Classify error to decide if we should retry
+      const isNetworkError = !status; // timeout, DNS, etc.
+      const isServerError = status >= 500;
+      const isRateLimited = status === 429;
+
+      const shouldRetry = isNetworkError || isServerError || isRateLimited;
+
+      if (!shouldRetry || attempt === maxRetries - 1) {
+        console.log(
+          `🚫 Not retrying Telegram video send (type=${
+            isRateLimited
+              ? "rate_limit"
+              : isServerError
+              ? "server_error"
+              : isNetworkError
+              ? "network"
+              : "client_error"
+          })`
+        );
+        throw error;
+      }
+
+      // Exponential backoff: 2^attempt seconds (1, 2, 4, ...)
+      const waitSeconds = Math.pow(2, attempt);
+      console.log(
+        `⏳ Waiting ${waitSeconds} seconds before next Telegram retry (status=${
+          status || "none"
+        })...`
+      );
+      await sleep(waitSeconds * 1000);
     }
   }
 }
@@ -5756,7 +5833,7 @@ async function processInstagramURL(url, userAgent = null) {
             const videoCaption = `✨ New video from <a href="https://www.instagram.com/${username}/">@${username}</a>! 📱 <a href="${processedUrl}">View Original Post</a>`;
 
             if (item.isVideo) {
-              await sendVideoToTelegram(item.url, videoCaption);
+              await sendVideoToTelegramWithRetry(item.url, videoCaption);
             } else {
               await sendPhotoToTelegram(item.url, photoCaption);
             }
@@ -6067,7 +6144,7 @@ app.post("/send-to-telegram", async (req, res) => {
     if (resolvedType === "photo") {
       result = await sendPhotoToTelegram(finalUrl, fullCaption);
     } else {
-      result = await sendVideoToTelegram(finalUrl, fullCaption);
+      result = await sendVideoToTelegramWithRetry(finalUrl, fullCaption);
     }
 
     res.json({
@@ -6261,7 +6338,10 @@ async function checkForNewPosts(force = false) {
                           const videoCaption = `✨ New video from <a href="https://www.instagram.com/${currentUsername}/">@${currentUsername}</a>! 📱 <a href="${originalPost.url}">View Original Post</a>`;
 
                           if (item.isVideo) {
-                            await sendVideoToTelegram(item.url, videoCaption);
+                            await sendVideoToTelegramWithRetry(
+                              item.url,
+                              videoCaption
+                            );
                           } else {
                             await sendPhotoToTelegram(item.url, photoCaption);
                           }
@@ -6360,7 +6440,10 @@ async function checkForNewPosts(force = false) {
                         const videoCaption = `✨ New video from <a href="https://www.instagram.com/${currentUsername}/">@${currentUsername}</a>! 📱 <a href="${result.url}">View Original Post</a>`;
 
                         if (item.isVideo) {
-                          await sendVideoToTelegram(item.url, videoCaption);
+                          await sendVideoToTelegramWithRetry(
+                            item.url,
+                            videoCaption
+                          );
                         } else {
                           await sendPhotoToTelegram(item.url, photoCaption);
                         }
@@ -6448,6 +6531,15 @@ async function checkForNewPosts(force = false) {
           `⚠️ [CACHE] Cache NOT updated for @${currentUsername} due to processing error - will retry next poll`
         );
         // Continue to next username even if this one fails
+      }
+
+      // If there are more targets, add a delay before processing the next one
+      const currentIndex = TARGET_USERNAMES.indexOf(currentUsername);
+      if (currentIndex < TARGET_USERNAMES.length - 1) {
+        console.log(
+          `⏳ Completed polling for @${currentUsername}. Sleeping 5 minutes before next target...`
+        );
+        await sleep(5 * 60 * 1000);
       }
     }
 
@@ -7619,7 +7711,10 @@ async function processInstagramStories(username, userAgent = null) {
               const storyCaption = `💫 View Story: <a href="https://www.instagram.com/${username}/">@${username}</a>`;
 
               if (story.isVideo || story.storyType === "video") {
-                await sendVideoToTelegram(story.filePath, storyCaption);
+                await sendVideoToTelegramWithRetry(
+                  story.filePath,
+                  storyCaption
+                );
               } else {
                 await sendPhotoToTelegram(story.filePath, storyCaption);
               }
@@ -8166,28 +8261,44 @@ async function updateStoriesCache(username, stories) {
       return;
     }
 
-    // Insert new cache entries (UPSERT to handle duplicates)
-    const cacheEntries = stories.map((story) => ({
-      username,
-      story_url: story.url,
-      story_id: story.storyId,
-      story_type: story.storyType || (story.is_video ? "video" : "photo"),
-    }));
+    // Deduplicate by (username, story_id) to avoid ON CONFLICT issues
+    const cacheEntriesMap = new Map();
+    for (const story of stories) {
+      const storyId = story.storyId;
+      if (!storyId) continue; // skip entries without a stable ID
 
+      const key = `${username}:${storyId}`;
+      if (!cacheEntriesMap.has(key)) {
+        cacheEntriesMap.set(key, {
+          username,
+          story_url: story.url,
+          story_id: storyId,
+          story_type: story.storyType || (story.is_video ? "video" : "photo"),
+        });
+      }
+    }
+
+    const cacheEntries = Array.from(cacheEntriesMap.values());
+
+    if (cacheEntries.length === 0) {
+      console.log(
+        `✅ Stories cache updated for @${username} (0 deduped entries - no valid story IDs)`
+      );
+      return;
+    }
+
+    // Simple insert (no upsert) after delete
     const { error: insertError } = await supabase
       .from("recent_stories_cache")
-      .upsert(cacheEntries, {
-        onConflict: "username,story_id",
-        ignoreDuplicates: false,
-      });
+      .insert(cacheEntries);
 
     if (insertError) {
-      console.error("Supabase error upserting stories cache:", insertError);
+      console.error("Supabase error inserting stories cache:", insertError);
       throw insertError;
     }
 
     console.log(
-      `✅ Stories cache updated for @${username} (${stories.length} new entries inserted)`
+      `✅ Stories cache updated for @${username} (${cacheEntries.length} entries) (Supabase)`
     );
   } catch (error) {
     console.error("Error updating stories cache:", error);
@@ -8277,6 +8388,15 @@ async function checkForNewStories(force = false) {
           usernameError.message
         );
         // Continue to next username even if this one fails
+      }
+
+      // If there are more targets, add a delay before processing the next one
+      const currentIndex = TARGET_USERNAMES.indexOf(currentUsername);
+      if (currentIndex < TARGET_USERNAMES.length - 1) {
+        console.log(
+          `⏳ Completed story polling for @${currentUsername}. Sleeping 5 minutes before next target...`
+        );
+        await sleep(5 * 60 * 1000);
       }
     }
 

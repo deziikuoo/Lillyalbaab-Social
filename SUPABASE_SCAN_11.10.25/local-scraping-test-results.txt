@@ -1,0 +1,127 @@
+================================================================================
+≡ƒö¼ Testing EXACT Production Scraping Logic
+================================================================================
+
+≡ƒôì Endpoint: https://www.snapchat.com/add/wolftyla/
+≡ƒôì User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36...
+
+================================================================================
+STEP 1: Fetching HTML
+================================================================================
+Γ£à Status: 200
+≡ƒôä HTML length: 628130 characters
+
+================================================================================
+STEP 2: Extracting JSON with Production Regex
+================================================================================
+Γ£à JSON extracted (358781 characters)
+
+================================================================================
+STEP 3: Parsing JSON
+================================================================================
+Γ£à JSON parsed successfully
+
+================================================================================
+STEP 4: Extracting snapList
+================================================================================
+Γ£à pageProps keys: viewerInfo, localization, pageLinks, pageMetadata, userProfile, story, storyMetadata, linkPreview, lenses, curatedHighlights...
+Γ£à Story data keys: storyType, snapList, storyId, storyTitle, thumbnailUrl, storySubtitle, storyShareId, canonicalUrlSuffix, emoji, storyTapId, videoTrackUrl, highlightId, isAttributed
+Γ£à snapList found: 10 snaps
+
+================================================================================
+STEP 5: Snap IDs Production Code Would Process
+================================================================================
+
+≡ƒÄ» TOTAL: 10 snaps
+
+≡ƒô▒ Snap 0:
+   Full ID:  pWHqAhPcRT6rrYfCQJc_zwAAganBxamFnemlwAZpTNoobAZpSuT4FAAAAAA
+   Unique:   anBxamFnemlw
+   Type:     photo
+   Time:     1762324463
+
+≡ƒô▒ Snap 1:
+   Full ID:  pWHqAhPcRT6rrYfCQJc_zwAAgbGFud2RwbmZ0AZpTNosAAZpSuT7mAAAAAA
+   Unique:   bGFud2RwbmZ0
+   Type:     photo
+   Time:     1762324463
+
+≡ƒô▒ Snap 2:
+   Full ID:  pWHqAhPcRT6rrYfCQJc_zwAAgdWJra3hmbG5wAZpUEpAQAZpUEo2YAAAAAA
+   Unique:   dWJra3hmbG5w
+   Type:     photo
+   Time:     1762347093
+
+≡ƒô▒ Snap 3:
+   Full ID:  pWHqAhPcRT6rrYfCQJc_zwAAgZmxydG5jcWVvAZprYQhPAZprYKbMAAAAAA
+   Unique:   ZmxydG5jcWVv
+   Type:     video
+   Time:     1762738087
+
+≡ƒô▒ Snap 4:
+   Full ID:  pWHqAhPcRT6rrYfCQJc_zwAAga3R2ZGppcGxhAZprYR_BAZprYKbWAAAAAA
+   Unique:   a3R2ZGppcGxh
+   Type:     video
+   Time:     1762738087
+
+≡ƒô▒ Snap 5:
+   Full ID:  pWHqAhPcRT6rrYfCQJc_zwAAgdWx6eG5mc3VxAZprYSDLAZprYKbgAAAAAA
+   Unique:   dWx6eG5mc3Vx
+   Type:     video
+   Time:     1762738087
+
+≡ƒô▒ Snap 6:
+   Full ID:  pWHqAhPcRT6rrYfCQJc_zwAAga3Rid3R0YnprAZpsfMvRAZpsfLRUAAAAAA
+   Unique:   a3Rid3R0Ynpr
+   Type:     video
+   Time:     1762756703
+
+≡ƒô▒ Snap 7:
+   Full ID:  pWHqAhPcRT6rrYfCQJc_zwAAgcnJ1dWd0em1wAZpsfSj4AZpsfLReAAAAAA
+   Unique:   nJ1dWd0em1w
+   Type:     video
+   Time:     1762756703
+
+≡ƒô▒ Snap 8:
+   Full ID:  pWHqAhPcRT6rrYfCQJc_zwAAgc2xhY252aWJrAZpswS-EAZpsfLRoAAAAAA
+   Unique:   2xhY252aWJr
+   Type:     video
+   Time:     1762756703
+
+≡ƒô▒ Snap 9:
+   Full ID:  pWHqAhPcRT6rrYfCQJc_zwAAgcGt5bHZ5eXFqAZpswUnaAZpsfLRyAAAAAA
+   Unique:   Gt5bHZ5eXFq
+   Type:     video
+   Time:     1762756703
+
+================================================================================
+STEP 6: Checking for Your Missing Snap
+================================================================================
+
+≡ƒöì Looking for: pWHqAhPcRT6rrYfCQJc_zwAAgcGt5bHZ5eXFqAZpswUnaAZpsfLRyAAAAAA
+≡ƒöì Unique part: cGt5bHZ5eXFq
+
+Γ£à EXACT MATCH FOUND! Position 10
+   Snap type: video
+   Has media URL: YES
+
+================================================================================
+STEP 7: Checking Alternative Data Structures
+================================================================================
+
+≡ƒôÜ Curated Highlights: 15 items
+   1. No title
+   2. No title
+   3. No title
+
+Γ£¿ Spotlight Highlights: 19 items
+
+================================================================================
+Γ£à TEST COMPLETE
+================================================================================
+
+SnapList contains: 10 snaps
+Missing snap found: YES Γ£à
+
+This is EXACTLY what your production code sees and processes.
+
