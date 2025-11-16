@@ -39,9 +39,13 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           # VERCEL_TEAM_ID is optional; leave unset for personal projects
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
-          BACKEND_ACCOUNT1_URL: ${{ secrets.BACKEND_ACCOUNT1_URL }}
-          BACKEND_ACCOUNT2_URL: ${{ secrets.BACKEND_ACCOUNT2_URL }}
-          # Optional: use if you later implement monitor toggling
+          # Account A (Account 1) service URLs
+          INSTAGRAM_ACCOUNT1_URL: ${{ secrets.INSTAGRAM_ACCOUNT1_URL }}
+          SNAPCHAT_ACCOUNT1_URL: ${{ secrets.SNAPCHAT_ACCOUNT1_URL }}
+          # Account B (Account 2) service URLs
+          INSTAGRAM_ACCOUNT2_URL: ${{ secrets.INSTAGRAM_ACCOUNT2_URL }}
+          SNAPCHAT_ACCOUNT2_URL: ${{ secrets.SNAPCHAT_ACCOUNT2_URL }}
+          # UptimeRobot configuration
           UPTIMEROBOT_API_KEY: ${{ secrets.UPTIMEROBOT_API_KEY }}
           UPTIMEROBOT_ACCOUNTA_MONITORS: ${{ secrets.UPTIMEROBOT_ACCOUNTA_MONITORS }}
           UPTIMEROBOT_ACCOUNTB_MONITORS: ${{ secrets.UPTIMEROBOT_ACCOUNTB_MONITORS }}
