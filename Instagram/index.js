@@ -7522,6 +7522,26 @@ app.listen(port, async () => {
 
   // Print initial stats
   requestTracker.printStats();
+
+  // Auto-start polling if TARGET_USERNAMES environment variable is set
+  const envTargets = process.env.TARGET_USERNAMES;
+  if (envTargets) {
+    try {
+      // Support comma-separated or space-separated usernames
+      const targets = envTargets.split(/[,\s]+/).filter(t => t.trim());
+      if (targets.length > 0) {
+        console.log(`🎯 Auto-starting polling for targets from environment: ${targets.join(", ")}`);
+        // Wait 5 seconds for services to fully initialize
+        setTimeout(() => {
+          startPolling(targets);
+        }, 5000);
+      }
+    } catch (error) {
+      console.error(`❌ Failed to auto-start polling: ${error.message}`);
+    }
+  } else {
+    console.log("💡 Set TARGET_USERNAMES environment variable to auto-start polling");
+  }
 });
 
 // Smart Polling Frequency - Step 5

@@ -3338,12 +3338,28 @@ async def enhanced_startup_event():
         # to prevent Render free tier from spinning down due to inactivity
         # https://uptimerobot.com - Free tier supports 50 monitors
         
-        # Initialize polling if target is set
-        if TARGET_USERNAME:
+        # Auto-start polling if TARGET_USERNAME environment variable is set
+        env_target = os.getenv("TARGET_USERNAME")
+        if env_target:
+            global TARGET_USERNAME
+            TARGET_USERNAME = env_target
+            logger.info(f"🎯 Target username found in environment: @{TARGET_USERNAME}")
+            # Wait 5 seconds for services to fully initialize, then start polling
+            async def auto_start_polling():
+                await asyncio.sleep(5.0)
+                try:
+                    logger.info(f"🚀 Auto-starting polling for @{TARGET_USERNAME}")
+                    await start_polling(TARGET_USERNAME)
+                except Exception as error:
+                    logger.error(f"❌ Failed to auto-start polling: {error}")
+            
+            # Schedule auto-start
+            asyncio.create_task(auto_start_polling())
+        elif TARGET_USERNAME:
             logger.info(f"🎯 Target username found: @{TARGET_USERNAME}")
             logger.info("💡 Use /start-polling to begin automatic polling")
         else:
-            logger.info("💡 Set target username with /set-target to enable polling")
+            logger.info("💡 Set TARGET_USERNAME environment variable to auto-start polling")
         
         logger.info("Snapchat service started successfully")
         # Get service URL from environment or use default

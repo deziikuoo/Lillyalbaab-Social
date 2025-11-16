@@ -122,7 +122,38 @@ async function resumeRenderServices(which) {
     if (!resp.ok) {
       const text = await resp.text();
       console.error(`[Render] Failed to resume ${id}: ${resp.status} ${text}`);
+    } else {
+      console.log(`[Render] Service ${id} resumed successfully`);
+      
+      // Trigger a manual deploy to get the latest commit
+      console.log(`[Render] Triggering manual deploy for service ${id}...`);
+      await triggerManualDeploy(apiKey, id);
     }
+  }
+}
+
+async function triggerManualDeploy(apiKey, serviceId) {
+  try {
+    // Trigger manual deploy
+    const deployResp = await fetch(`${RENDER_API_BASE}/services/${serviceId}/deploys`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        clearCache: false,
+      }),
+    });
+    
+    if (!deployResp.ok) {
+      const text = await deployResp.text();
+      console.warn(`[Render] Failed to trigger deploy for ${serviceId}: ${text}`);
+    } else {
+      console.log(`[Render] Manual deploy triggered for service ${serviceId}`);
+    }
+  } catch (error) {
+    console.warn(`[Render] Error triggering deploy for ${serviceId}: ${error.message}`);
   }
 }
 
