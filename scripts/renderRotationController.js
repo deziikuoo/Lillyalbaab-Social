@@ -260,46 +260,74 @@ async function checkServiceHealth(serviceUrl, serviceName) {
   }
 }
 
-async function waitForServicesReady(instagramUrl, snapchatUrl, maxWaitTime = 300000) {
-  // maxWaitTime: 5 minutes default
-  const startTime = Date.now();
+async function waitForServicesReady(instagramUrl, snapchatUrl, maxWaitTime = 600000) {
+  // maxWaitTime: 10 minutes default (increased from 5 minutes)
+  let startTime = Date.now();
+  let extendedDeadline = startTime + maxWaitTime;
   const checkInterval = 15000; // Check every 15 seconds
-  
+  const extensionTime = 300000; // 5 minutes extension when one service becomes healthy
+
   console.log(`[Health Check] Waiting for both services to be healthy...`);
   console.log(`[Health Check]   Instagram: ${instagramUrl}`);
   console.log(`[Health Check]   Snapchat: ${snapchatUrl}`);
-  
-  while (Date.now() - startTime < maxWaitTime) {
+  console.log(`[Health Check]   Initial timeout: ${maxWaitTime / 1000}s`);
+  console.log(`[Health Check]   Timeout will extend by ${extensionTime / 1000}s when one service becomes healthy`);
+
+  let instagramHealthy = false;
+  let snapchatHealthy = false;
+
+  while (Date.now() < extendedDeadline) {
     const elapsed = Math.round((Date.now() - startTime) / 1000);
-    
+    const remaining = Math.round((extendedDeadline - Date.now()) / 1000);
+
     // Check Instagram service
     const instagramHealth = await checkServiceHealth(instagramUrl, "Instagram");
     const snapchatHealth = await checkServiceHealth(snapchatUrl, "Snapchat");
-    
-    if (instagramHealth.healthy && snapchatHealth.healthy) {
+
+    // Track if services just became healthy
+    const instagramJustHealthy = !instagramHealthy && instagramHealth.healthy;
+    const snapchatJustHealthy = !snapchatHealthy && snapchatHealth.healthy;
+
+    instagramHealthy = instagramHealth.healthy;
+    snapchatHealthy = snapchatHealth.healthy;
+
+    // If one service just became healthy, extend the deadline
+    if ((instagramJustHealthy || snapchatJustHealthy) && !(instagramHealthy && snapchatHealthy)) {
+      extendedDeadline = Date.now() + extensionTime;
+      const serviceName = instagramJustHealthy ? "Instagram" : "Snapchat";
+      console.log(
+        `[Health Check] ✅ ${serviceName} is healthy! Extending timeout by ${extensionTime / 1000}s for the other service...`
+      );
+    }
+
+    if (instagramHealthy && snapchatHealthy) {
       console.log(`[Health Check] ✅ Both services are healthy! (${elapsed}s elapsed)`);
       return true;
     }
-    
+
     // Log status
-    const instagramStatus = instagramHealth.healthy 
-      ? "✅ Healthy" 
+    const instagramStatus = instagramHealthy
+      ? "✅ Healthy"
       : `❌ Unhealthy (${instagramHealth.error || `HTTP ${instagramHealth.status}`})`;
-    const snapchatStatus = snapchatHealth.healthy 
-      ? "✅ Healthy" 
+    const snapchatStatus = snapchatHealthy
+      ? "✅ Healthy"
       : `❌ Unhealthy (${snapchatHealth.error || `HTTP ${snapchatHealth.status}`})`;
-    
+
     console.log(
-      `[Health Check] Services not ready yet (${elapsed}s elapsed):`
+      `[Health Check] Services not ready yet (${elapsed}s elapsed, ${remaining}s remaining):`
     );
     console.log(`[Health Check]   Instagram: ${instagramStatus}`);
     console.log(`[Health Check]   Snapchat: ${snapchatStatus}`);
-    
+
     await new Promise((resolve) => setTimeout(resolve, checkInterval));
   }
-  
+
+  const finalElapsed = Math.round((Date.now() - startTime) / 1000);
   console.warn(
-    `[Health Check] ⚠️ Services did not become healthy within ${maxWaitTime / 1000}s timeout`
+    `[Health Check] ⚠️ Services did not become healthy within ${finalElapsed}s (extended timeout: ${Math.round((extendedDeadline - startTime) / 1000)}s)`
+  );
+  console.warn(
+    `[Health Check] Final status - Instagram: ${instagramHealthy ? "✅" : "❌"}, Snapchat: ${snapchatHealthy ? "✅" : "❌"}`
   );
   console.warn(
     `[Health Check] Proceeding with Vercel update anyway - services may still be deploying`
