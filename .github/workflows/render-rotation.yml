@@ -1,0 +1,46 @@
+name: Render rotation controller
+
+on:
+  schedule:
+    # Run every 2 hours
+    - cron: "0 */2 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  rotate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install controller dependencies
+        run: |
+          npm init -y >/dev/null 2>&1 || true
+          npm install googleapis@^132.0.0 node-fetch@2
+
+      - name: Run rotation controller
+        env:
+          GMAIL_A_CLIENT_ID: ${{ secrets.GMAIL_A_CLIENT_ID }}
+          GMAIL_A_CLIENT_SECRET: ${{ secrets.GMAIL_A_CLIENT_SECRET }}
+          GMAIL_A_REFRESH_TOKEN: ${{ secrets.GMAIL_A_REFRESH_TOKEN }}
+          GMAIL_B_CLIENT_ID: ${{ secrets.GMAIL_B_CLIENT_ID }}
+          GMAIL_B_CLIENT_SECRET: ${{ secrets.GMAIL_B_CLIENT_SECRET }}
+          GMAIL_B_REFRESH_TOKEN: ${{ secrets.GMAIL_B_REFRESH_TOKEN }}
+          RENDER_ACCOUNTA_API_KEY: ${{ secrets.RENDER_ACCOUNTA_API_KEY }}
+          RENDER_ACCOUNTA_SERVICES: ${{ secrets.RENDER_ACCOUNTA_SERVICES }}
+          RENDER_ACCOUNTB_API_KEY: ${{ secrets.RENDER_ACCOUNTB_API_KEY }}
+          RENDER_ACCOUNTB_SERVICES: ${{ secrets.RENDER_ACCOUNTB_SERVICES }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          # VERCEL_TEAM_ID is optional; leave unset for personal projects
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          BACKEND_ACCOUNT1_URL: ${{ secrets.BACKEND_ACCOUNT1_URL }}
+          BACKEND_ACCOUNT2_URL: ${{ secrets.BACKEND_ACCOUNT2_URL }}
+          # Optional: use if you later implement monitor toggling
+          UPTIMEROBOT_API_KEY: ${{ secrets.UPTIMEROBOT_API_KEY }}
+        run: node scripts/renderRotationController.js
