@@ -45,14 +45,25 @@ async function findSuspensionEmails(gmail) {
 
 async function markMessagesRead(gmail, messages) {
   if (!messages.length) return;
-  const ids = messages.map((m) => m.id);
-  await gmail.users.messages.batchModify({
-    userId: "me",
-    requestBody: {
-      ids,
-      removeLabelIds: ["UNREAD"],
-    },
-  });
+  try {
+    const ids = messages.map((m) => m.id);
+    await gmail.users.messages.batchModify({
+      userId: "me",
+      requestBody: {
+        ids,
+        removeLabelIds: ["UNREAD"],
+      },
+    });
+    console.log(`[Gmail] Marked ${ids.length} message(s) as read`);
+  } catch (err) {
+    // Non-blocking: rotation already succeeded, just log the error
+    console.warn(
+      `[Gmail] Failed to mark messages as read (non-critical): ${err.message}`
+    );
+    console.warn(
+      `[Gmail] Note: Regenerate OAuth tokens with 'gmail.modify' scope to enable this feature`
+    );
+  }
 }
 
 async function suspendRenderServices(which) {
@@ -196,12 +207,37 @@ async function switchVercelBackend(activeWhich) {
     { key: "VITE_SNAPCHAT_API_BASE", value: backendUrl },
   ];
 
+  // First, get existing env vars to find their IDs
+  const listUrl = new URL(`${VERCEL_API_BASE}/v9/projects/${projectId}/env`);
+  if (teamId) listUrl.searchParams.set("teamId", teamId);
+
+  const listResp = await fetch(listUrl.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!listResp.ok) {
+    const text = await listResp.text();
+    throw new Error(`Failed to list Vercel env vars: ${text}`);
+  }
+
+  const existingEnvs = await listResp.json();
+  const envMap = new Map();
+  existingEnvs.envs?.forEach((env) => {
+    if (env.target?.includes("production")) {
+      envMap.set(env.key, env);
+    }
+  });
+
+  // Update or create env vars
   for (const { key, value } of envVars) {
-    const url = new URL(`${VERCEL_API_BASE}/v9/projects/${projectId}/env`);
+    const existing = envMap.get(key);
+    const url = new URL(
+      `${VERCEL_API_BASE}/v9/projects/${projectId}/env${existing ? `/${existing.id}` : ""}`
+    );
     if (teamId) url.searchParams.set("teamId", teamId);
 
     const resp = await fetch(url.toString(), {
-      method: "POST",
+      method: existing ? "PATCH" : "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
@@ -218,33 +254,19 @@ async function switchVercelBackend(activeWhich) {
       const text = await resp.text();
       console.error(`[Vercel] Failed to update env ${key}: ${text}`);
     } else {
-      console.log(`[Vercel] Updated env ${key}`);
+      console.log(`[Vercel] ${existing ? "Updated" : "Created"} env ${key}`);
     }
   }
 
-  console.log("[Vercel] Triggering production redeploy");
-  const deployUrl = new URL(`${VERCEL_API_BASE}/v13/deployments`);
-  if (teamId) deployUrl.searchParams.set("teamId", teamId);
-
-  const deployResp = await fetch(deployUrl.toString(), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      name: "tyla-social",
-      project: projectId,
-      target: "production",
-    }),
-  });
-
-  if (!deployResp.ok) {
-    const text = await deployResp.text();
-    console.error(`[Vercel] Failed to trigger deploy: ${text}`);
-  } else {
-    console.log("[Vercel] Deploy triggered successfully");
-  }
+  // Note: Vercel will automatically pick up the new env vars on the next deployment.
+  // For immediate effect, you can manually trigger a redeploy from the Vercel dashboard.
+  // The deployment API requires complex git source info, so we skip auto-deploy here.
+  console.log(
+    "[Vercel] Environment variables updated. They will be applied on the next deployment."
+  );
+  console.log(
+    "[Vercel] To apply immediately, manually trigger a redeploy from the Vercel dashboard."
+  );
 }
 
 async function handleAccount(kind) {
@@ -267,7 +289,7 @@ async function handleAccount(kind) {
   await resumeRenderServices(active);
   await switchVercelBackend(active);
 
-   // Toggle UptimeRobot monitors
+  // Toggle UptimeRobot monitors
   await setUptimeMonitorsStatus(exhausted, 0); // pause exhausted account monitors
   await setUptimeMonitorsStatus(active, 1); // enable active account monitors
 
