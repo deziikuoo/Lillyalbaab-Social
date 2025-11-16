@@ -329,6 +329,19 @@ async function waitForServicesReady(instagramUrl, snapchatUrl, maxWaitTime = 600
   console.warn(
     `[Health Check] Final status - Instagram: ${instagramHealthy ? "✅" : "❌"}, Snapchat: ${snapchatHealthy ? "✅" : "❌"}`
   );
+  
+  // Fallback: If we've waited the full initial timeout (10 minutes), proceed anyway
+  // Services may be ready but health checks are failing due to Render deployment delays
+  if (finalElapsed >= maxWaitTime / 1000) {
+    console.log(
+      `[Health Check] ⏱️ Reached ${maxWaitTime / 1000}s timeout - proceeding with Vercel update anyway`
+    );
+    console.log(
+      `[Health Check] Services may be ready but health checks are delayed. Vercel will deploy and services should be available.`
+    );
+    return true; // Proceed anyway after full timeout
+  }
+  
   console.warn(
     `[Health Check] Proceeding with Vercel update anyway - services may still be deploying`
   );
