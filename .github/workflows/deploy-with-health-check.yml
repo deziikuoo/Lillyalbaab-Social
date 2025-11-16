@@ -1,0 +1,88 @@
+name: Deploy with Health Check
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "Instagram/**"
+      - "Snapchat-Service/**"
+  workflow_dispatch: {} # Allow manual trigger
+
+jobs:
+  wait-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: |
+          npm init -y >/dev/null 2>&1 || true
+          npm install node-fetch@2
+
+      - name: Wait for Render services and trigger Vercel
+        env:
+          INSTAGRAM_ACCOUNT1_URL: ${{ secrets.INSTAGRAM_ACCOUNT1_URL }}
+          SNAPCHAT_ACCOUNT1_URL: ${{ secrets.SNAPCHAT_ACCOUNT1_URL }}
+          INSTAGRAM_ACCOUNT2_URL: ${{ secrets.INSTAGRAM_ACCOUNT2_URL }}
+          SNAPCHAT_ACCOUNT2_URL: ${{ secrets.SNAPCHAT_ACCOUNT2_URL }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          echo "Waiting for Render services to be healthy..."
+          node scripts/healthCheck.js
+          
+          echo "✅ Services are ready! Triggering Vercel deployment..."
+          node -e "
+          const fetch = require('node-fetch');
+          const token = process.env.VERCEL_TOKEN;
+          const projectId = process.env.VERCEL_PROJECT_ID;
+          const teamId = process.env.VERCEL_TEAM_ID || '';
+          const commitSha = process.env.GITHUB_SHA;
+          const repo = process.env.GITHUB_REPOSITORY.split('/')[1];
+          
+          const url = \`https://api.vercel.com/v13/deployments\${teamId ? '?teamId=' + teamId : ''}\`;
+          
+          const deployBody = {
+            name: projectId,
+            project: projectId,
+            target: 'production'
+          };
+          
+          if (commitSha) {
+            deployBody.gitSource = {
+              type: 'github',
+              repo: repo,
+              ref: 'main',
+              sha: commitSha
+            };
+          }
+          
+          const resp = await fetch(url, {
+            method: 'POST',
+            headers: {
+              Authorization: \`Bearer \${token}\`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(deployBody)
+          });
+          
+          if (!resp.ok) {
+            const text = await resp.text();
+            console.log('⚠️ Note: Vercel may have already auto-deployed via webhook');
+            console.log('Error:', text);
+          } else {
+            const data = await resp.json();
+            console.log('✅ Vercel deployment triggered successfully!');
+            console.log('Deployment URL:', data.url || 'Check Vercel dashboard');
+          }
+          "
