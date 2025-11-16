@@ -29,10 +29,10 @@ function getGmailClient(kind) {
 
 async function findSuspensionEmails(gmail) {
   // Look for unread suspension emails from Render
-  // Match variations: "[Important] Your free services have been suspended"
-  // or "Your free services are temporarily suspended"
+  // Subject: "[Important] Your free services have been suspended"
+  // From: no-reply@render.com
   const query =
-    'from:render.com subject:"suspended" is:unread';
+    'from:no-reply@render.com subject:"Your free services have been suspended" is:unread';
 
   const res = await gmail.users.messages.list({
     userId: "me",
