@@ -1,4 +1,4 @@
-// Instagram Backend Service - Auto-deployment test
+// Instagram Backend Service - Health check test v2
 const express = require("express");
 const axios = require("axios");
 const fs = require("fs");

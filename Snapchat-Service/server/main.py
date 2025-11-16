@@ -1,4 +1,4 @@
-﻿# Snapchat Backend Service - Auto-deployment test
+﻿# Snapchat Backend Service - Health check test v2
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
