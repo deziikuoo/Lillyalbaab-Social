@@ -228,6 +228,8 @@ class FastDlSession {
           "--password-store=basic",
           "--use-mock-keychain",
           "--disable-blink-features=AutomationControlled",
+          // Memory optimization flags
+          "--memory-pressure-off",
         ],
         ignoreDefaultArgs: ["--disable-extensions"],
         timeout: 30000,
@@ -384,15 +386,34 @@ class FastDlSession {
   }
 
   async cleanup() {
-    if (this.browser) {
-      try {
-        await this.browser.close();
-        console.log(`✅ [FASTDL SESSION] Browser closed successfully`);
-      } catch (error) {
-        console.log(
-          `⚠️ [FASTDL SESSION] Error closing browser: ${error.message}`
-        );
+    try {
+      // Close page first (explicit cleanup to free memory)
+      if (this.page) {
+        try {
+          await this.page.close();
+          console.log(`✅ [FASTDL SESSION] Page closed successfully`);
+        } catch (pageError) {
+          console.log(
+            `⚠️ [FASTDL SESSION] Error closing page: ${pageError.message}`
+          );
+        }
+        this.page = null;
       }
+
+      // Then close browser
+      if (this.browser) {
+        try {
+          await this.browser.close();
+          console.log(`✅ [FASTDL SESSION] Browser closed successfully`);
+          this.browser = null;
+        } catch (error) {
+          console.log(
+            `⚠️ [FASTDL SESSION] Error closing browser: ${error.message}`
+          );
+        }
+      }
+    } catch (error) {
+      console.log(`⚠️ [FASTDL SESSION] Error during cleanup: ${error.message}`);
     }
   }
 
@@ -7529,9 +7550,13 @@ app.listen(port, async () => {
   if (envTargets) {
     try {
       // Support comma-separated or space-separated usernames
-      const targets = envTargets.split(/[,\s]+/).filter(t => t.trim());
+      const targets = envTargets.split(/[,\s]+/).filter((t) => t.trim());
       if (targets.length > 0) {
-        console.log(`🎯 Auto-starting polling for targets from environment: ${targets.join(", ")}`);
+        console.log(
+          `🎯 Auto-starting polling for targets from environment: ${targets.join(
+            ", "
+          )}`
+        );
         // Wait 5 seconds for services to fully initialize
         setTimeout(() => {
           startPolling(targets);
@@ -7541,7 +7566,9 @@ app.listen(port, async () => {
       console.error(`❌ Failed to auto-start polling: ${error.message}`);
     }
   } else {
-    console.log("💡 Set TARGET_USERNAMES environment variable to auto-start polling");
+    console.log(
+      "💡 Set TARGET_USERNAMES environment variable to auto-start polling"
+    );
   }
 });
 
@@ -7897,9 +7924,32 @@ async function processInstagramStories(username, userAgent = null) {
       },
     };
   } finally {
-    // Always cleanup the session
+    // Always cleanup the session with timeout protection
     if (session) {
-      await session.cleanup();
+      try {
+        // Set a timeout to ensure cleanup doesn't hang
+        await Promise.race([
+          session.cleanup(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Cleanup timeout")), 10000)
+          ),
+        ]);
+      } catch (cleanupError) {
+        console.log(`⚠️ [FASTDL] Cleanup warning: ${cleanupError.message}`);
+        // Force close if cleanup times out or fails
+        if (session.browser) {
+          try {
+            await session.browser.close();
+            console.log(
+              `✅ [FASTDL] Browser force-closed after cleanup timeout`
+            );
+          } catch (forceCloseError) {
+            console.log(
+              `⚠️ [FASTDL] Force close failed: ${forceCloseError.message}`
+            );
+          }
+        }
+      }
     }
   }
 }
@@ -8370,9 +8420,9 @@ async function checkForNewStories(force = false, usernamesOverride = null) {
     const pollUserAgent = getRandomUserAgent();
     setPollingUserAgent(pollUserAgent);
     console.log(
-      `\n📱 Checking for new stories from ${
-        usernames.length
-      } target(s) ${force ? "(force send enabled)" : ""}`
+      `\n📱 Checking for new stories from ${usernames.length} target(s) ${
+        force ? "(force send enabled)" : ""
+      }`
     );
     console.log(
       `🌐 Stories polling cycle using consistent user agent: ${pollUserAgent.substring(
@@ -8431,6 +8481,14 @@ async function checkForNewStories(force = false, usernamesOverride = null) {
           usernameError.message
         );
         // Continue to next username even if this one fails
+      }
+
+      // Add delay between targets to ensure cleanup completes and memory is freed
+      if (usernames.indexOf(currentUsername) < usernames.length - 1) {
+        console.log(
+          `⏳ Waiting 5 seconds before processing next target (memory cleanup)...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 5000));
       }
     }
 
