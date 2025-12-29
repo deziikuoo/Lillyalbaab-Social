@@ -6743,9 +6743,7 @@ app.listen(port, async () => {
   // Print initial stats
   requestTracker.printStats();
 
-  // DISABLED: Auto-start polling if TARGET_USERNAMES environment variable is set
-  // To re-enable: Uncomment the code below
-  /*
+  // Auto-start polling if TARGET_USERNAMES environment variable is set
   const envTargets = process.env.TARGET_USERNAMES;
   if (envTargets) {
     try {
@@ -6770,10 +6768,6 @@ app.listen(port, async () => {
       "💡 Set TARGET_USERNAMES environment variable to auto-start polling"
     );
   }
-  */
-  console.log(
-    "ℹ️ Automatic polling on startup is currently disabled. Use /start-polling endpoint or frontend button to start polling manually."
-  );
 });
 
 // Smart Polling Frequency - Step 5
