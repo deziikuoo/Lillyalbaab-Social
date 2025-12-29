@@ -10,6 +10,10 @@ export default defineConfig({
         target: "http://localhost:3000",
         changeOrigin: true,
       },
+      "/proxy-image": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
       "/send-to-telegram": {
         target: "http://localhost:3000",
         changeOrigin: true,
@@ -77,14 +81,14 @@ export default defineConfig({
       },
       // Legacy Snapchat service proxy (for downloads and other features)
       "/snapchat-api": {
-        target: "http://localhost:8000",
+        target: "http://127.0.0.1:8000",
         changeOrigin: true,
         ws: true,
         rewrite: (p) => p.replace(/^\/snapchat-api/, ""),
       },
       // Static file serving for downloads
       "/downloads": {
-        target: "http://localhost:8000",
+        target: "http://127.0.0.1:8000",
         changeOrigin: true,
       },
     },

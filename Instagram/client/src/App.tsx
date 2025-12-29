@@ -68,6 +68,27 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<DownloadItem[]>([]);
 
+  // Helper function to proxy Instagram images through backend to avoid CORS
+  const getProxiedImageUrl = (
+    imageUrl: string | undefined
+  ): string | undefined => {
+    if (!imageUrl) return undefined;
+
+    // Only proxy Instagram CDN URLs
+    if (
+      imageUrl.includes("cdninstagram.com") ||
+      imageUrl.includes("scontent-") ||
+      imageUrl.includes("instagram.com")
+    ) {
+      return `${INSTAGRAM_API_BASE}/proxy-image?url=${encodeURIComponent(
+        imageUrl
+      )}`;
+    }
+
+    // Return original URL for non-Instagram URLs
+    return imageUrl;
+  };
+
   // Snapchat state
   const [snapchatUsername, setSnapchatUsername] = useState("");
   const [downloadType, setDownloadType] = useState<
@@ -86,8 +107,9 @@ const App: React.FC = () => {
   }>({});
 
   // Target management state (separate for Instagram and Snapchat)
-  const [instagramCurrentTargets, setInstagramCurrentTargets] =
-    useState<string[]>([]);
+  const [instagramCurrentTargets, setInstagramCurrentTargets] = useState<
+    string[]
+  >([]);
   const [instagramCurrentTarget, setInstagramCurrentTarget] =
     useState<string>(""); // Backward compatibility - first target
   const [snapchatCurrentTarget, setSnapchatCurrentTarget] =
@@ -162,7 +184,9 @@ const App: React.FC = () => {
       const response = await fetch(`${INSTAGRAM_API_BASE}/target`);
       const data = await response.json();
       // Support both new array format and old single target format
-      const targets = data.current_targets || (data.current_target ? [data.current_target] : []);
+      const targets =
+        data.current_targets ||
+        (data.current_target ? [data.current_target] : []);
       setInstagramCurrentTargets(targets);
       setInstagramCurrentTarget(targets.length > 0 ? targets[0] : ""); // Backward compatibility
       setInstagramPollingStatus({
@@ -205,19 +229,26 @@ const App: React.FC = () => {
     setTargetError(null);
 
     try {
-      const response = await fetch(`${INSTAGRAM_API_BASE}/target/${targetToRemove}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+      const response = await fetch(
+        `${INSTAGRAM_API_BASE}/target/${targetToRemove}`,
+        {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
 
       const data = await response.json();
 
       if (data.success) {
         // Update state with remaining targets
         setInstagramCurrentTargets(data.new_targets || []);
-        setInstagramCurrentTarget(data.new_targets && data.new_targets.length > 0 ? data.new_targets[0] : "");
+        setInstagramCurrentTarget(
+          data.new_targets && data.new_targets.length > 0
+            ? data.new_targets[0]
+            : ""
+        );
         await fetchInstagramCurrentTarget();
       } else {
         setTargetError(data.error || "Failed to remove target");
@@ -242,11 +273,13 @@ const App: React.FC = () => {
     try {
       // Check if multiple usernames (comma or newline separated)
       const input = newTarget.trim();
-      const usernames = input.split(/[,\n]/).map(u => u.trim()).filter(u => u.length > 0);
-      
-      const requestBody = usernames.length > 1 
-        ? { usernames } 
-        : { username: usernames[0] };
+      const usernames = input
+        .split(/[,\n]/)
+        .map((u) => u.trim())
+        .filter((u) => u.length > 0);
+
+      const requestBody =
+        usernames.length > 1 ? { usernames } : { username: usernames[0] };
 
       const response = await fetch(`${INSTAGRAM_API_BASE}/target`, {
         method: "POST",
@@ -260,7 +293,8 @@ const App: React.FC = () => {
 
       if (data.success) {
         // Update state with new targets
-        const newTargets = data.new_targets || (data.new_target ? [data.new_target] : []);
+        const newTargets =
+          data.new_targets || (data.new_target ? [data.new_target] : []);
         setInstagramCurrentTargets(newTargets);
         setInstagramCurrentTarget(newTargets.length > 0 ? newTargets[0] : "");
         setNewTarget("");
@@ -640,16 +674,34 @@ const App: React.FC = () => {
     }
   };
 
+  // Helper function to detect if input is a URL
+  const isUrl = (input: string): boolean => {
+    try {
+      const url = new URL(input);
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  };
+
   // Snapchat download function - Direct API call to Python service
   const handleSnapchatDownload = async () => {
-    if (!snapchatUsername.trim()) {
-      setSnapchatError("Please enter a username");
+    const input = snapchatUsername.trim();
+    if (!input) {
+      setSnapchatError("Please enter a username or URL");
       return;
     }
 
+    const isUrlInput = isUrl(input);
+    const username = isUrlInput ? null : input;
+    const url = isUrlInput ? input : null;
+
     console.log(
-      `\n🔍 [MANUAL SNAPCHAT] Starting download for @${snapchatUsername.trim()}`
+      `\n🔍 [MANUAL SNAPCHAT] Starting download ${isUrlInput ? 'from URL' : `for @${username}`}`
     );
+    if (isUrlInput) {
+      console.log(`🔗 [MANUAL SNAPCHAT] URL: ${url}`);
+    }
     console.log(`📱 [MANUAL SNAPCHAT] Download type: ${downloadType}`);
     console.log(`📤 [MANUAL SNAPCHAT] Send to Telegram: ${autoSendToTelegram}`);
 
@@ -657,17 +709,16 @@ const App: React.FC = () => {
     setSnapchatError(null);
 
     try {
-      // Try direct API call first, fallback to Node.js proxy if needed
-      const directApiUrl = import.meta.env.PROD
-        ? `${SNAPCHAT_API_BASE}/snapchat-download`
-        : "http://localhost:8000/download";
+      // Use snapchat-download endpoint which saves to disk (not /download which only sends to Telegram)
+      const directApiUrl = `${SNAPCHAT_API_BASE}/snapchat-download`;
       const proxyApiUrl = `${SNAPCHAT_API_BASE}/snapchat-download`;
 
       console.log(
         `🌐 [MANUAL SNAPCHAT] Step 1: Making direct API request to: ${directApiUrl}`
       );
       console.log(`📋 [MANUAL SNAPCHAT] Request payload:`, {
-        username: snapchatUsername.trim(),
+        username: username,
+        url: url,
         download_type: downloadType,
         send_to_telegram: autoSendToTelegram,
       });
@@ -677,17 +728,24 @@ const App: React.FC = () => {
       let response;
       try {
         // Try direct API call first
+        const requestBody: any = {
+          download_type: downloadType,
+          send_to_telegram: autoSendToTelegram,
+        };
+        
+        if (url) {
+          requestBody.url = url;
+        } else {
+          requestBody.username = username;
+        }
+        
         response = await fetch(directApiUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Accept: "application/json",
           },
-          body: JSON.stringify({
-            username: snapchatUsername.trim(),
-            download_type: downloadType,
-            send_to_telegram: autoSendToTelegram,
-          }),
+          body: JSON.stringify(requestBody),
         });
         console.log("🔍 [MANUAL SNAPCHAT] Direct API call successful");
       } catch (directError) {
@@ -698,17 +756,24 @@ const App: React.FC = () => {
         console.log("🔍 [MANUAL SNAPCHAT] Trying Node.js proxy as fallback...");
 
         // Fallback to Node.js proxy
+        const fallbackRequestBody: any = {
+          download_type: downloadType,
+          send_to_telegram: autoSendToTelegram,
+        };
+        
+        if (url) {
+          fallbackRequestBody.url = url;
+        } else {
+          fallbackRequestBody.username = username;
+        }
+        
         response = await fetch(proxyApiUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Accept: "application/json",
           },
-          body: JSON.stringify({
-            username: snapchatUsername.trim(),
-            download_type: downloadType,
-            send_to_telegram: autoSendToTelegram,
-          }),
+          body: JSON.stringify(fallbackRequestBody),
         });
         console.log("🔍 [MANUAL SNAPCHAT] Proxy API call successful");
       }
@@ -1146,21 +1211,51 @@ const App: React.FC = () => {
                 )}
                 <div className="target-examples">
                   <small>
-                    Examples: instagram, @instagram, instagram.com/instagram<br/>
-                    Multiple targets: Separate with commas or newlines (e.g., "user1, user2" or "user1\nuser2")
+                    Examples: instagram, @instagram, instagram.com/instagram
+                    <br />
+                    Multiple targets: Separate with commas or newlines (e.g.,
+                    "user1, user2" or "user1\nuser2")
                   </small>
                 </div>
                 {instagramCurrentTargets.length > 0 && (
-                  <div className="current-targets" style={{ marginTop: "10px", padding: "10px", backgroundColor: "#f0f0f0", borderRadius: "4px" }}>
-                    <strong>Current Targets ({instagramCurrentTargets.length}):</strong>
-                    <ul style={{ margin: "5px 0", paddingLeft: "20px", listStyle: "none" }}>
+                  <div
+                    className="current-targets"
+                    style={{
+                      marginTop: "10px",
+                      padding: "10px",
+                      backgroundColor: "#f0f0f0",
+                      borderRadius: "4px",
+                    }}
+                  >
+                    <strong>
+                      Current Targets ({instagramCurrentTargets.length}):
+                    </strong>
+                    <ul
+                      style={{
+                        margin: "5px 0",
+                        paddingLeft: "20px",
+                        listStyle: "none",
+                      }}
+                    >
                       {instagramCurrentTargets.map((target, idx) => (
-                        <li key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "5px" }}>
+                        <li
+                          key={idx}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            marginBottom: "5px",
+                          }}
+                        >
                           <span>@{target}</span>
                           <button
                             type="button"
                             onClick={() => {
-                              if (confirm(`Are you sure you want to remove @${target} from the targets?`)) {
+                              if (
+                                confirm(
+                                  `Are you sure you want to remove @${target} from the targets?`
+                                )
+                              ) {
                                 removeInstagramTarget(target);
                               }
                             }}
@@ -1321,13 +1416,30 @@ const App: React.FC = () => {
               key={`${item.carouselIndex || idx}-${item.thumb || item.url}`}
               className="download-card"
             >
-              {item.thumb && (
-                <img src={item.thumb} alt="thumb" className="card-thumbnail" />
-              )}
+              <div className="thumbnail-container">
+                {item.thumb ? (
+                  <img
+                    src={getProxiedImageUrl(item.thumb)}
+                    alt="Media preview"
+                    className="card-thumbnail"
+                    loading="lazy"
+                    onError={(e) => {
+                      // Fallback to direct URL if proxy fails
+                      if (e.currentTarget.src !== item.thumb) {
+                        e.currentTarget.src = item.thumb || "";
+                      }
+                    }}
+                  />
+                ) : (
+                  <div className="card-thumbnail placeholder">
+                    <span>📷</span>
+                  </div>
+                )}
+              </div>
               <div className="card-content">
                 {item.quality && (
                   <div className="quality-row">
-                    <span className="quality-label">Quality</span>
+                    <span className="quality-label">Media Type</span>
                     <strong className="quality-value">{item.quality}</strong>
                   </div>
                 )}
@@ -1618,8 +1730,8 @@ const App: React.FC = () => {
         <div className="manual-input-section">
           <h3>👻 Manual Snapchat Download</h3>
           <p>
-            Enter a Snapchat username to download stories, highlights, or
-            spotlights
+            Enter a Snapchat username to download stories, highlights, or spotlights.
+            Or paste a Snapchat media URL to download that specific media.
           </p>
           <form
             onSubmit={(e) => {
@@ -1632,7 +1744,7 @@ const App: React.FC = () => {
               <div className="input-with-suggestions">
                 <input
                   type="text"
-                  placeholder="Enter Snapchat username"
+                  placeholder="Enter Snapchat username or media URL"
                   value={snapchatUsername}
                   onChange={(e) => handleSnapchatUsernameChange(e.target.value)}
                   className="url-input"

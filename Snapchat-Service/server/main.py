@@ -8,6 +8,7 @@ from typing import List, Optional, Dict, Any
 import os
 from datetime import datetime, timedelta, timezone
 import asyncio
+import math
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from threading import Lock
@@ -411,9 +412,21 @@ class HealthCheck:
             cutoff_time = time.time() - (1 * 24 * 60 * 60)  # Changed from 7 days
             removed_count = 0
             freed_bytes = 0
+            users_affected = set()
             
             for root, dirs, files in os.walk(DOWNLOADS_DIR):
+                # Extract username and media_type from path structure: downloads/{username}/{media_type}/
+                path_parts = os.path.normpath(root).split(os.sep)
+                if len(path_parts) >= 2 and path_parts[-2] in ["stories", "highlights", "spotlights"]:
+                    username = path_parts[-3] if len(path_parts) >= 3 else None
+                    media_type = path_parts[-2]
+                    if username:
+                        users_affected.add((username, media_type))
+                
                 for file in files:
+                    # Skip metadata files
+                    if file == ".media_metadata.json":
+                        continue
                     file_path = os.path.join(root, file)
                     try:
                         if os.path.getmtime(file_path) < cutoff_time:
@@ -424,9 +437,14 @@ class HealthCheck:
                     except Exception:
                         pass
             
+            # Sync metadata for all affected users/media types
+            metadata_removed = 0
+            for username, media_type in users_affected:
+                metadata_removed += sync_metadata_with_files(username, media_type)
+            
             freed_mb = freed_bytes / (1024 * 1024)
             if removed_count > 0:
-                logger.info(f"🧹 Cleaned up {removed_count} old files ({freed_mb:.1f} MB freed)")
+                logger.info(f"🧹 Cleaned up {removed_count} old files ({freed_mb:.1f} MB freed), {metadata_removed} metadata entries synced")
         except Exception as e:
             logger.error(f"Download cleanup failed: {e}")
     
@@ -437,9 +455,21 @@ class HealthCheck:
             cutoff_time = time.time() - (3 * 24 * 60 * 60)
             removed_count = 0
             freed_bytes = 0
+            users_affected = set()
             
             for root, dirs, files in os.walk(DOWNLOADS_DIR):
+                # Extract username and media_type from path structure: downloads/{username}/{media_type}/
+                path_parts = os.path.normpath(root).split(os.sep)
+                if len(path_parts) >= 2 and path_parts[-2] in ["stories", "highlights", "spotlights"]:
+                    username = path_parts[-3] if len(path_parts) >= 3 else None
+                    media_type = path_parts[-2]
+                    if username:
+                        users_affected.add((username, media_type))
+                
                 for file in files:
+                    # Skip metadata files
+                    if file == ".media_metadata.json":
+                        continue
                     file_path = os.path.join(root, file)
                     try:
                         if os.path.getmtime(file_path) < cutoff_time:
@@ -459,9 +489,14 @@ class HealthCheck:
                     except Exception:
                         pass
             
+            # Sync metadata for all affected users/media types
+            metadata_removed = 0
+            for username, media_type in users_affected:
+                metadata_removed += sync_metadata_with_files(username, media_type)
+            
             freed_mb = freed_bytes / (1024 * 1024)
             downloads_size_mb = await self.get_directory_size(DOWNLOADS_DIR)
-            logger.info(f"🧹 Aggressive cleanup: {removed_count} files removed, {freed_mb:.1f}MB freed. Downloads folder now at {downloads_size_mb:.1f}MB")
+            logger.info(f"🧹 Aggressive cleanup: {removed_count} files removed, {freed_mb:.1f}MB freed, {metadata_removed} metadata entries synced. Downloads folder now at {downloads_size_mb:.1f}MB")
         except Exception as e:
             logger.error(f"Aggressive disk cleanup failed: {e}")
     
@@ -554,15 +589,27 @@ class HealthCheck:
         except Exception as e:
             logger.error(f"❌ Log cleanup failed: {e}")
     
-    async def cleanup_downloads_4week(self):
-        """Clean up downloads folder (4-week complete wipe)"""
+    async def cleanup_downloads_2week(self):
+        """Clean up downloads folder (2-week complete wipe)"""
         try:
-            # Remove files older than 4 weeks
-            cutoff_time = time.time() - (4 * 7 * 24 * 60 * 60)  # 4 weeks
+            # Remove files older than 2 weeks
+            cutoff_time = time.time() - (2 * 7 * 24 * 60 * 60)  # 2 weeks
             removed_count = 0
+            users_affected = set()
             
             for root, dirs, files in os.walk(DOWNLOADS_DIR):
+                # Extract username and media_type from path structure: downloads/{username}/{media_type}/
+                path_parts = os.path.normpath(root).split(os.sep)
+                if len(path_parts) >= 2 and path_parts[-2] in ["stories", "highlights", "spotlights"]:
+                    username = path_parts[-3] if len(path_parts) >= 3 else None
+                    media_type = path_parts[-2]
+                    if username:
+                        users_affected.add((username, media_type))
+                
                 for file in files:
+                    # Skip metadata files
+                    if file == ".media_metadata.json":
+                        continue
                     file_path = os.path.join(root, file)
                     if os.path.getmtime(file_path) < cutoff_time:
                         os.remove(file_path)
@@ -577,14 +624,19 @@ class HealthCheck:
                     except OSError:
                         pass  # Directory not empty or other error
             
-            logger.info(f"🧹 4-week downloads cleanup: {removed_count} files removed")
+            # Sync metadata for all affected users/media types
+            metadata_removed = 0
+            for username, media_type in users_affected:
+                metadata_removed += sync_metadata_with_files(username, media_type)
+            
+            logger.info(f"🧹 2-week downloads cleanup: {removed_count} files removed, {metadata_removed} metadata entries synced")
             return removed_count
         except Exception as e:
-            logger.error(f"4-week downloads cleanup failed: {e}")
+            logger.error(f"2-week downloads cleanup failed: {e}")
             return 0
     
     async def cleanup_snapchat_cache(self):
-        """Clean up Snapchat cache (4-week complete wipe)"""
+        """Clean up Snapchat cache (2-week complete wipe)"""
         try:
             if supabase_manager.is_connected:
                 # Use Supabase cleanup
@@ -596,9 +648,9 @@ class HealthCheck:
             logger.error(f"Snapchat cache cleanup failed: {e}")
     
     async def scheduled_cleanup(self):
-        """Scheduled 4-week cleanup for cache, memory, and downloads"""
+        """Scheduled 2-week cleanup for cache, memory, and downloads"""
         try:
-            logger.info("🔄 Starting scheduled 4-week cleanup...")
+            logger.info("🔄 Starting scheduled 2-week cleanup...")
             
             # Clean up cache
             await self.cleanup_snapchat_cache()
@@ -606,10 +658,10 @@ class HealthCheck:
             # Clean up memory
             await self.cleanup_memory()
             
-            # Clean up downloads (4-week old files)
-            downloads_removed = await self.cleanup_downloads_4week()
+            # Clean up downloads (2-week old files)
+            downloads_removed = await self.cleanup_downloads_2week()
             
-            logger.info(f"✅ Scheduled 4-week cleanup completed: {downloads_removed} downloads removed")
+            logger.info(f"✅ Scheduled 2-week cleanup completed: {downloads_removed} downloads removed")
             
         except Exception as e:
             logger.error(f"Scheduled cleanup failed: {e}")
@@ -1083,7 +1135,8 @@ scheduler = AsyncIOScheduler()
 scheduler.start()
 
 class DownloadRequest(BaseModel):
-    username: str
+    username: Optional[str] = None
+    url: Optional[str] = None
     download_type: str = "all"
     send_to_telegram: bool = False
     telegram_caption: Optional[str] = None
@@ -1106,6 +1159,17 @@ class GalleryMediaItem(BaseModel):
     thumbnail_url: Optional[str]
     download_status: str
     progress: Optional[int]
+    download_url: Optional[str] = None
+    username: Optional[str] = None  # Add username field
+
+class FilenameItem(BaseModel):
+    filename: str
+    username: str
+
+class FilenamesResponse(BaseModel):
+    status: str
+    filenames: List[FilenameItem]
+    total: int
 
 # Telegram integration models
 class SendTelegramRequest(BaseModel):
@@ -1140,12 +1204,35 @@ class TelegramStatsResponse(BaseModel):
     total_sent: int
     total_failed: int
     recent_sent: int
+
+class BulkOperationRequest(BaseModel):
+    items: List[str]  # List of filenames
+    username: str
+    media_type: str
+    operation: str  # "download", "delete", "telegram"
+
+class BulkOperationResponse(BaseModel):
+    status: str
+    operation: str
+    total: int
+    successful: int
+    failed: int
+    errors: Optional[List[str]] = None
     success_rate: float
     download_url: Optional[str]
+
+class PaginationInfo(BaseModel):
+    page: int
+    per_page: int
+    total: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
 
 class GalleryResponse(BaseModel):
     status: str
     media: List[GalleryMediaItem]
+    pagination: Optional[PaginationInfo] = None
 
 class BulkDownloadRequest(BaseModel):
     files: List[str]
@@ -1390,6 +1477,38 @@ async def websocket_endpoint(websocket: WebSocket, username: str, media_type: st
         except:
             pass
 
+@app.websocket("/ws/gallery/{media_type}")
+async def gallery_websocket(websocket: WebSocket, media_type: str):
+    """WebSocket endpoint for real-time gallery updates"""
+    if media_type not in ["stories", "highlights", "spotlights"]:
+        await websocket.close(code=1003, reason="Invalid media type")
+        return
+    
+    key = f"gallery:{media_type}"
+    await websocket_manager.connect(websocket, key)
+    
+    try:
+        # Send initial connection confirmation
+        await websocket.send_json({
+            "type": "connected",
+            "media_type": media_type,
+            "message": f"Connected to {media_type} gallery updates"
+        })
+        
+        # Keep connection alive
+        while True:
+            try:
+                # Receive ping/pong messages to keep connection alive
+                data = await websocket.receive_text()
+                if data == "ping":
+                    await websocket.send_json({"type": "pong"})
+            except WebSocketDisconnect:
+                break
+    except Exception as e:
+        logger.error(f"Gallery WebSocket error: {e}")
+    finally:
+        await websocket_manager.disconnect(websocket, key)
+
 @app.post("/download", response_model=DownloadResponse)
 async def download_content(request: DownloadRequest, background_tasks: BackgroundTasks):
     try:
@@ -1544,6 +1663,19 @@ async def download_content(request: DownloadRequest, background_tasks: Backgroun
                 logger.info(f"ℹ️ Telegram sending disabled - items fetched but not sent")
             
             telegram_info = f" + {len(stories_to_send)} items sent to Telegram" if telegram_sent else ""
+            
+            # Broadcast gallery update to WebSocket clients
+            await websocket_manager.broadcast(
+                f"gallery:{request.download_type}",
+                {
+                    "type": "gallery_update",
+                    "action": "new_items",
+                    "count": len(stories_to_send),
+                    "username": request.username,
+                    "media_type": request.download_type
+                }
+            )
+            
             return DownloadResponse(
                 status="success",
                 message=f"Found {len(stories_to_send)} {request.download_type} for {request.username}{telegram_info}",
@@ -1591,10 +1723,16 @@ async def download_content(request: DownloadRequest, background_tasks: Backgroun
         await websocket_manager.broadcast(key, {"overall": progress_data[key], "files": file_progress[key]})
         raise HTTPException(status_code=500, detail=str(e))
 
-async def send_downloaded_content_to_telegram(username: str, media_type: str, custom_caption: str = None):
+async def send_downloaded_content_to_telegram(username: str, media_type: str, custom_caption: str = None, specific_filenames: Optional[List[str]] = None):
     """
     Send downloaded content to Telegram after successful download
     Similar to Instagram system's automatic Telegram sending
+    
+    Args:
+        username: Snapchat username
+        media_type: Type of media (stories, highlights, spotlights)
+        custom_caption: Optional custom caption
+        specific_filenames: Optional list of specific filenames to send. If None, sends all files (backward compatibility)
     """
     try:
         if not telegram_manager:
@@ -1607,17 +1745,22 @@ async def send_downloaded_content_to_telegram(username: str, media_type: str, cu
             logger.warning(f"⚠️ Media directory not found: {media_dir}")
             return
         
-        # Get all media files in the directory
-        media_files = []
-        for filename in os.listdir(media_dir):
-            if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.mp4', '.mov', '.avi')):
-                media_files.append(filename)
+        # Get media files - either specific ones or all files
+        if specific_filenames:
+            # Only send the specified new files
+            media_files = [f for f in specific_filenames if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.mp4', '.mov', '.avi'))]
+            logger.info(f"📤 [AUTO] Sending {len(media_files)} NEW files to Telegram for {username}/{media_type}")
+        else:
+            # Backward compatibility: send all files if no specific list provided
+            media_files = []
+            for filename in os.listdir(media_dir):
+                if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.mp4', '.mov', '.avi')):
+                    media_files.append(filename)
+            logger.info(f"📤 [AUTO] Sending {len(media_files)} files to Telegram for {username}/{media_type} (all files mode)")
         
         if not media_files:
             logger.info(f"ℹ️ No media files found for {username}/{media_type}")
             return
-        
-        logger.info(f"📤 [AUTO] Sending {len(media_files)} files to Telegram for {username}/{media_type}")
         
         sent_files = []
         failed_files = []
@@ -1725,54 +1868,50 @@ def load_media_metadata(username, media_type):
 
 def save_media_metadata(username, media_type, metadata):
     path = get_metadata_path(username, media_type)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         json.dump(metadata, f)
 
-@app.get("/gallery/{username}/{media_type}", response_model=GalleryResponse)
-async def get_gallery(username: str, media_type: str):
-    logger.info(f"Fetching gallery for {username}/{media_type}")
-    if media_type not in ["stories", "highlights", "spotlights"]:
-        raise HTTPException(status_code=400, detail="Invalid media type")
-    
-    dir_name = os.path.join(DOWNLOADS_DIR, username, media_type)
-    logger.info(f"Fetching gallery for directory: {dir_name}")
-    if not os.path.exists(dir_name):
-        logger.info(f"Creating directory for new user: {dir_name}")
-        os.makedirs(dir_name, exist_ok=True)
-    
-    metadata = load_media_metadata(username, media_type)
-    media_files = []
-    key = f"{username}:{media_type}"
-    
-    with progress_lock:
-        file_progress_data = file_progress.get(key, {})
-    
-    for item in metadata:
-        file_path = os.path.join(dir_name, item["filename"])
-        if os.path.isfile(file_path):
-            file_type = item["type"]
-            download_status = item["download_status"]
-            progress = item["progress"]
-            
-            if item["filename"] in file_progress_data:
-                file_status = file_progress_data[item["filename"]]
-                download_status = file_status["status"]
-                progress = file_status["progress"]
-            
-            # Use the actual file as both thumbnail and download URL
-            file_url = f"/downloads/{username}/{media_type}/{item['filename']}"
-            media_files.append(
-                GalleryMediaItem(
-                    filename=item["filename"],
-                    type=file_type,
-                    thumbnail_url=file_url,
-                    download_status=download_status,
-                    progress=progress,
-                    download_url=file_url
-                )
-            )
-    
-    return GalleryResponse(status="success", media=media_files)
+def sync_metadata_with_files(username, media_type):
+    """
+    Sync metadata file with actual files on disk.
+    Removes metadata entries for files that no longer exist.
+    Returns number of entries removed.
+    """
+    try:
+        metadata = load_media_metadata(username, media_type)
+        if not metadata:
+            return 0
+        
+        media_dir = os.path.join(DOWNLOADS_DIR, username, media_type)
+        if not os.path.exists(media_dir):
+            # Directory doesn't exist - clear all metadata
+            save_media_metadata(username, media_type, [])
+            return len(metadata)
+        
+        # Filter metadata to only include files that actually exist
+        synced_metadata = []
+        removed_count = 0
+        
+        for item in metadata:
+            filename = item.get("filename")
+            if filename:
+                file_path = os.path.join(media_dir, filename)
+                if os.path.exists(file_path):
+                    synced_metadata.append(item)
+                else:
+                    removed_count += 1
+        
+        # Save synced metadata (removed entries for missing files)
+        if len(synced_metadata) != len(metadata):
+            save_media_metadata(username, media_type, synced_metadata)
+            logger.info(f"🔄 [METADATA SYNC] Removed {removed_count} entries for missing files in {username}/{media_type}")
+        
+        return removed_count
+    except Exception as e:
+        logger.error(f"❌ Error syncing metadata for {username}/{media_type}: {e}")
+        return 0
+
 
 @app.post("/bulk-download/{username}/{media_type}")
 def bulk_download(username: str, media_type: str, request: BulkDownloadRequest):
@@ -2980,10 +3119,152 @@ async def stop_snapchat_polling_endpoint():
         logger.error(f"Error stopping Snapchat polling: {error}")
         raise HTTPException(status_code=500, detail=str(error))
 
+def extract_username_from_url(url: str) -> Optional[str]:
+    """Extract username from Snapchat URL"""
+    try:
+        # Snapchat URLs can be:
+        # - https://www.snapchat.com/add/username
+        # - https://story.snapchat.com/s/...
+        # - Direct media URLs from Snapchat CDN
+        
+        if "snapchat.com/add/" in url:
+            # Extract username from /add/username pattern
+            match = re.search(r'/add/([^/?]+)', url)
+            if match:
+                return match.group(1)
+        elif "story.snapchat.com" in url:
+            # For story URLs, we can't extract username directly
+            # User will need to provide username separately or we fetch from the story
+            return None
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to extract username from URL: {e}")
+        return None
+
 @app.post("/snapchat-download", response_model=DownloadResponse)
 async def snapchat_download_endpoint(request: DownloadRequest, background_tasks: BackgroundTasks):
-    """Download Snapchat content (frontend compatibility endpoint - wraps /download)"""
+    """Download Snapchat content - supports both username and URL input"""
     try:
+        # Validate input
+        if not request.username and not request.url:
+            raise HTTPException(status_code=400, detail="Either username or url must be provided")
+        if request.username and request.url:
+            raise HTTPException(status_code=400, detail="Cannot provide both username and url")
+        
+        # Handle URL input
+        if request.url:
+            # Extract username from URL if possible
+            extracted_username = extract_username_from_url(request.url)
+            
+            # If we can't extract username from URL, try to use provided username as fallback
+            if not extracted_username:
+                if request.username:
+                    extracted_username = request.username
+                    logger.info(f"📥 [SNAPCHAT-DOWNLOAD] Using provided username as fallback: {extracted_username}")
+                else:
+                    # For direct media URLs, we can't determine username
+                    # Use a default "unknown" username or extract from URL hash
+                    import hashlib
+                    url_hash = hashlib.md5(request.url.encode()).hexdigest()[:8]
+                    extracted_username = f"url_download_{url_hash}"
+                    logger.warning(f"⚠️ [SNAPCHAT-DOWNLOAD] Could not extract username from URL, using default: {extracted_username}")
+            
+            # For URL downloads, we download only that specific media
+            logger.info(f"📥 [SNAPCHAT-DOWNLOAD] URL download request: {request.url}")
+            logger.info(f"📥 [SNAPCHAT-DOWNLOAD] Extracted username: {extracted_username}")
+            
+            # Download the specific media from URL
+            snapchat = SnapchatDL(directory_prefix=DOWNLOADS_DIR, max_workers=8)
+            key = f"{extracted_username}:{request.download_type}"
+            
+            # Reset progress
+            with progress_lock:
+                progress_data[key] = {"current": 0, "total": 0, "status": "Starting..."}
+                file_progress[key] = {}
+            
+            await websocket_manager.broadcast(key, {"overall": progress_data[key], "files": file_progress[key]})
+            
+            try:
+                # Download single media from URL
+                import aiohttp
+                import hashlib
+                from pathlib import Path
+                
+                # Determine file extension from URL or content type
+                file_ext = "mp4" if request.url.endswith(".mp4") or "video" in request.url.lower() else "jpg"
+                
+                # Create filename with timestamp
+                timestamp = int(datetime.now().timestamp())
+                url_hash = hashlib.md5(request.url.encode()).hexdigest()[:12]
+                filename = f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{url_hash}_{extracted_username}.{file_ext}"
+                
+                # Create directory
+                media_dir = os.path.join(DOWNLOADS_DIR, extracted_username, request.download_type)
+                os.makedirs(media_dir, exist_ok=True)
+                file_path = os.path.join(media_dir, filename)
+                
+                # Download the file
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(request.url) as response:
+                        if response.status == 200:
+                            content = await response.read()
+                            with open(file_path, 'wb') as f:
+                                f.write(content)
+                            logger.info(f"✅ [SNAPCHAT-DOWNLOAD] Downloaded single media: {filename}")
+                        else:
+                            raise HTTPException(status_code=response.status, detail=f"Failed to download media: HTTP {response.status}")
+                
+                # Determine media type
+                media_type = "video" if file_ext == "mp4" else "image"
+                
+                # Save metadata
+                metadata = load_media_metadata(extracted_username, request.download_type)
+                new_item = {
+                    "filename": filename,
+                    "type": media_type,
+                    "thumbnail_url": request.url if media_type == "image" else None,
+                    "download_status": "complete",
+                    "progress": 100,
+                    "download_url": f"/downloads/{extracted_username}/{request.download_type}/{filename}"
+                }
+                metadata.append(new_item)
+                save_media_metadata(extracted_username, request.download_type, metadata)
+                
+                # Send to Telegram if requested
+                if request.send_to_telegram:
+                    background_tasks.add_task(
+                        send_downloaded_content_to_telegram,
+                        extracted_username,
+                        request.download_type,
+                        request.telegram_caption,
+                        [filename]
+                    )
+                
+                # Broadcast gallery update
+                await websocket_manager.broadcast(
+                    f"gallery:{request.download_type}",
+                    {
+                        "type": "gallery_update",
+                        "action": "new_items",
+                        "count": 1,
+                        "username": extracted_username,
+                        "media_type": request.download_type
+                    }
+                )
+                
+                return DownloadResponse(
+                    status="success",
+                    message=f"Successfully downloaded media from URL",
+                    media_urls=[request.url],
+                    files_downloaded=[filename],
+                    telegram_sent=1 if request.send_to_telegram else 0
+                )
+                
+            except Exception as e:
+                logger.error(f"Error downloading from URL: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to download media from URL: {str(e)}")
+        
+        # Handle username input (existing logic)
         logger.info(f"📥 [SNAPCHAT-DOWNLOAD] Request for @{request.username} - {request.download_type}")
         
         # Call the existing download function
@@ -3006,6 +3287,11 @@ async def snapchat_download_endpoint(request: DownloadRequest, background_tasks:
                 progress_data[key]["status"] = "Downloading..."
             await websocket_manager.broadcast(key, {"overall": progress_data[key], "files": file_progress[key]})
             
+            # Get list of existing files BEFORE download (to identify new files later)
+            existing_metadata = load_media_metadata(request.username, request.download_type)
+            existing_filenames = {item.get("filename") for item in existing_metadata}
+            logger.info(f"📊 [SNAPCHAT-DOWNLOAD] Found {len(existing_filenames)} existing files before download")
+            
             media_urls = []
             if request.download_type == "stories":
                 media_urls = await snapchat.download(request.username)
@@ -3016,6 +3302,13 @@ async def snapchat_download_endpoint(request: DownloadRequest, background_tasks:
             
             logger.info(f"Downloaded {len(media_urls)} files")
             
+            # Get list of files AFTER download to identify new ones
+            new_metadata = load_media_metadata(request.username, request.download_type)
+            new_filenames = {item.get("filename") for item in new_metadata}
+            newly_downloaded_filenames = list(new_filenames - existing_filenames)
+            
+            logger.info(f"📊 [SNAPCHAT-DOWNLOAD] Found {len(newly_downloaded_filenames)} NEW files (out of {len(new_filenames)} total)")
+            
             # Update final progress
             with progress_lock:
                 progress_data[key]["status"] = f"Completed - {len(media_urls)} files"
@@ -3023,10 +3316,24 @@ async def snapchat_download_endpoint(request: DownloadRequest, background_tasks:
                 progress_data[key]["total"] = len(media_urls)
             await websocket_manager.broadcast(key, {"overall": progress_data[key], "files": file_progress[key]})
             
-            # Send to Telegram if requested
-            if request.send_to_telegram:
-                logger.info(f"📤 [SNAPCHAT-DOWNLOAD] Sending to Telegram for @{request.username}")
-                background_tasks.add_task(send_downloaded_content_to_telegram, request.username, request.download_type, request.telegram_caption)
+            # Send to Telegram if requested - ONLY send NEW files
+            if request.send_to_telegram and newly_downloaded_filenames:
+                logger.info(f"📤 [SNAPCHAT-DOWNLOAD] Sending {len(newly_downloaded_filenames)} NEW files to Telegram for @{request.username}")
+                background_tasks.add_task(send_downloaded_content_to_telegram, request.username, request.download_type, request.telegram_caption, newly_downloaded_filenames)
+            elif request.send_to_telegram and not newly_downloaded_filenames:
+                logger.info(f"ℹ️ [SNAPCHAT-DOWNLOAD] No new files to send to Telegram (all files already existed)")
+            
+            # Broadcast gallery update to WebSocket clients
+            await websocket_manager.broadcast(
+                f"gallery:{request.download_type}",
+                {
+                    "type": "gallery_update",
+                    "action": "new_items",
+                    "count": len(media_urls),
+                    "username": request.username,
+                    "media_type": request.download_type
+                }
+            )
             
             return DownloadResponse(
                 status="success",
@@ -3299,7 +3606,10 @@ async def graceful_shutdown():
 @app.on_event("startup")
 async def enhanced_startup_event():
     """Enhanced startup with Supabase integration"""
+    global shutdown_in_progress
     try:
+        # Reset shutdown flag on startup (in case it was set by previous signal)
+        shutdown_in_progress = False
         app.startup_time = time.time()
         
         # Initialize core services
@@ -3326,14 +3636,14 @@ async def enhanced_startup_event():
         # Start monitoring systems
         health_check.start()
         
-        # Schedule 4-week cleanup (every 4 weeks)
+        # Schedule 2-week cleanup (every 2 weeks)
         scheduler.add_job(
             health_check.scheduled_cleanup,
-            trigger=IntervalTrigger(weeks=4),
-            id="snapchat_4week_cleanup",
+            trigger=IntervalTrigger(weeks=2),
+            id="snapchat_2week_cleanup",
             replace_existing=True
         )
-        logger.info("⏰ Scheduled 4-week cleanup job added")
+        logger.info("⏰ Scheduled 2-week cleanup job added")
         
         # Note: Use UptimeRobot (or similar) to ping /ping endpoint every 5-10 minutes
         # to prevent Render free tier from spinning down due to inactivity
@@ -3506,24 +3816,103 @@ async def clear_user_data(username: str):
         logger.error(f"Error clearing user data: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to clear user data: {str(e)}")
 
-# Add gallery endpoint for all users
-@app.get("/gallery/{media_type}", response_model=GalleryResponse)
-async def get_gallery_all_users(media_type: str):
-    """Get gallery for all users of a specific media type"""
-    # Reduced logging to avoid spam
-    # logger.info(f"Fetching gallery for all users - {media_type}")
+# Storage stats endpoint - MUST be before /gallery/{media_type} to avoid route conflict
+@app.get("/gallery/stats")
+async def get_storage_stats():
+    """Get comprehensive storage statistics"""
+    try:
+        total_files = 0
+        total_size_bytes = 0
+        by_username = {}
+        by_media_type = {"stories": 0, "highlights": 0, "spotlights": 0}
+        by_file_type = {"video": 0, "image": 0}
+        
+        if not os.path.exists(DOWNLOADS_DIR):
+            return {
+                "total_files": 0,
+                "total_size_mb": 0,
+                "by_username": {},
+                "by_media_type": by_media_type,
+                "by_file_type": by_file_type
+            }
+        
+        for username in os.listdir(DOWNLOADS_DIR):
+            user_dir = os.path.join(DOWNLOADS_DIR, username)
+            if not os.path.isdir(user_dir):
+                continue
+            
+            user_stats = {"files": 0, "size_mb": 0}
+            
+            for media_type in ["stories", "highlights", "spotlights"]:
+                media_dir = os.path.join(user_dir, media_type)
+                if not os.path.exists(media_dir):
+                    continue
+                
+                try:
+                    metadata = load_media_metadata(username, media_type)
+                    
+                    for item in metadata:
+                        file_path = os.path.join(media_dir, item["filename"])
+                        if os.path.isfile(file_path):
+                            file_size = os.path.getsize(file_path)
+                            total_files += 1
+                            total_size_bytes += file_size
+                            user_stats["files"] += 1
+                            user_stats["size_mb"] += file_size / (1024 * 1024)
+                            by_media_type[media_type] += 1
+                            
+                            if item["type"] == "video":
+                                by_file_type["video"] += 1
+                            else:
+                                by_file_type["image"] += 1
+                except Exception as e:
+                    logger.warning(f"Error processing stats for {username}/{media_type}: {e}")
+            
+            if user_stats["files"] > 0:
+                by_username[username] = user_stats
+        
+        return {
+            "total_files": total_files,
+            "total_size_mb": round(total_size_bytes / (1024 * 1024), 2),
+            "by_username": by_username,
+            "by_media_type": by_media_type,
+            "by_file_type": by_file_type
+        }
+    except Exception as e:
+        logger.error(f"Error getting storage stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/gallery/{media_type}/filenames", response_model=FilenamesResponse)
+async def get_gallery_filenames(
+    media_type: str,
+    username: Optional[str] = None,
+    search: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    media_type_filter: Optional[str] = None,
+    sort_by: Optional[str] = "date_desc"
+):
+    """
+    Lightweight endpoint to get all filenames matching filters.
+    Returns only filename and username (no thumbnails, URLs, etc.)
+    Useful for "Select All" operations.
+    """
     if media_type not in ["stories", "highlights", "spotlights"]:
         raise HTTPException(status_code=400, detail="Invalid media type")
     
-    all_media_files = []
+    all_filenames = []
     
-    # Get all user directories
     if not os.path.exists(DOWNLOADS_DIR):
-        return GalleryResponse(status="success", media=[])
+        return FilenamesResponse(status="success", filenames=[], total=0)
     
-    for username in os.listdir(DOWNLOADS_DIR):
-        user_dir = os.path.join(DOWNLOADS_DIR, username)
+    # Collect all files from all users (reuse filtering logic from main endpoint)
+    for user_folder in os.listdir(DOWNLOADS_DIR):
+        user_dir = os.path.join(DOWNLOADS_DIR, user_folder)
         if not os.path.isdir(user_dir):
+            continue
+        
+        # Apply username filter early
+        if username and user_folder != username:
             continue
             
         media_dir = os.path.join(user_dir, media_type)
@@ -3531,41 +3920,376 @@ async def get_gallery_all_users(media_type: str):
             continue
         
         try:
-            metadata = load_media_metadata(username, media_type)
-            key = f"{username}:{media_type}"
+            metadata = load_media_metadata(user_folder, media_type)
+            
+            for item in metadata:
+                file_path = os.path.join(media_dir, item["filename"])
+                if not os.path.isfile(file_path):
+                    continue
+                
+                file_type = item["type"]
+                
+                # Apply media type filter
+                if media_type_filter and file_type != media_type_filter:
+                    continue
+                
+                # Apply filename search
+                if search and search.lower() not in item["filename"].lower():
+                    continue
+                
+                # Apply date range filter
+                if date_from or date_to:
+                    # Extract date from filename (format: YYYY-MM-DD_HH-MM-SS_...)
+                    try:
+                        file_date_str = item["filename"].split("_")[0]
+                        file_date = datetime.strptime(file_date_str, "%Y-%m-%d").date()
+                        
+                        if date_from:
+                            filter_from = datetime.strptime(date_from, "%Y-%m-%d").date()
+                            if file_date < filter_from:
+                                continue
+                        
+                        if date_to:
+                            filter_to = datetime.strptime(date_to, "%Y-%m-%d").date()
+                            if file_date > filter_to:
+                                continue
+                    except (ValueError, IndexError):
+                        # Skip files with invalid date format
+                        continue
+                
+                # Add to results (only filename and username)
+                all_filenames.append(
+                    FilenameItem(
+                        filename=item["filename"],
+                        username=user_folder
+                    )
+                )
+        except Exception as e:
+            logger.warning(f"Error processing user {user_folder} for filenames: {e}")
+            continue
+    
+    # Apply sorting
+    if sort_by == "date_desc":
+        all_filenames.sort(key=lambda x: x.filename, reverse=True)
+    elif sort_by == "date_asc":
+        all_filenames.sort(key=lambda x: x.filename)
+    elif sort_by == "filename_asc":
+        all_filenames.sort(key=lambda x: x.filename.lower())
+    elif sort_by == "filename_desc":
+        all_filenames.sort(key=lambda x: x.filename.lower(), reverse=True)
+    elif sort_by == "type":
+        # For type sorting, we'd need the type info, but we can't easily get it here
+        # Just use filename sort as fallback
+        all_filenames.sort(key=lambda x: x.filename)
+    
+    return FilenamesResponse(
+        status="success",
+        filenames=all_filenames,
+        total=len(all_filenames)
+    )
+
+# Add gallery endpoint for all users
+@app.get("/gallery/{media_type}", response_model=GalleryResponse)
+async def get_gallery_all_users(
+    media_type: str,
+    username: Optional[str] = None,
+    search: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    media_type_filter: Optional[str] = None,
+    sort_by: Optional[str] = "date_desc",
+    page: int = 1,
+    per_page: int = 20
+):
+    """
+    Get gallery with advanced filtering, sorting, and pagination
+    
+    Query params:
+    - username: Filter by specific username
+    - search: Search in filename (partial match)
+    - date_from: Filter from date (YYYY-MM-DD)
+    - date_to: Filter to date (YYYY-MM-DD)
+    - media_type_filter: Filter by type ("video" or "image")
+    - sort_by: Sort order (date_desc, date_asc, filename_asc, filename_desc, type)
+    - page: Page number (default: 1)
+    - per_page: Items per page (default: 20)
+    """
+    if media_type not in ["stories", "highlights", "spotlights"]:
+        raise HTTPException(status_code=400, detail="Invalid media type")
+    
+    all_media_files = []
+    
+    if not os.path.exists(DOWNLOADS_DIR):
+        return GalleryResponse(status="success", media=[])
+    
+    # Collect all files from all users
+    for user_folder in os.listdir(DOWNLOADS_DIR):
+        user_dir = os.path.join(DOWNLOADS_DIR, user_folder)
+        if not os.path.isdir(user_dir):
+            continue
+        
+        # Apply username filter early
+        if username and user_folder != username:
+            continue
+            
+        media_dir = os.path.join(user_dir, media_type)
+        if not os.path.exists(media_dir):
+            continue
+        
+        try:
+            metadata = load_media_metadata(user_folder, media_type)
+            key = f"{user_folder}:{media_type}"
             
             with progress_lock:
                 file_progress_data = file_progress.get(key, {})
             
             for item in metadata:
                 file_path = os.path.join(media_dir, item["filename"])
-                if os.path.isfile(file_path):
-                    file_type = item["type"]
-                    download_status = item["download_status"]
-                    progress = item["progress"]
-                    
-                    if item["filename"] in file_progress_data:
-                        file_status = file_progress_data[item["filename"]]
-                        download_status = file_status["status"]
-                        progress = file_status["progress"]
-                    
-                    # Use the actual file as both thumbnail and download URL
-                    file_url = f"/downloads/{username}/{media_type}/{item['filename']}"
-                    all_media_files.append(
-                        GalleryMediaItem(
-                            filename=item["filename"],
-                            type=file_type,
-                            thumbnail_url=file_url,
-                            download_status=download_status,
-                            progress=progress,
-                            download_url=file_url
-                        )
+                if not os.path.isfile(file_path):
+                    continue
+                
+                file_type = item["type"]
+                download_status = item["download_status"]
+                progress_val = item["progress"]
+                
+                if item["filename"] in file_progress_data:
+                    file_status = file_progress_data[item["filename"]]
+                    download_status = file_status["status"]
+                    progress_val = file_status["progress"]
+                
+                # Apply media type filter
+                if media_type_filter and file_type != media_type_filter:
+                    continue
+                
+                # Apply filename search
+                if search and search.lower() not in item["filename"].lower():
+                    continue
+                
+                # Apply date range filter
+                if date_from or date_to:
+                    # Extract date from filename (format: YYYY-MM-DD_HH-MM-SS_...)
+                    try:
+                        file_date_str = item["filename"].split("_")[0]
+                        file_date = datetime.strptime(file_date_str, "%Y-%m-%d").date()
+                        
+                        if date_from:
+                            filter_from = datetime.strptime(date_from, "%Y-%m-%d").date()
+                            if file_date < filter_from:
+                                continue
+                        
+                        if date_to:
+                            filter_to = datetime.strptime(date_to, "%Y-%m-%d").date()
+                            if file_date > filter_to:
+                                continue
+                    except (ValueError, IndexError):
+                        # Skip files with invalid date format
+                        continue
+                
+                # Build file URLs
+                file_url = f"/downloads/{user_folder}/{media_type}/{item['filename']}"
+                thumbnail_url = item.get("thumbnail_url")
+                
+                # Handle thumbnail_url being a dict with 'value' key (legacy format)
+                if isinstance(thumbnail_url, dict):
+                    thumbnail_url = thumbnail_url.get("value", "")
+                
+                if file_type == "video":
+                    if not thumbnail_url or thumbnail_url == item.get("download_url") or (isinstance(thumbnail_url, str) and thumbnail_url.endswith(".mp4")):
+                        thumbnail_url = f"/thumbnail/{user_folder}/{media_type}/{item['filename']}"
+                    elif isinstance(thumbnail_url, str) and thumbnail_url.startswith("http"):
+                        pass
+                    else:
+                        thumbnail_url = f"/thumbnail/{user_folder}/{media_type}/{item['filename']}"
+                elif not thumbnail_url:
+                    thumbnail_url = file_url
+                
+                all_media_files.append(
+                    GalleryMediaItem(
+                        filename=item["filename"],
+                        type=file_type,
+                        thumbnail_url=thumbnail_url or file_url,
+                        download_status=download_status,
+                        progress=progress_val,
+                        download_url=file_url,
+                        username=user_folder
                     )
+                )
         except Exception as e:
-            logger.warning(f"Error processing user {username}: {e}")
+            logger.warning(f"Error processing user {user_folder}: {e}")
             continue
     
-    return GalleryResponse(status="success", media=all_media_files)
+    # Apply sorting
+    if sort_by == "date_desc":
+        all_media_files.sort(key=lambda x: x.filename, reverse=True)
+    elif sort_by == "date_asc":
+        all_media_files.sort(key=lambda x: x.filename)
+    elif sort_by == "filename_asc":
+        all_media_files.sort(key=lambda x: x.filename.lower())
+    elif sort_by == "filename_desc":
+        all_media_files.sort(key=lambda x: x.filename.lower(), reverse=True)
+    elif sort_by == "type":
+        all_media_files.sort(key=lambda x: (x.type != "video", x.filename))
+    
+    # Calculate pagination
+    offset = (page - 1) * per_page
+    total_items = len(all_media_files)
+    paginated_items = all_media_files[offset:offset + per_page]
+    has_next = offset + per_page < total_items
+    has_prev = page > 1
+    
+    pagination_info = PaginationInfo(
+        page=page,
+        per_page=per_page,
+        total=total_items,
+        total_pages=math.ceil(total_items / per_page) if total_items > 0 else 0,
+        has_next=has_next,
+        has_prev=has_prev
+    )
+    
+    return GalleryResponse(
+        status="success",
+        media=paginated_items,
+        pagination=pagination_info
+    )
+
+# Single-user gallery endpoint - MUST be after /gallery/{media_type}/filenames and /gallery/{media_type}
+# to avoid route conflicts (FastAPI matches routes in order)
+@app.get("/gallery/{username}/{media_type}", response_model=GalleryResponse)
+async def get_gallery(username: str, media_type: str):
+    logger.info(f"Fetching gallery for {username}/{media_type}")
+    if media_type not in ["stories", "highlights", "spotlights"]:
+        raise HTTPException(status_code=400, detail="Invalid media type")
+    
+    dir_name = os.path.join(DOWNLOADS_DIR, username, media_type)
+    logger.info(f"Fetching gallery for directory: {dir_name}")
+    if not os.path.exists(dir_name):
+        logger.info(f"Creating directory for new user: {dir_name}")
+        os.makedirs(dir_name, exist_ok=True)
+    
+    metadata = load_media_metadata(username, media_type)
+    media_files = []
+    key = f"{username}:{media_type}"
+    
+    with progress_lock:
+        file_progress_data = file_progress.get(key, {})
+    
+    for item in metadata:
+        file_path = os.path.join(dir_name, item["filename"])
+        if os.path.isfile(file_path):
+            file_type = item["type"]
+            download_status = item["download_status"]
+            progress = item["progress"]
+            
+            if item["filename"] in file_progress_data:
+                file_status = file_progress_data[item["filename"]]
+                download_status = file_status["status"]
+                progress = file_status["progress"]
+            
+            # Use the actual file as download URL
+            file_url = f"/downloads/{username}/{media_type}/{item['filename']}"
+            
+            # For thumbnails: use original thumbnail_url from metadata if available
+            # For videos, if thumbnail_url points to video file, use thumbnail endpoint
+            thumbnail_url = item.get("thumbnail_url")
+            if file_type == "video":
+                # If thumbnail_url is the video URL itself or missing, generate thumbnail from video
+                if not thumbnail_url or thumbnail_url == item.get("download_url") or thumbnail_url.endswith(".mp4"):
+                    thumbnail_url = f"/thumbnail/{username}/{media_type}/{item['filename']}"
+                # If thumbnail_url is from Snapchat API (external URL), use it directly
+                elif thumbnail_url.startswith("http"):
+                    # Use the original Snapchat preview URL
+                    pass
+                else:
+                    # Fallback to thumbnail endpoint for relative paths
+                    thumbnail_url = f"/thumbnail/{username}/{media_type}/{item['filename']}"
+            elif not thumbnail_url:
+                # For images, use the file itself as thumbnail
+                thumbnail_url = file_url
+            
+            media_files.append(
+                GalleryMediaItem(
+                    filename=item["filename"],
+                    type=file_type,
+                    thumbnail_url=thumbnail_url or file_url,
+                    download_status=download_status,
+                    progress=progress,
+                    download_url=file_url
+                )
+            )
+    
+    return GalleryResponse(status="success", media=media_files)
+
+# Video thumbnail endpoint - extracts first frame from video
+@app.get("/thumbnail/{username}/{media_type}/{filename}")
+async def generate_video_thumbnail(username: str, media_type: str, filename: str):
+    """Generate thumbnail from video file by extracting first frame"""
+    try:
+        file_path = os.path.join(DOWNLOADS_DIR, username, media_type, filename)
+        
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        # Only process video files
+        if not filename.lower().endswith(('.mp4', '.mov', '.webm', '.mkv')):
+            # For non-video files, serve the file directly
+            return await serve_downloaded_file(username, media_type, filename)
+        
+        # Try to use OpenCV or imageio to extract thumbnail
+        thumbnail_path = None
+        try:
+            # Try OpenCV first (cv2)
+            import cv2
+            video = cv2.VideoCapture(file_path)
+            if video.isOpened():
+                ret, frame = video.read()
+                if ret:
+                    # Create thumbnail filename
+                    thumbnail_dir = os.path.join(DOWNLOADS_DIR, username, media_type, ".thumbnails")
+                    os.makedirs(thumbnail_dir, exist_ok=True)
+                    thumbnail_path = os.path.join(thumbnail_dir, f"{os.path.splitext(filename)[0]}.jpg")
+                    
+                    # Save frame as JPEG
+                    cv2.imwrite(thumbnail_path, frame)
+                    logger.info(f"✅ Generated thumbnail: {thumbnail_path}")
+                video.release()
+        except ImportError:
+            logger.warning("⚠️ OpenCV not available, trying alternative method")
+            # Fallback: try imageio
+            try:
+                import imageio
+                reader = imageio.get_reader(file_path)
+                frame = reader.get_data(0)  # Get first frame
+                
+                thumbnail_dir = os.path.join(DOWNLOADS_DIR, username, media_type, ".thumbnails")
+                os.makedirs(thumbnail_dir, exist_ok=True)
+                thumbnail_path = os.path.join(thumbnail_dir, f"{os.path.splitext(filename)[0]}.jpg")
+                
+                imageio.imwrite(thumbnail_path, frame)
+                logger.info(f"✅ Generated thumbnail with imageio: {thumbnail_path}")
+                reader.close()
+            except ImportError:
+                logger.warning("⚠️ Neither OpenCV nor imageio available for thumbnail generation")
+        
+        # If thumbnail was generated, serve it
+        if thumbnail_path and os.path.exists(thumbnail_path):
+            return FileResponse(
+                path=thumbnail_path,
+                media_type="image/jpeg",
+                filename=os.path.basename(thumbnail_path)
+            )
+        else:
+            # Fallback: return a placeholder or the video file with poster
+            # For now, return video file - browser will handle it
+            logger.warning(f"⚠️ Could not generate thumbnail for {filename}, serving video file")
+            return await serve_downloaded_file(username, media_type, filename)
+            
+    except Exception as e:
+        logger.error(f"Error generating thumbnail for {filename}: {e}")
+        # Fallback to serving the original file
+        try:
+            return await serve_downloaded_file(username, media_type, filename)
+        except:
+            raise HTTPException(status_code=500, detail="Error generating thumbnail")
 
 # Static file serving for downloaded media
 @app.get("/downloads/{username}/{media_type}/{filename}")
@@ -3596,6 +4320,147 @@ async def serve_downloaded_file(username: str, media_type: str, filename: str):
     except Exception as e:
         logger.error(f"Error serving file {filename}: {e}")
         raise HTTPException(status_code=500, detail="Error serving file")
+
+# ===== BULK OPERATIONS ENDPOINTS =====
+
+@app.post("/gallery/bulk-download")
+async def bulk_download_files(request: BulkOperationRequest):
+    """Download multiple files as a ZIP archive"""
+    try:
+        from fastapi.responses import StreamingResponse
+        
+        zip_buffer = BytesIO()
+        successful = 0
+        failed = 0
+        errors = []
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for filename in request.items:
+                try:
+                    file_path = os.path.join(DOWNLOADS_DIR, request.username, request.media_type, filename)
+                    if os.path.exists(file_path):
+                        zip_file.write(file_path, filename)
+                        successful += 1
+                    else:
+                        failed += 1
+                        errors.append(f"{filename}: File not found")
+                except Exception as e:
+                    failed += 1
+                    errors.append(f"{filename}: {str(e)}")
+        
+        zip_buffer.seek(0)
+        
+        return StreamingResponse(
+            zip_buffer,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename={request.username}_{request.media_type}.zip"
+            }
+        )
+    except Exception as e:
+        logger.error(f"Bulk download error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/gallery/bulk-delete")
+async def bulk_delete_files(request: BulkOperationRequest):
+    """Delete multiple files"""
+    try:
+        successful = 0
+        failed = 0
+        errors = []
+        
+        for filename in request.items:
+            try:
+                file_path = os.path.join(DOWNLOADS_DIR, request.username, request.media_type, filename)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    successful += 1
+                    
+                    # Update metadata
+                    metadata = load_media_metadata(request.username, request.media_type)
+                    metadata = [item for item in metadata if item["filename"] != filename]
+                    save_media_metadata(request.username, request.media_type, metadata)
+                else:
+                    failed += 1
+                    errors.append(f"{filename}: File not found")
+            except Exception as e:
+                failed += 1
+                errors.append(f"{filename}: {str(e)}")
+        
+        # Broadcast gallery update
+        await websocket_manager.broadcast(
+            f"gallery:{request.media_type}",
+            {
+                "type": "gallery_update",
+                "action": "items_deleted",
+                "count": successful,
+                "username": request.username,
+                "media_type": request.media_type
+            }
+        )
+        
+        return BulkOperationResponse(
+            status="success",
+            operation="delete",
+            total=len(request.items),
+            successful=successful,
+            failed=failed,
+            errors=errors if errors else None
+        )
+    except Exception as e:
+        logger.error(f"Bulk delete error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/gallery/bulk-telegram")
+async def bulk_send_telegram(request: BulkOperationRequest, background_tasks: BackgroundTasks):
+    """Send multiple files to Telegram"""
+    try:
+        if not telegram_manager:
+            raise HTTPException(status_code=503, detail="Telegram not configured")
+        
+        successful = 0
+        failed = 0
+        errors = []
+        
+        for filename in request.items:
+            try:
+                file_path = os.path.join(DOWNLOADS_DIR, request.username, request.media_type, filename)
+                if not os.path.exists(file_path):
+                    failed += 1
+                    errors.append(f"{filename}: File not found")
+                    continue
+                
+                # Determine media type
+                is_video = filename.lower().endswith(('.mp4', '.mov', '.webm'))
+                
+                # Send to Telegram
+                result = await telegram_manager.send_media_to_telegram(
+                    file_path,
+                    "video" if is_video else "photo",
+                    f"📸 {request.media_type.title()} from @{request.username}"
+                )
+                
+                if result.get("success"):
+                    successful += 1
+                else:
+                    failed += 1
+                    errors.append(f"{filename}: {result.get('error', 'Unknown error')}")
+                    
+            except Exception as e:
+                failed += 1
+                errors.append(f"{filename}: {str(e)}")
+        
+        return BulkOperationResponse(
+            status="success",
+            operation="telegram",
+            total=len(request.items),
+            successful=successful,
+            failed=failed,
+            errors=errors if errors else None
+        )
+    except Exception as e:
+        logger.error(f"Bulk telegram error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ===== DIRECT DOWNLOAD AND SEND FUNCTION (NO DISK SAVE) =====
 async def download_and_send_directly(username: str, stories: list, telegram_caption: str):

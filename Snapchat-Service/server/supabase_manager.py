@@ -49,14 +49,30 @@ class SnapchatSupabaseManager:
             # Simple connection test - just verify we can create a client and it responds
             # Don't test specific tables as they might not exist yet
             try:
-                # Test basic client functionality
-                # This will fail if the URL or key is invalid
-                test_response = self.client.table("_test_connection").select("*").limit(1).execute()
+                # Test basic client functionality with timeout
+                test_response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        lambda: self.client.table("_test_connection").select("*").limit(1).execute()
+                    ),
+                    timeout=5.0
+                )
                 # If we get here, the connection is working (even if table doesn't exist)
                 return True
+            except asyncio.TimeoutError:
+                logger.error("❌ Supabase connection timeout")
+                return False
             except Exception as connection_error:
-                # Check if it's a table not found error (which means connection is working)
+                # Check for network errors
                 error_str = str(connection_error).lower()
+                # Network/DNS errors
+                if ("getaddrinfo" in error_str or
+                    "econnrefused" in error_str or
+                    "enotfound" in error_str or
+                    "name resolution" in error_str or
+                    "network" in error_str):
+                    logger.error(f"❌ Supabase network connection failed: {connection_error}")
+                    return False
+                # Check if it's a table not found error (which means connection is working)
                 if ("could not find the table" in error_str or 
                     "relation" in error_str and "does not exist" in error_str or
                     "pgrst205" in error_str):
@@ -67,8 +83,27 @@ class SnapchatSupabaseManager:
                     return False
             
         except Exception as error:
-            logger.error(f"❌ Snapchat Supabase health check failed: {error}")
+            error_str = str(error).lower()
+            # Check for network errors in outer catch
+            if ("getaddrinfo" in error_str or
+                "econnrefused" in error_str or
+                "enotfound" in error_str):
+                logger.error(f"❌ Supabase network error: {error}")
+            else:
+                logger.error(f"❌ Snapchat Supabase health check failed: {error}")
             return False
+    
+    # Helper method to check for network errors
+    def _is_network_error(self, error: Exception) -> bool:
+        """Check if an error is a network/DNS error"""
+        error_str = str(error).lower()
+        return (
+            "getaddrinfo" in error_str or
+            "econnrefused" in error_str or
+            "enotfound" in error_str or
+            "name resolution" in error_str or
+            "network" in error_str
+        )
     
     # Cache functions for recent stories
     async def get_cached_recent_stories(self, username: str) -> List[Dict[str, Any]]:
@@ -78,7 +113,13 @@ class SnapchatSupabaseManager:
                 logger.warning("⚠️ Supabase not connected, returning empty cache")
                 return []
             
-            response = self.client.table("snapchat_recent_stories_cache").select("*").eq("username", username).order("story_order").execute()
+            response = await asyncio.to_thread(
+                lambda: self.client.table("snapchat_recent_stories_cache")
+                    .select("*")
+                    .eq("username", username)
+                    .order("story_order")
+                    .execute()
+            )
             
             # No need to check response.error as Supabase client handles errors differently
             
@@ -94,7 +135,12 @@ class SnapchatSupabaseManager:
             ]
             
         except Exception as error:
-            logger.error(f"❌ Failed to get cached stories for @{username}: {error}")
+            # Check for network errors and mark as disconnected
+            if self._is_network_error(error):
+                logger.error(f"❌ Supabase network error getting cached stories for @{username} - marking as disconnected")
+                self.is_connected = False
+            else:
+                logger.error(f"❌ Failed to get cached stories for @{username}: {error}")
             return []
     
     async def update_recent_stories_cache(self, username: str, stories: List[Dict[str, Any]]) -> bool:
@@ -105,7 +151,20 @@ class SnapchatSupabaseManager:
                 return False
             
             # Remove old cache entries for this user
-            self.client.table("snapchat_recent_stories_cache").delete().eq("username", username).execute()
+            try:
+                await asyncio.to_thread(
+                    lambda: self.client.table("snapchat_recent_stories_cache")
+                        .delete()
+                        .eq("username", username)
+                        .execute()
+                )
+            except Exception as delete_error:
+                if self._is_network_error(delete_error):
+                    logger.error(f"❌ Supabase network error deleting cache for @{username} - marking as disconnected")
+                    self.is_connected = False
+                else:
+                    logger.error(f"❌ Failed to delete old cache for @{username}: {delete_error}")
+                return False
             
             if not stories:
                 logger.info(f"📊 Stories cache cleared for @{username}")
@@ -124,13 +183,29 @@ class SnapchatSupabaseManager:
             
             # Insert new cache entries
             if cache_entries:
-                self.client.table("snapchat_recent_stories_cache").insert(cache_entries).execute()
+                try:
+                    await asyncio.to_thread(
+                        lambda: self.client.table("snapchat_recent_stories_cache")
+                            .insert(cache_entries)
+                            .execute()
+                    )
+                except Exception as insert_error:
+                    if self._is_network_error(insert_error):
+                        logger.error(f"❌ Supabase network error inserting cache for @{username} - marking as disconnected")
+                        self.is_connected = False
+                    else:
+                        logger.error(f"❌ Failed to insert cache for @{username}: {insert_error}")
+                    return False
             
             logger.info(f"✅ Updated Supabase stories cache with {len(stories)} stories for @{username}")
             return True
             
         except Exception as error:
-            logger.error(f"❌ Failed to update stories cache for @{username}: {error}")
+            if self._is_network_error(error):
+                logger.error(f"❌ Supabase network error updating cache for @{username} - marking as disconnected")
+                self.is_connected = False
+            else:
+                logger.error(f"❌ Failed to update stories cache for @{username}: {error}")
             return False
     
     # Story processing functions
@@ -140,14 +215,24 @@ class SnapchatSupabaseManager:
             if not self.is_connected:
                 return False
             
-            response = self.client.table("snapchat_processed_stories").select("*").eq("snap_id", snap_id).eq("username", username).execute()
+            response = await asyncio.to_thread(
+                lambda: self.client.table("snapchat_processed_stories")
+                    .select("*")
+                    .eq("snap_id", snap_id)
+                    .eq("username", username)
+                    .execute()
+            )
             
             # No need to check response.error as Supabase client handles errors differently
             
             return len(response.data) > 0
             
         except Exception as error:
-            logger.error(f"❌ Failed to check if story {snap_id} is processed: {error}")
+            if self._is_network_error(error):
+                logger.error(f"❌ Supabase network error checking story {snap_id} - marking as disconnected")
+                self.is_connected = False
+            else:
+                logger.error(f"❌ Failed to check if story {snap_id} is processed: {error}")
             return False
     
     async def mark_story_processed(self, snap_id: str, username: str, story_url: str, story_type: str) -> bool:
@@ -165,18 +250,26 @@ class SnapchatSupabaseManager:
                 "processed_at": datetime.now().isoformat()
             }
             
-            self.client.table("snapchat_processed_stories").upsert(story_data).execute()
+            await asyncio.to_thread(
+                lambda: self.client.table("snapchat_processed_stories")
+                    .upsert(story_data)
+                    .execute()
+            )
             
             logger.info(f"✅ Marked story {snap_id} as processed for @{username}")
             return True
             
         except Exception as error:
-            logger.error(f"❌ Failed to mark story {snap_id} as processed: {error}")
+            if self._is_network_error(error):
+                logger.error(f"❌ Supabase network error marking story {snap_id} - marking as disconnected")
+                self.is_connected = False
+            else:
+                logger.error(f"❌ Failed to mark story {snap_id} as processed: {error}")
             return False
     
     # Cache cleanup functions
     async def clean_expired_snapchat_cache(self) -> Dict[str, int]:
-        """Clean expired Snapchat cache (complete wipe every 4 weeks)"""
+        """Clean expired Snapchat cache (complete wipe every 2 weeks)"""
         try:
             if not self.is_connected:
                 logger.warning("⚠️ Supabase not connected, skipping cleanup")
@@ -184,13 +277,13 @@ class SnapchatSupabaseManager:
             
             logger.info("🧹 Starting Snapchat Supabase cache cleanup...")
             
-            four_weeks_ago = datetime.now() - timedelta(days=28)
+            two_weeks_ago = datetime.now() - timedelta(days=14)
             
             # Complete wipe of stories cache (not selective like Instagram)
-            cache_response = self.client.table("snapchat_recent_stories_cache").delete().lt("cached_at", four_weeks_ago.isoformat()).execute()
+            cache_response = self.client.table("snapchat_recent_stories_cache").delete().lt("cached_at", two_weeks_ago.isoformat()).execute()
             
             # Complete wipe of processed stories (not selective like Instagram)
-            processed_response = self.client.table("snapchat_processed_stories").delete().lt("processed_at", four_weeks_ago.isoformat()).execute()
+            processed_response = self.client.table("snapchat_processed_stories").delete().lt("processed_at", two_weeks_ago.isoformat()).execute()
             
             stories_removed = len(cache_response.data) if cache_response.data else 0
             processed_removed = len(processed_response.data) if processed_response.data else 0

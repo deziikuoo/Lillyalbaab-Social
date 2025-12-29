@@ -6,7 +6,6 @@ const path = require("path");
 const FormData = require("form-data");
 const cheerio = require("cheerio");
 const cron = require("node-cron");
-const sqlite3 = require("sqlite3").verbose();
 const SupabaseManager = require("./supabase-manager");
 const puppeteer = require("puppeteer");
 const readline = require("readline");
@@ -527,15 +526,15 @@ const memoryManager = {
         }
       }
 
-      // Schedule 4-week cache cleanup (every 1344 cleanup cycles = 4 weeks)
-      // 30 min * 1344 = 40320 min = 672 hours = 28 days = 4 weeks
+      // Schedule 2-week cache cleanup (every 672 cleanup cycles = 2 weeks)
+      // 30 min * 672 = 20160 min = 336 hours = 14 days = 2 weeks
       const weeklyCleanupCount = Math.floor(
         (Date.now() - this.lastCleanup) / this.cleanupInterval
       );
-      if (weeklyCleanupCount % 1344 === 0 && weeklyCleanupCount > 0) {
-        console.log("📋 Scheduling 4-week cache cleanup operation...");
+      if (weeklyCleanupCount % 672 === 0 && weeklyCleanupCount > 0) {
+        console.log("📋 Scheduling 2-week cache cleanup operation...");
 
-        // Perform 4-week cleanup operations
+        // Perform 2-week cleanup operations
         try {
           // Clean up Supabase cache (keep last 8 posts per user)
           if (supabaseManager) {
@@ -545,8 +544,8 @@ const memoryManager = {
             );
           }
 
-          // Clean up downloads folder (remove files older than 4 weeks)
-          const fourWeeksAgo = Date.now() - 4 * 7 * 24 * 60 * 60 * 1000; // 4 weeks in milliseconds
+          // Clean up downloads folder (remove files older than 2 weeks)
+          const twoWeeksAgo = Date.now() - 2 * 7 * 24 * 60 * 60 * 1000; // 2 weeks in milliseconds
           let downloadsRemoved = 0;
 
           if (fs.existsSync(DOWNLOADS_DIR)) {
@@ -564,7 +563,7 @@ const memoryManager = {
                   }
                 } else if (
                   stats.isFile() &&
-                  stats.mtime.getTime() < fourWeeksAgo
+                  stats.mtime.getTime() < twoWeeksAgo
                 ) {
                   fs.unlinkSync(itemPath);
                   downloadsRemoved++;
@@ -578,9 +577,9 @@ const memoryManager = {
             );
           }
 
-          console.log("✅ 4-week cleanup completed");
+          console.log("✅ 2-week cleanup completed");
         } catch (error) {
-          console.error("❌ 4-week cleanup failed:", error);
+          console.error("❌ 2-week cleanup failed:", error);
         }
       }
 
@@ -620,14 +619,10 @@ const healthCheck = {
         return;
       }
 
-      // Check database connectivity
-      if (db) {
-        await new Promise((resolve, reject) => {
-          db.get("SELECT 1", (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
+      // Check Supabase connectivity
+      if (supabaseManager && supabaseManager.isConnected) {
+        // Supabase connection is already checked by the manager
+        // Just verify it's still connected
       }
 
       // Reset failure counter on success
@@ -976,12 +971,6 @@ const POLLING_ENABLED = true;
 let currentPollingTimeout = null; // Track current polling timeout for restart
 let pollingStarted = false; // Track if polling has been started
 
-// Database setup for tracking posts
-const dbPath =
-  process.env.NODE_ENV === "production"
-    ? "/opt/render/project/src/data/instagram_tracker.db" // Render persistent storage
-    : "./instagram_tracker.db"; // Local development
-
 // Downloads directory configuration for different environments
 const DOWNLOADS_DIR = (() => {
   if (process.env.VERCEL) {
@@ -1018,90 +1007,23 @@ try {
 
 // Initialize Supabase database
 let supabaseManager;
-let db; // Declare db variable at top level
 
-// Initialize databases (Supabase with SQLite fallback)
+// Initialize Supabase database
 async function initializeDatabases() {
   try {
     supabaseManager = new SupabaseManager();
     const connected = await supabaseManager.connect();
     if (connected) {
       console.log(`✅ Supabase database connected successfully`);
-      // Always initialize SQLite as fallback
-      db = new sqlite3.Database(dbPath);
-      console.log(`✅ SQLite fallback database initialized`);
-      initializeSQLiteTables();
     } else {
-      console.log(`⚠️ Supabase connection failed, falling back to SQLite`);
-      // Fallback to SQLite if Supabase fails
-      db = new sqlite3.Database(dbPath);
-      console.log(`✅ SQLite fallback database initialized`);
-      initializeSQLiteTables();
+      console.error(
+        `❌ Supabase connection failed - service requires Supabase to function`
+      );
+      throw new Error("Supabase connection required");
     }
   } catch (error) {
     console.error(`❌ Supabase initialization failed: ${error.message}`);
-    console.log(`🔄 Falling back to SQLite database...`);
-    db = new sqlite3.Database(dbPath);
-    console.log(`✅ SQLite fallback database initialized`);
-    initializeSQLiteTables();
-  }
-}
-
-// Initialize SQLite tables
-function initializeSQLiteTables() {
-  if (db) {
-    db.serialize(() => {
-      db.run(`CREATE TABLE IF NOT EXISTS processed_posts (
-    id TEXT PRIMARY KEY,
-    username TEXT,
-    post_url TEXT,
-    post_type TEXT,
-    is_pinned BOOLEAN DEFAULT FALSE,
-    pinned_at DATETIME,
-    processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-
-      // Add is_pinned column if it doesn't exist (for existing databases)
-      db.run(
-        `ALTER TABLE processed_posts ADD COLUMN is_pinned BOOLEAN DEFAULT FALSE`,
-        function (err) {
-          if (err && !err.message.includes("duplicate column name")) {
-            console.log(`⚠️ Schema update warning: ${err.message}`);
-          }
-        }
-      );
-      db.run(
-        `ALTER TABLE processed_posts ADD COLUMN pinned_at DATETIME`,
-        function (err) {
-          if (err && !err.message.includes("duplicate column name")) {
-            console.log(`⚠️ Schema update warning: ${err.message}`);
-          }
-        }
-      );
-
-      // Cache for recent posts (pinned + recent, max 8 per user)
-      db.run(`CREATE TABLE IF NOT EXISTS recent_posts_cache (
-    username TEXT,
-    post_url TEXT,
-    shortcode TEXT,
-    is_pinned BOOLEAN DEFAULT FALSE,
-    post_order INTEGER,
-    cached_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (username, shortcode)
-  )`);
-
-      // Cache cleanup tracking
-      db.run(`CREATE TABLE IF NOT EXISTS cache_cleanup_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    cleaned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    posts_removed INTEGER,
-    username TEXT
-  )`);
-
-      // REMOVED: Stories tracking tables - Stories use Supabase only
-      // db.run(`CREATE TABLE IF NOT EXISTS processed_stories (...)`);
-      // db.run(`CREATE TABLE IF NOT EXISTS recent_stories_cache (...)`);
-    });
+    throw error; // Fail hard - no fallback
   }
 }
 
@@ -1290,16 +1212,9 @@ async function cleanupAndExit(code) {
   }
   */
 
-  // Close database connections
-  if (db) {
-    db.close((err) => {
-      if (err) console.error("Error closing database:", err);
-      else console.log("✅ Database connection closed");
-      process.exit(code);
-    });
-  } else {
-    process.exit(code);
-  }
+  // Database connections (Supabase) don't need explicit closing
+  // Supabase client manages its own connections
+  process.exit(code);
 }
 
 // Parse and validate Instagram username/URL
@@ -3459,68 +3374,19 @@ async function processPostsWithPinnedDetection(allPosts, userAgent) {
 
 // Check if post was already processed (excluding pinned posts from recent checks)
 async function isPostProcessed(postId, username) {
-  // Use Supabase if available, otherwise fallback to SQLite
-  if (supabaseManager && supabaseManager.isConnected) {
-    try {
-      return await supabaseManager.isPostProcessed(postId, username);
-    } catch (error) {
-      console.error(
-        `❌ Supabase post processing check failed: ${error.message}`
-      );
-      // Fallback to SQLite
-    }
+  if (!supabaseManager || !supabaseManager.isConnected) {
+    console.error(
+      `❌ Supabase not connected - cannot check if post is processed`
+    );
+    return false; // Default to not processed if Supabase unavailable
   }
 
-  // Fallback to SQLite
-  if (db) {
-    return new Promise((resolve, reject) => {
-      // Check if post exists
-      db.get(
-        `
-        SELECT id, is_pinned, pinned_at, processed_at 
-        FROM processed_posts 
-        WHERE id = ? AND username = ?
-      `,
-        [postId, username],
-        (err, row) => {
-          if (err) reject(err);
-          else {
-            if (!row) {
-              resolve(false); // Not processed - allow processing
-            } else if (row.is_pinned) {
-              // For pinned posts, check if they were pinned recently (within last 24 hours)
-              const pinnedTime = new Date(row.pinned_at);
-              const now = new Date();
-              const hoursSincePinned = (now - pinnedTime) / (1000 * 60 * 60);
-
-              if (hoursSincePinned < 24) {
-                // Recently pinned - allow re-processing to capture any updates
-                console.log(
-                  `📌 Pinned post ${postId} was pinned ${hoursSincePinned.toFixed(
-                    1
-                  )} hours ago - allowing re-processing`
-                );
-                resolve(false);
-              } else {
-                // Old pinned post - treat as processed to avoid spam
-                console.log(
-                  `📌 Old pinned post ${postId} was pinned ${hoursSincePinned.toFixed(
-                    1
-                  )} hours ago - treating as processed`
-                );
-                resolve(true);
-              }
-            } else {
-              // Regular post - always treat as processed once processed
-              resolve(true);
-            }
-          }
-        }
-      );
-    });
+  try {
+    return await supabaseManager.isPostProcessed(postId, username);
+  } catch (error) {
+    console.error(`❌ Supabase post processing check failed: ${error.message}`);
+    return false; // Default to not processed on error
   }
-
-  return false; // Default to not processed if no database available
 }
 
 // Mark post as processed
@@ -3531,62 +3397,24 @@ async function markPostAsProcessed(
   postType,
   isPinned = false
 ) {
-  // Use Supabase if available, otherwise fallback to SQLite
-  if (supabaseManager && supabaseManager.isConnected) {
-    try {
-      await supabaseManager.markPostAsProcessed(
-        postId,
-        username,
-        postUrl,
-        postType,
-        isPinned
-      );
-      return true;
-    } catch (error) {
-      console.error(`❌ Supabase post marking failed: ${error.message}`);
-      // Fallback to SQLite
-    }
+  if (!supabaseManager || !supabaseManager.isConnected) {
+    console.error(`❌ Supabase not connected - cannot mark post as processed`);
+    return false;
   }
 
-  // Fallback to SQLite
-  if (db) {
-    return new Promise((resolve, reject) => {
-      const now = new Date().toISOString();
-
-      if (isPinned) {
-        // For pinned posts, update existing record or insert new one
-        db.run(
-          `
-          INSERT OR REPLACE INTO processed_posts 
-          (id, username, post_url, post_type, is_pinned, pinned_at, processed_at) 
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `,
-          [postId, username, postUrl, postType, true, now, now],
-          function (err) {
-            if (err) reject(err);
-            else {
-              console.log(
-                `📌 Marked pinned post ${postId} as processed (SQLite)`
-              );
-              resolve(this.lastID);
-            }
-          }
-        );
-      } else {
-        // For regular posts, insert new record
-        db.run(
-          "INSERT INTO processed_posts (id, username, post_url, post_type, is_pinned) VALUES (?, ?, ?, ?, ?)",
-          [postId, username, postUrl, postType, false],
-          function (err) {
-            if (err) reject(err);
-            else resolve(this.lastID);
-          }
-        );
-      }
-    });
+  try {
+    await supabaseManager.markPostAsProcessed(
+      postId,
+      username,
+      postUrl,
+      postType,
+      isPinned
+    );
+    return true;
+  } catch (error) {
+    console.error(`❌ Supabase post marking failed: ${error.message}`);
+    return false;
   }
-
-  return false;
 }
 
 // Cache functions for recent posts
@@ -3600,159 +3428,55 @@ async function getCachedRecentPosts(username) {
     return global.postCache[username];
   }
 
-  // Use Supabase if available, otherwise fallback to SQLite
-  if (supabaseManager && supabaseManager.isConnected) {
-    try {
-      const cachedPosts = await supabaseManager.getCachedRecentPosts(username);
+  if (!supabaseManager || !supabaseManager.isConnected) {
+    console.error(`❌ Supabase not connected - cannot get cached posts`);
+    return [];
+  }
 
-      // Update in-memory cache
-      if (!global.postCache) {
-        global.postCache = {};
-      }
-      global.postCache[username] = cachedPosts;
+  try {
+    const cachedPosts = await supabaseManager.getCachedRecentPosts(username);
 
-      return cachedPosts;
-    } catch (error) {
-      console.error(`❌ Supabase cache retrieval failed: ${error.message}`);
-      // Fallback to SQLite
+    // Update in-memory cache
+    if (!global.postCache) {
+      global.postCache = {};
     }
+    global.postCache[username] = cachedPosts;
+
+    return cachedPosts;
+  } catch (error) {
+    console.error(`❌ Supabase cache retrieval failed: ${error.message}`);
+    return [];
   }
-
-  // Fallback to SQLite
-  if (db) {
-    return new Promise((resolve, reject) => {
-      db.all(
-        `
-        SELECT post_url, shortcode, is_pinned, post_order, cached_at 
-        FROM recent_posts_cache 
-        WHERE username = ? 
-        ORDER BY is_pinned DESC, post_order ASC
-      `,
-        [username],
-        (err, rows) => {
-          if (err) reject(err);
-          else {
-            const cachedPosts = rows || [];
-
-            // Update in-memory cache
-            if (!global.postCache) {
-              global.postCache = {};
-            }
-            global.postCache[username] = cachedPosts;
-
-            resolve(cachedPosts);
-          }
-        }
-      );
-    });
-  }
-
-  return [];
 }
 
 // Update cache with new recent posts
 async function updateRecentPostsCache(username, posts) {
-  // Use Supabase if available, otherwise fallback to SQLite
-  if (supabaseManager && supabaseManager.isConnected) {
-    try {
-      await supabaseManager.updateRecentPostsCache(username, posts);
-
-      // Update in-memory cache
-      if (!global.postCache) {
-        global.postCache = {};
-      }
-      global.postCache[username] = posts.map((post, idx) => ({
-        post_url: post.url,
-        shortcode:
-          post.shortcode || post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2],
-        is_pinned: post.is_pinned || false,
-        post_order: idx + 1,
-        cached_at: new Date().toISOString(),
-      }));
-
-      console.log(
-        `✅ Updated Supabase cache with ${posts.length} posts for @${username} (memory + database)`
-      );
-      return;
-    } catch (error) {
-      console.error(`❌ Supabase cache update failed: ${error.message}`);
-      // Fallback to SQLite
-    }
+  if (!supabaseManager || !supabaseManager.isConnected) {
+    console.error(`❌ Supabase not connected - cannot update cache`);
+    return;
   }
 
-  // Fallback to SQLite
-  if (db) {
-    return new Promise((resolve, reject) => {
-      // First, remove old cache entries for this user
-      db.run(
-        "DELETE FROM recent_posts_cache WHERE username = ?",
-        [username],
-        function (err) {
-          if (err) {
-            reject(err);
-            return;
-          }
+  try {
+    await supabaseManager.updateRecentPostsCache(username, posts);
 
-          // Then insert new posts
-          const stmt = db.prepare(`
-          INSERT INTO recent_posts_cache 
-          (username, post_url, shortcode, is_pinned, post_order, cached_at) 
-          VALUES (?, ?, ?, ?, ?, ?)
-        `);
+    // Update in-memory cache
+    if (!global.postCache) {
+      global.postCache = {};
+    }
+    global.postCache[username] = posts.map((post, idx) => ({
+      post_url: post.url,
+      shortcode:
+        post.shortcode || post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2],
+      is_pinned: post.is_pinned || false,
+      post_order: idx + 1,
+      cached_at: new Date().toISOString(),
+    }));
 
-          let completed = 0;
-          const total = posts.length;
-
-          if (total === 0) {
-            resolve();
-            return;
-          }
-
-          posts.forEach((post, index) => {
-            const shortcode =
-              post.shortcode ||
-              post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2];
-            const isPinned = post.is_pinned || false;
-            const postOrder = index + 1;
-            const now = new Date().toISOString();
-
-            stmt.run(
-              [username, post.url, shortcode, isPinned, postOrder, now],
-              function (err) {
-                if (err) {
-                  console.log(
-                    `❌ Cache update error for ${shortcode}: ${err.message}`
-                  );
-                }
-                completed++;
-                if (completed === total) {
-                  stmt.finalize();
-
-                  // Update in-memory cache
-                  if (!global.postCache) {
-                    global.postCache = {};
-                  }
-                  global.postCache[username] = posts.map((post, idx) => ({
-                    post_url: post.url,
-                    shortcode:
-                      post.shortcode ||
-                      post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2],
-                    is_pinned: post.is_pinned || false,
-                    post_order: idx + 1,
-                    cached_at: now,
-                  }));
-
-                  console.log(
-                    `✅ Updated SQLite cache with ${total} posts for @${username} (memory + database)`
-                  );
-                  resolve();
-                }
-              }
-            );
-          });
-        }
-      );
-    });
+    console.log(
+      `✅ Updated Supabase cache with ${posts.length} posts for @${username} (memory + database)`
+    );
+  } catch (error) {
+    console.error(`❌ Supabase cache update failed: ${error.message}`);
   }
 }
 
@@ -3858,205 +3582,30 @@ async function cleanExpiredCache() {
   try {
     console.log("🧹 Starting enhanced cache cleanup...");
 
-    // Use Supabase if available, otherwise fallback to SQLite
-    if (supabaseManager && supabaseManager.isConnected) {
-      try {
-        console.log("🧹 Using Supabase for cache cleanup...");
-        await supabaseManager.cleanExpiredCache();
-
-        // Update memory cache atomically
-        await updateMemoryCacheAfterCleanup();
-
-        // Run cache integrity check
-        console.log("🔍 Running post-cleanup cache integrity check...");
-        await validateCacheIntegrity();
-
-        return { cacheRemoved: 0, processedRemoved: 0 }; // Supabase manager handles the counts
-      } catch (error) {
-        console.error(`❌ Supabase cache cleanup failed: ${error.message}`);
-        console.log("🔄 Falling back to SQLite...");
-        // Continue to SQLite fallback
-      }
+    if (!supabaseManager || !supabaseManager.isConnected) {
+      console.error(`❌ Supabase not connected - cannot perform cache cleanup`);
+      return { cacheRemoved: 0, processedRemoved: 0 };
     }
 
-    // Fallback to SQLite
-    if (db) {
-      console.log("🧹 Using SQLite for cache cleanup...");
+    try {
+      console.log("🧹 Using Supabase for cache cleanup...");
+      await supabaseManager.cleanExpiredCache();
 
-      return new Promise(async (resolve, reject) => {
-        try {
-          // Use database transaction
-          await new Promise((resolveTransaction, rejectTransaction) => {
-            db.serialize(() => {
-              db.run("BEGIN TRANSACTION");
+      // Update memory cache atomically
+      await updateMemoryCacheAfterCleanup();
 
-              const weekAgo = new Date();
-              weekAgo.setDate(weekAgo.getDate() - 28); // 4 weeks instead of 7 days
+      // Run cache integrity check
+      console.log("🔍 Running post-cleanup cache integrity check...");
+      await validateCacheIntegrity();
 
-              console.log(
-                `📅 Cleaning cache entries older than: ${weekAgo.toLocaleDateString()}`
-              );
-
-              // Get all users with cache data
-              db.all(
-                "SELECT DISTINCT username FROM recent_posts_cache",
-                (err, users) => {
-                  if (err) {
-                    db.run("ROLLBACK");
-                    rejectTransaction(err);
-                    return;
-                  }
-
-                  let totalCacheRemoved = 0;
-                  let totalProcessedRemoved = 0;
-                  let completedUsers = 0;
-
-                  if (users.length === 0) {
-                    db.run("COMMIT");
-                    resolveTransaction({
-                      cacheRemoved: 0,
-                      processedRemoved: 0,
-                    });
-                    return;
-                  }
-
-                  users.forEach((user, index) => {
-                    // Clean cache for each user (keep last 8 posts)
-                    db.all(
-                      `SELECT shortcode FROM recent_posts_cache 
-                     WHERE username = ? 
-                     ORDER BY cached_at ASC`,
-                      [user.username],
-                      (err, posts) => {
-                        if (err) {
-                          db.run("ROLLBACK");
-                          rejectTransaction(err);
-                          return;
-                        }
-
-                        if (posts.length > 8) {
-                          const postsToDelete = posts.slice(
-                            0,
-                            posts.length - 8
-                          );
-                          const shortcodesToDelete = postsToDelete.map(
-                            (p) => p.shortcode
-                          );
-
-                          if (shortcodesToDelete.length > 0) {
-                            const placeholders = shortcodesToDelete
-                              .map(() => "?")
-                              .join(",");
-                            db.run(
-                              `DELETE FROM recent_posts_cache 
-                             WHERE username = ? AND shortcode IN (${placeholders})`,
-                              [user.username, ...shortcodesToDelete],
-                              function (err) {
-                                if (err) {
-                                  db.run("ROLLBACK");
-                                  rejectTransaction(err);
-                                  return;
-                                }
-                                totalCacheRemoved += this.changes;
-                                console.log(
-                                  `   🗑️ @${user.username}: Removed ${this.changes} old cache entries (SQLite)`
-                                );
-                              }
-                            );
-                          }
-                        }
-
-                        // Clean old processed posts (keep last 8)
-                        db.all(
-                          `SELECT id FROM processed_posts 
-                         WHERE username = ? AND is_pinned = FALSE
-                         ORDER BY processed_at ASC`,
-                          [user.username],
-                          (err, processedPosts) => {
-                            if (err) {
-                              db.run("ROLLBACK");
-                              rejectTransaction(err);
-                              return;
-                            }
-
-                            if (processedPosts.length > 8) {
-                              const postsToDelete = processedPosts.slice(
-                                0,
-                                processedPosts.length - 8
-                              );
-                              const idsToDelete = postsToDelete.map(
-                                (p) => p.id
-                              );
-
-                              if (idsToDelete.length > 0) {
-                                const placeholders = idsToDelete
-                                  .map(() => "?")
-                                  .join(",");
-                                db.run(
-                                  `DELETE FROM processed_posts 
-                                 WHERE username = ? AND id IN (${placeholders})`,
-                                  [user.username, ...idsToDelete],
-                                  function (err) {
-                                    if (err) {
-                                      db.run("ROLLBACK");
-                                      rejectTransaction(err);
-                                      return;
-                                    }
-                                    totalProcessedRemoved += this.changes;
-                                    console.log(
-                                      `   🗑️ @${user.username}: Removed ${this.changes} old processed posts (SQLite)`
-                                    );
-                                  }
-                                );
-                              }
-                            }
-
-                            completedUsers++;
-                            if (completedUsers === users.length) {
-                              db.run("COMMIT");
-                              resolveTransaction({
-                                cacheRemoved: totalCacheRemoved,
-                                processedRemoved: totalProcessedRemoved,
-                              });
-                            }
-                          }
-                        );
-                      }
-                    );
-                  });
-                }
-              );
-            });
-          });
-
-          console.log(
-            `✅ Enhanced SQLite cache cleanup completed: ${totalCacheRemoved} cache entries, ${totalProcessedRemoved} processed posts removed`
-          );
-
-          // Update memory cache atomically
-          await updateMemoryCacheAfterCleanup();
-
-          // Run cache integrity check
-          console.log("🔍 Running post-cleanup cache integrity check...");
-          await validateCacheIntegrity();
-
-          resolve({
-            cacheRemoved: totalCacheRemoved,
-            processedRemoved: totalProcessedRemoved,
-          });
-        } catch (error) {
-          console.error(
-            `❌ Enhanced SQLite cache cleanup failed: ${error.message}`
-          );
-          reject(error);
-        }
-      });
+      return { cacheRemoved: 0, processedRemoved: 0 }; // Supabase manager handles the counts
+    } catch (error) {
+      console.error(`❌ Supabase cache cleanup failed: ${error.message}`);
+      return { cacheRemoved: 0, processedRemoved: 0 };
     }
-
-    return { cacheRemoved: 0, processedRemoved: 0 };
   } catch (error) {
     console.error(`❌ Enhanced cache cleanup failed: ${error.message}`);
-    throw error;
+    return { cacheRemoved: 0, processedRemoved: 0 };
   }
 }
 
@@ -4081,22 +3630,45 @@ async function updateMemoryCacheAfterCleanup() {
   }
 }
 
-// Storage-based cleanup when database size exceeds limit
+// Update memory cache after database cleanup
+async function updateMemoryCacheAfterCleanup() {
+  try {
+    console.log("🔄 Updating memory cache after database cleanup...");
+
+    // Clear existing memory cache
+    if (global.postCache) {
+      global.postCache = {};
+    }
+
+    // Reload cache from database
+    await loadExistingCache();
+
+    console.log("✅ Memory cache updated after cleanup");
+  } catch (error) {
+    console.error(
+      `❌ Failed to update memory cache after cleanup: ${error.message}`
+    );
+  }
+}
+
+// Storage-based cleanup when Supabase row count exceeds limit
 async function checkStorageLimitAndCleanup() {
   try {
-    const dbPath =
-      process.env.NODE_ENV === "production"
-        ? "/opt/render/project/src/data/instagram_tracker.db"
-        : "./instagram_tracker.db";
+    if (!supabaseManager || !supabaseManager.isConnected) {
+      console.log("⚠️ Supabase not connected, skipping storage limit check");
+      return;
+    }
 
-    const fs = require("fs");
-    const stats = fs.statSync(dbPath);
-    const dbSizeMB = stats.size / (1024 * 1024);
+    // Get total row count from Supabase
+    const totalRows = await supabaseManager.getTotalRowCount();
 
-    // Trigger cleanup if database exceeds 500MB
-    if (dbSizeMB > 500) {
+    // Trigger cleanup if total rows exceed 100,000 (approximately equivalent to ~500MB)
+    // Adjust this threshold based on your needs
+    const ROW_LIMIT = 100000;
+
+    if (totalRows > ROW_LIMIT) {
       console.log(
-        `⚠️ Database size (${dbSizeMB.toFixed(2)}MB) exceeds 500MB limit`
+        `⚠️ Supabase database row count (${totalRows.toLocaleString()}) exceeds ${ROW_LIMIT.toLocaleString()} limit`
       );
       console.log("📋 Scheduling storage-based cleanup...");
 
@@ -4112,219 +3684,67 @@ async function checkStorageLimitAndCleanup() {
   }
 }
 
-// Perform storage-based cleanup (delete all except last 8 posts)
+// Perform storage-based cleanup (delete all except last 8 posts per user)
 async function performStorageCleanup() {
-  return new Promise(async (resolve, reject) => {
-    try {
-      console.log("🧹 Starting storage-based cleanup...");
-
-      await new Promise((resolveTransaction, rejectTransaction) => {
-        db.serialize(() => {
-          db.run("BEGIN TRANSACTION");
-
-          // Get all users
-          db.all(
-            "SELECT DISTINCT username FROM recent_posts_cache",
-            (err, users) => {
-              if (err) {
-                db.run("ROLLBACK");
-                rejectTransaction(err);
-                return;
-              }
-
-              let totalCacheRemoved = 0;
-              let totalProcessedRemoved = 0;
-              let completedUsers = 0;
-
-              if (users.length === 0) {
-                db.run("COMMIT");
-                resolveTransaction({ cacheRemoved: 0, processedRemoved: 0 });
-                return;
-              }
-
-              users.forEach((user) => {
-                // Keep only last 8 posts for each user
-                db.all(
-                  `SELECT shortcode FROM recent_posts_cache 
-                 WHERE username = ? 
-                 ORDER BY cached_at DESC LIMIT 8`,
-                  [user.username],
-                  (err, keepPosts) => {
-                    if (err) {
-                      db.run("ROLLBACK");
-                      rejectTransaction(err);
-                      return;
-                    }
-
-                    const keepShortcodes = keepPosts.map((p) => p.shortcode);
-
-                    if (keepShortcodes.length > 0) {
-                      const placeholders = keepShortcodes
-                        .map(() => "?")
-                        .join(",");
-                      db.run(
-                        `DELETE FROM recent_posts_cache 
-                       WHERE username = ? AND shortcode NOT IN (${placeholders})`,
-                        [user.username, ...keepShortcodes],
-                        function (err) {
-                          if (err) {
-                            db.run("ROLLBACK");
-                            rejectTransaction(err);
-                            return;
-                          }
-                          totalCacheRemoved += this.changes;
-                          console.log(
-                            `   🗑️ @${user.username}: Removed ${this.changes} old cache entries (storage cleanup)`
-                          );
-                        }
-                      );
-                    }
-
-                    // Keep only last 8 processed posts for each user
-                    db.all(
-                      `SELECT id FROM processed_posts 
-                     WHERE username = ? AND is_pinned = FALSE
-                     ORDER BY processed_at DESC LIMIT 8`,
-                      [user.username],
-                      (err, keepProcessedPosts) => {
-                        if (err) {
-                          db.run("ROLLBACK");
-                          rejectTransaction(err);
-                          return;
-                        }
-
-                        const keepIds = keepProcessedPosts.map((p) => p.id);
-
-                        if (keepIds.length > 0) {
-                          const placeholders = keepIds.map(() => "?").join(",");
-                          db.run(
-                            `DELETE FROM processed_posts 
-                           WHERE username = ? AND is_pinned = FALSE AND id NOT IN (${placeholders})`,
-                            [user.username, ...keepIds],
-                            function (err) {
-                              if (err) {
-                                db.run("ROLLBACK");
-                                rejectTransaction(err);
-                                return;
-                              }
-                              totalProcessedRemoved += this.changes;
-                              console.log(
-                                `   🗑️ @${user.username}: Removed ${this.changes} old processed posts (storage cleanup)`
-                              );
-                            }
-                          );
-                        }
-
-                        completedUsers++;
-                        if (completedUsers === users.length) {
-                          db.run("COMMIT");
-                          resolveTransaction({
-                            cacheRemoved: totalCacheRemoved,
-                            processedRemoved: totalProcessedRemoved,
-                          });
-                        }
-                      }
-                    );
-                  }
-                );
-              });
-            }
-          );
-        });
-      });
-
-      console.log(
-        `✅ Storage-based cleanup completed: ${totalCacheRemoved} cache entries, ${totalProcessedRemoved} processed posts removed`
-      );
-
-      // Update memory cache atomically
-      await updateMemoryCacheAfterCleanup();
-
-      // Run cache integrity check
-      console.log("🔍 Running post-storage-cleanup cache integrity check...");
-      await validateCacheIntegrity();
-
-      resolve({
-        cacheRemoved: totalCacheRemoved,
-        processedRemoved: totalProcessedRemoved,
-      });
-    } catch (error) {
-      console.error(`❌ Storage-based cleanup failed: ${error.message}`);
-      reject(error);
+  try {
+    if (!supabaseManager || !supabaseManager.isConnected) {
+      console.log("⚠️ Supabase not connected, cannot perform storage cleanup");
+      return { cacheRemoved: 0, processedRemoved: 0 };
     }
-  });
+
+    console.log("🧹 Starting Supabase storage-based cleanup...");
+
+    const result = await supabaseManager.performStorageCleanup();
+
+    // Update memory cache atomically
+    await updateMemoryCacheAfterCleanup();
+
+    // Run cache integrity check
+    console.log("🔍 Running post-storage-cleanup cache integrity check...");
+    await validateCacheIntegrity();
+
+    return result;
+  } catch (error) {
+    console.error(`❌ Storage-based cleanup failed: ${error.message}`);
+    return { cacheRemoved: 0, processedRemoved: 0 };
+  }
 }
 
 // Get last cleanup date
 async function getLastCleanupDate() {
-  // Use Supabase if available, otherwise fallback to SQLite
-  if (supabaseManager && supabaseManager.isConnected) {
-    try {
-      return await supabaseManager.getLastCleanupDate();
-    } catch (error) {
-      console.error(`❌ Supabase cleanup date check failed: ${error.message}`);
-      // Fallback to SQLite
-    }
+  if (!supabaseManager || !supabaseManager.isConnected) {
+    console.error(`❌ Supabase not connected - cannot get cleanup date`);
+    // Return date 8 days ago to trigger cleanup
+    const defaultDate = new Date();
+    defaultDate.setDate(defaultDate.getDate() - 8);
+    return defaultDate;
   }
 
-  // Fallback to SQLite
-  if (db) {
-    return new Promise((resolve, reject) => {
-      db.get(
-        `
-        SELECT cleaned_at FROM cache_cleanup_log 
-        ORDER BY cleaned_at DESC LIMIT 1
-      `,
-        (err, row) => {
-          if (err) reject(err);
-          else {
-            // If no cleanup record exists, return current date (no cleanup needed yet)
-            const defaultDate = new Date();
-            defaultDate.setDate(defaultDate.getDate() - 1); // Set to yesterday as default
-            resolve(row ? new Date(row.cleaned_at) : defaultDate);
-          }
-        }
-      );
-    });
+  try {
+    return await supabaseManager.getLastCleanupDate();
+  } catch (error) {
+    console.error(`❌ Supabase cleanup date check failed: ${error.message}`);
+    // Return date 8 days ago to trigger cleanup
+    const defaultDate = new Date();
+    defaultDate.setDate(defaultDate.getDate() - 8);
+    return defaultDate;
   }
-
-  // Default fallback
-  const defaultDate = new Date();
-  defaultDate.setDate(defaultDate.getDate() - 8); // Set to 8 days ago to trigger cleanup
-  return defaultDate;
 }
 
 // Update last cleanup date
 async function updateLastCleanupDate(postsRemoved = 0, username = null) {
-  // Use Supabase if available, otherwise fallback to SQLite
-  if (supabaseManager && supabaseManager.isConnected) {
-    try {
-      await supabaseManager.updateLastCleanupDate(postsRemoved, username);
-      return true;
-    } catch (error) {
-      console.error(`❌ Supabase cleanup date update failed: ${error.message}`);
-      // Fallback to SQLite
-    }
+  if (!supabaseManager || !supabaseManager.isConnected) {
+    console.error(`❌ Supabase not connected - cannot update cleanup date`);
+    return false;
   }
 
-  // Fallback to SQLite
-  if (db) {
-    return new Promise((resolve, reject) => {
-      db.run(
-        `
-        INSERT INTO cache_cleanup_log (posts_removed, username) 
-        VALUES (?, ?)
-      `,
-        [postsRemoved, username],
-        function (err) {
-          if (err) reject(err);
-          else resolve(this.lastID);
-        }
-      );
-    });
+  try {
+    await supabaseManager.updateLastCleanupDate(postsRemoved, username);
+    return true;
+  } catch (error) {
+    console.error(`❌ Supabase cleanup date update failed: ${error.message}`);
+    return false;
   }
-
-  return false;
 }
 
 // Check cache on app boot and load existing cache data
@@ -4358,230 +3778,113 @@ async function checkCacheOnBoot() {
 // Load existing cache data into memory
 async function loadExistingCache() {
   try {
-    // Use Supabase if available, otherwise fallback to SQLite
-    if (supabaseManager && supabaseManager.isConnected) {
-      console.log("📊 Loading cache from Supabase...");
+    if (!supabaseManager || !supabaseManager.isConnected) {
+      console.error(`❌ Supabase not connected - cannot load cache`);
+      return;
+    }
 
-      try {
-        // Get Supabase stats to check cache status
-        const stats = await supabaseManager.getStats();
-        console.log(`📊 Supabase collections:`, stats.collections);
+    console.log("📊 Loading cache from Supabase...");
 
-        // Get all cached usernames from Supabase
-        const { data: cachedUsers, error } = await supabaseManager.client
-          .from("recent_posts_cache")
-          .select("username")
-          .order("username");
+    // Get Supabase stats to check cache status
+    const stats = await supabaseManager.getStats();
+    console.log(`📊 Supabase collections:`, stats.collections);
 
-        if (error) {
+    // Get all cached usernames from Supabase
+    let cachedUsers;
+    try {
+      const result = await supabaseManager.client
+        .from("recent_posts_cache")
+        .select("username")
+        .order("username");
+
+      if (result.error) {
+        // Check for network errors
+        const errorMsg = result.error.message || String(result.error);
+        if (
+          errorMsg.includes("fetch failed") ||
+          errorMsg.includes("getaddrinfo") ||
+          errorMsg.includes("ECONNREFUSED") ||
+          errorMsg.includes("ENOTFOUND")
+        ) {
           console.error(
-            `❌ Failed to get cached users from Supabase: ${error.message}`
+            `❌ Supabase network error - marking as disconnected: ${errorMsg}`
           );
+          supabaseManager.isConnected = false;
           return;
         }
+        console.error(
+          `❌ Failed to get cached users from Supabase: ${result.error.message}`
+        );
+        return;
+      }
+      cachedUsers = result.data;
+    } catch (error) {
+      // Handle network errors in catch block
+      const errorMsg = error.message || String(error);
+      if (
+        errorMsg.includes("fetch failed") ||
+        errorMsg.includes("getaddrinfo") ||
+        errorMsg.includes("ECONNREFUSED") ||
+        errorMsg.includes("ENOTFOUND")
+      ) {
+        console.error(
+          `❌ Supabase network error - marking as disconnected: ${errorMsg}`
+        );
+        supabaseManager.isConnected = false;
+        return;
+      }
+      throw error;
+    }
 
-        const uniqueUsernames = [
-          ...new Set(cachedUsers.map((u) => u.username)),
-        ];
+    const uniqueUsernames = [...new Set(cachedUsers.map((u) => u.username))];
+    console.log(`📊 Found ${uniqueUsernames.length} cached users in Supabase`);
+
+    if (uniqueUsernames.length === 0) {
+      console.log("📊 No existing cache data found in Supabase");
+      return;
+    }
+
+    console.log(
+      `📊 Loading cache for ${uniqueUsernames.length} users from Supabase...`
+    );
+
+    let loadedUsers = 0;
+    let totalPosts = 0;
+
+    // Load cache for each user
+    for (const username of uniqueUsernames) {
+      const cachedPosts = await getCachedRecentPosts(username);
+      if (cachedPosts.length > 0) {
         console.log(
-          `📊 Found ${uniqueUsernames.length} cached users in Supabase`
+          `   📱 @${username}: ${cachedPosts.length} posts cached (Supabase)`
         );
 
-        if (uniqueUsernames.length === 0) {
-          console.log("📊 No existing cache data found in Supabase");
-          return;
+        // Store in global cache for faster access
+        if (!global.postCache) {
+          global.postCache = {};
         }
-
-        console.log(
-          `📊 Loading cache for ${uniqueUsernames.length} users from Supabase...`
-        );
-
-        let loadedUsers = 0;
-        let totalPosts = 0;
-
-        // Load cache for each user
-        for (const username of uniqueUsernames) {
-          const cachedPosts = await getCachedRecentPosts(username);
-          if (cachedPosts.length > 0) {
-            console.log(
-              `   📱 @${username}: ${cachedPosts.length} posts cached (Supabase)`
-            );
-
-            // Store in global cache for faster access
-            if (!global.postCache) {
-              global.postCache = {};
-            }
-            global.postCache[username] = cachedPosts;
-            loadedUsers++;
-            totalPosts += cachedPosts.length;
-          } else {
-            console.log(`   ⚠️ @${username}: 0 posts cached (empty cache)`);
-          }
-        }
-
-        console.log(
-          `✅ Supabase cache loaded successfully (${loadedUsers} users, ${totalPosts} total posts)`
-        );
-
-        // Check if cache loading was successful
-        if (loadedUsers === 0 && uniqueUsernames.length > 0) {
-          console.log(
-            "⚠️ Supabase cache loading resulted in 0 posts - attempting automatic reload..."
-          );
-          await retryCacheLoad();
-        }
-
-        return; // Successfully loaded from Supabase
-      } catch (error) {
-        console.error(`❌ Supabase cache loading failed: ${error.message}`);
-        console.log("🔄 Falling back to SQLite...");
-        // Continue to SQLite fallback
+        global.postCache[username] = cachedPosts;
+        loadedUsers++;
+        totalPosts += cachedPosts.length;
+      } else {
+        console.log(`   ⚠️ @${username}: 0 posts cached (empty cache)`);
       }
     }
 
-    // Fallback to SQLite
-    if (db) {
-      console.log("📊 Loading cache from SQLite...");
+    console.log(
+      `✅ Supabase cache loaded successfully (${loadedUsers} users, ${totalPosts} total posts)`
+    );
 
-      // Debug: Check if database file exists and has data
-      const fs = require("fs");
-      const path = require("path");
-
-      if (fs.existsSync(dbPath)) {
-        const stats = fs.statSync(dbPath);
-        console.log(`📊 Database file exists: ${dbPath} (${stats.size} bytes)`);
-      } else {
-        console.log(`⚠️ Database file does not exist: ${dbPath}`);
-      }
-
-      // Debug: Check database schema and tables
-      console.log(`🔍 Checking database schema...`);
-      const tables = await new Promise((resolve, reject) => {
-        db.all(
-          "SELECT name FROM sqlite_master WHERE type='table'",
-          (err, rows) => {
-            if (err) {
-              console.error(`❌ Schema query error: ${err.message}`);
-              reject(err);
-            } else {
-              console.log(
-                `📊 Database tables: ${
-                  rows ? rows.map((r) => r.name).join(", ") : "none"
-                }`
-              );
-              resolve(rows || []);
-            }
-          }
-        );
-      });
-
-      // Debug: Check if recent_posts_cache table exists and has data
-      const tableExists = tables.some((t) => t.name === "recent_posts_cache");
-      console.log(`📊 recent_posts_cache table exists: ${tableExists}`);
-
-      if (tableExists) {
-        const tableCount = await new Promise((resolve, reject) => {
-          db.get(
-            "SELECT COUNT(*) as count FROM recent_posts_cache",
-            (err, row) => {
-              if (err) {
-                console.error(`❌ Table count error: ${err.message}`);
-                reject(err);
-              } else {
-                console.log(
-                  `📊 recent_posts_cache table has ${row ? row.count : 0} rows`
-                );
-                resolve(row ? row.count : 0);
-              }
-            }
-          );
-        });
-
-        if (tableCount > 0) {
-          // Show sample data
-          const sampleData = await new Promise((resolve, reject) => {
-            db.all(
-              "SELECT username, shortcode, cached_at FROM recent_posts_cache LIMIT 5",
-              (err, rows) => {
-                if (err) {
-                  console.error(`❌ Sample data error: ${err.message}`);
-                  reject(err);
-                } else {
-                  console.log(`📊 Sample cache data:`, rows);
-                  resolve(rows || []);
-                }
-              }
-            );
-          });
-        }
-      }
-
-      // Get all cached usernames
-      const cachedUsers = await new Promise((resolve, reject) => {
-        db.all(
-          "SELECT DISTINCT username FROM recent_posts_cache",
-          (err, rows) => {
-            if (err) {
-              console.error(`❌ Database query error: ${err.message}`);
-              reject(err);
-            } else {
-              console.log(
-                `📊 Found ${rows ? rows.length : 0} cached users in database`
-              );
-              resolve(rows || []);
-            }
-          }
-        );
-      });
-
-      if (cachedUsers.length === 0) {
-        console.log("📊 No existing cache data found in SQLite");
-        return;
-      }
-
+    // Check if cache loading was successful
+    if (loadedUsers === 0 && uniqueUsernames.length > 0) {
       console.log(
-        `📊 Loading cache for ${cachedUsers.length} users from SQLite...`
+        "⚠️ Supabase cache loading resulted in 0 posts - attempting automatic reload..."
       );
-
-      let loadedUsers = 0;
-      let totalPosts = 0;
-
-      // Load cache for each user
-      for (const user of cachedUsers) {
-        const cachedPosts = await getCachedRecentPosts(user.username);
-        if (cachedPosts.length > 0) {
-          console.log(
-            `   📱 @${user.username}: ${cachedPosts.length} posts cached (SQLite)`
-          );
-
-          // Store in global cache for faster access
-          if (!global.postCache) {
-            global.postCache = {};
-          }
-          global.postCache[user.username] = cachedPosts;
-          loadedUsers++;
-          totalPosts += cachedPosts.length;
-        } else {
-          console.log(`   ⚠️ @${user.username}: 0 posts cached (empty cache)`);
-        }
-      }
-
-      console.log(
-        `✅ SQLite cache loaded successfully (${loadedUsers} users, ${totalPosts} total posts)`
-      );
-
-      // Check if cache loading was successful
-      if (loadedUsers === 0 && cachedUsers.length > 0) {
-        console.log(
-          "⚠️ SQLite cache loading resulted in 0 posts - attempting automatic reload..."
-        );
-        await retryCacheLoad();
-      }
+      await retryCacheLoad();
     }
   } catch (error) {
     console.error(`❌ Failed to load existing cache: ${error.message}`);
-    console.log("🔄 Attempting automatic cache reload...");
-    await retryCacheLoad();
+    // Don't retry if Supabase is unavailable - it's a hard requirement
   }
 }
 
@@ -4589,6 +3892,11 @@ async function loadExistingCache() {
 async function retryCacheLoad() {
   try {
     console.log("🔄 Automatic cache reload attempt...");
+
+    if (!supabaseManager || !supabaseManager.isConnected) {
+      console.error(`❌ Supabase not connected - cannot reload cache`);
+      return;
+    }
 
     // Clear any existing memory cache
     if (global.postCache) {
@@ -4599,153 +3907,67 @@ async function retryCacheLoad() {
     // Wait a moment for database to stabilize
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    // Use Supabase if available, otherwise fallback to SQLite
-    if (supabaseManager && supabaseManager.isConnected) {
+    console.log("🔄 Attempting Supabase cache reload...");
+
+    // Force reload from Supabase
+    const { data: cachedUsers, error } = await supabaseManager.client
+      .from("recent_posts_cache")
+      .select("username")
+      .order("username");
+
+    if (error) {
+      console.error(`❌ Failed to get cached users: ${error.message}`);
+      return;
+    }
+
+    const uniqueUsernames = [...new Set(cachedUsers.map((u) => u.username))];
+
+    if (uniqueUsernames.length === 0) {
+      console.log("📊 No cached users found in Supabase during reload");
+      return;
+    }
+
+    console.log(
+      `🔄 Reloading cache for ${uniqueUsernames.length} users from Supabase...`
+    );
+
+    let loadedUsers = 0;
+    let totalPosts = 0;
+
+    for (const username of uniqueUsernames) {
       try {
-        console.log("🔄 Attempting Supabase cache reload...");
+        // Force Supabase query (bypass memory cache)
+        const cachedPosts = await getCachedRecentPosts(username);
 
-        // Force reload from Supabase
-        const { data: cachedUsers, error } = await supabaseManager.client
-          .from("recent_posts_cache")
-          .select("username")
-          .order("username");
+        if (cachedPosts.length > 0) {
+          console.log(
+            `   ✅ @${username}: ${cachedPosts.length} posts reloaded (Supabase)`
+          );
 
-        if (cachedUsers.length === 0) {
-          console.log("📊 No cached users found in Supabase during reload");
-          return;
-        }
-
-        console.log(
-          `🔄 Reloading cache for ${cachedUsers.length} users from Supabase...`
-        );
-
-        let loadedUsers = 0;
-        let totalPosts = 0;
-
-        for (const username of cachedUsers) {
-          try {
-            // Force Supabase query (bypass memory cache)
-            const cachedPosts = await collection
-              .find({ username })
-              .sort({ is_pinned: -1, post_order: 1 })
-              .toArray();
-
-            if (cachedPosts.length > 0) {
-              console.log(
-                `   ✅ @${username}: ${cachedPosts.length} posts reloaded (Supabase)`
-              );
-
-              if (!global.postCache) {
-                global.postCache = {};
-              }
-              global.postCache[username] = cachedPosts.map((post) => ({
-                post_url: post.post_url,
-                shortcode: post.shortcode,
-                is_pinned: post.is_pinned,
-                post_order: post.post_order,
-                cached_at: post.cached_at,
-              }));
-              loadedUsers++;
-              totalPosts += cachedPosts.length;
-            } else {
-              console.log(`   ⚠️ @${username}: Still 0 posts after reload`);
-            }
-          } catch (userError) {
-            console.error(
-              `   ❌ Failed to reload cache for @${username}: ${userError.message}`
-            );
+          if (!global.postCache) {
+            global.postCache = {};
           }
-        }
-
-        if (loadedUsers > 0) {
-          console.log(
-            `✅ Automatic Supabase cache reload successful (${loadedUsers} users, ${totalPosts} posts)`
-          );
+          global.postCache[username] = cachedPosts;
+          loadedUsers++;
+          totalPosts += cachedPosts.length;
         } else {
-          console.log(
-            "❌ Automatic Supabase cache reload failed - no posts loaded"
-          );
+          console.log(`   ⚠️ @${username}: Still 0 posts after reload`);
         }
-
-        return; // Successfully reloaded from Supabase
-      } catch (error) {
-        console.error(`❌ Supabase cache reload failed: ${error.message}`);
-        console.log("🔄 Falling back to SQLite...");
-        // Continue to SQLite fallback
+      } catch (userError) {
+        console.error(
+          `   ❌ Failed to reload cache for @${username}: ${userError.message}`
+        );
       }
     }
 
-    // Fallback to SQLite
-    if (db) {
-      console.log("🔄 Attempting SQLite cache reload...");
-
-      // Force reload from database
-      const cachedUsers = await new Promise((resolve, reject) => {
-        db.all(
-          "SELECT DISTINCT username FROM recent_posts_cache",
-          (err, rows) => {
-            if (err) reject(err);
-            else resolve(rows || []);
-          }
-        );
-      });
-
-      if (cachedUsers.length === 0) {
-        console.log("📊 No cached users found in SQLite during reload");
-        return;
-      }
-
+    if (loadedUsers > 0) {
       console.log(
-        `🔄 Reloading cache for ${cachedUsers.length} users from SQLite...`
+        `✅ Automatic Supabase cache reload successful (${loadedUsers} users, ${totalPosts} posts)`
       );
-
-      let loadedUsers = 0;
-      let totalPosts = 0;
-
-      for (const user of cachedUsers) {
-        try {
-          // Force database query (bypass memory cache)
-          const cachedPosts = await new Promise((resolve, reject) => {
-            db.all(
-              "SELECT post_url, shortcode, is_pinned, post_order, cached_at FROM recent_posts_cache WHERE username = ? ORDER BY is_pinned DESC, post_order ASC",
-              [user.username],
-              (err, rows) => {
-                if (err) reject(err);
-                else resolve(rows || []);
-              }
-            );
-          });
-
-          if (cachedPosts.length > 0) {
-            console.log(
-              `   ✅ @${user.username}: ${cachedPosts.length} posts reloaded (SQLite)`
-            );
-
-            if (!global.postCache) {
-              global.postCache = {};
-            }
-            global.postCache[user.username] = cachedPosts;
-            loadedUsers++;
-            totalPosts += cachedPosts.length;
-          } else {
-            console.log(`   ⚠️ @${user.username}: Still 0 posts after reload`);
-          }
-        } catch (userError) {
-          console.error(
-            `   ❌ Failed to reload cache for @${user.username}: ${userError.message}`
-          );
-        }
-      }
-
-      if (loadedUsers > 0) {
-        console.log(
-          `✅ Automatic SQLite cache reload successful (${loadedUsers} users, ${totalPosts} posts)`
-        );
-      } else {
-        console.log(
-          "❌ Automatic SQLite cache reload failed - no posts loaded"
-        );
-      }
+    } else {
+      console.log(
+        "❌ Automatic Supabase cache reload failed - no posts loaded"
+      );
     }
   } catch (error) {
     console.error(`❌ Automatic cache reload failed: ${error.message}`);
@@ -4757,46 +3979,51 @@ async function validateCacheIntegrity() {
   try {
     console.log("🔍 Validating cache integrity...");
 
-    // Get all cached users from database
-    const dbUsers = await new Promise((resolve, reject) => {
-      db.all(
-        "SELECT DISTINCT username FROM recent_posts_cache",
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
+    if (!supabaseManager || !supabaseManager.isConnected) {
+      console.error(
+        `❌ Supabase not connected - cannot validate cache integrity`
       );
-    });
+      return;
+    }
 
+    // Get all cached users from Supabase
+    const { data: dbUsers, error } = await supabaseManager.client
+      .from("recent_posts_cache")
+      .select("username");
+
+    if (error) {
+      console.error(`❌ Failed to get cached users: ${error.message}`);
+      return;
+    }
+
+    const uniqueUsernames = [...new Set(dbUsers.map((u) => u.username))];
     const memoryUsers = global.postCache ? Object.keys(global.postCache) : [];
 
     console.log(
-      `📊 Database users: ${dbUsers.length}, Memory users: ${memoryUsers.length}`
+      `📊 Supabase users: ${uniqueUsernames.length}, Memory users: ${memoryUsers.length}`
     );
 
-    // Check for users in database but not in memory
-    const missingInMemory = dbUsers.filter(
-      (dbUser) => !memoryUsers.includes(dbUser.username)
+    // Check for users in Supabase but not in memory
+    const missingInMemory = uniqueUsernames.filter(
+      (username) => !memoryUsers.includes(username)
     );
 
     if (missingInMemory.length > 0) {
       console.log(
         `⚠️ Found ${missingInMemory.length} users missing from memory cache`
       );
-      for (const user of missingInMemory) {
-        console.log(`   🔄 Loading @${user.username} into memory cache...`);
-        const cachedPosts = await getCachedRecentPosts(user.username);
+      for (const username of missingInMemory) {
+        console.log(`   🔄 Loading @${username} into memory cache...`);
+        const cachedPosts = await getCachedRecentPosts(username);
         if (cachedPosts.length > 0) {
-          console.log(
-            `   ✅ @${user.username}: ${cachedPosts.length} posts loaded`
-          );
+          console.log(`   ✅ @${username}: ${cachedPosts.length} posts loaded`);
         }
       }
     }
 
-    // Check for users in memory but not in database (orphaned cache)
+    // Check for users in memory but not in Supabase (orphaned cache)
     const orphanedInMemory = memoryUsers.filter(
-      (memUser) => !dbUsers.some((dbUser) => dbUser.username === memUser)
+      (memUser) => !uniqueUsernames.includes(memUser)
     );
 
     if (orphanedInMemory.length > 0) {
@@ -4816,112 +4043,57 @@ async function validateCacheIntegrity() {
 }
 
 // Clear cache for specific user (manual reset)
-function clearUserCache(username) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      let result = 0;
-
-      // Use Supabase if available, otherwise fallback to SQLite
-      if (supabaseManager && supabaseManager.isConnected) {
-        try {
-          console.log(`🗑️ Clearing cache for @${username} using Supabase...`);
-          result = await supabaseManager.clearUserCache(username);
-        } catch (error) {
-          console.error(`❌ Supabase cache clear failed: ${error.message}`);
-          console.log("🔄 Falling back to SQLite...");
-          // Continue to SQLite fallback
-        }
-      }
-
-      // Fallback to SQLite if Supabase failed or not connected
-      if (result === 0 && db) {
-        result = await new Promise((resolveInner, rejectInner) => {
-          db.run(
-            "DELETE FROM recent_posts_cache WHERE username = ?",
-            [username],
-            function (err) {
-              if (err) rejectInner(err);
-              else {
-                console.log(
-                  `🗑️ Cleared cache for @${username} (${this.changes} entries) (SQLite)`
-                );
-                resolveInner(this.changes);
-              }
-            }
-          );
-        });
-      }
-
-      // Clear in-memory cache
-      if (global.postCache && global.postCache[username]) {
-        delete global.postCache[username];
-        console.log(`🗑️ Cleared in-memory cache for @${username}`);
-      }
-
-      // Update cleanup log to prevent immediate re-cleanup
-      await updateLastCleanupDate(result, username);
-
-      resolve(result);
-    } catch (error) {
-      reject(error);
+async function clearUserCache(username) {
+  try {
+    if (!supabaseManager || !supabaseManager.isConnected) {
+      console.error(`❌ Supabase not connected - cannot clear cache`);
+      return 0;
     }
-  });
+
+    console.log(`🗑️ Clearing cache for @${username} using Supabase...`);
+    const result = await supabaseManager.clearUserCache(username);
+
+    // Clear in-memory cache
+    if (global.postCache && global.postCache[username]) {
+      delete global.postCache[username];
+      console.log(`🗑️ Cleared in-memory cache for @${username}`);
+    }
+
+    // Update cleanup log to prevent immediate re-cleanup
+    await updateLastCleanupDate(result, username);
+
+    return result;
+  } catch (error) {
+    console.error(`❌ Cache clear failed: ${error.message}`);
+    return 0;
+  }
 }
 
 // Clear both processed posts and cache for a user
-function clearUserData(username) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      let processedDeleted = 0;
-      let cacheDeleted = 0;
-
-      // Use Supabase if available, otherwise fallback to SQLite
-      if (supabaseManager && supabaseManager.isConnected) {
-        try {
-          console.log(
-            `🧹 Clearing all data for @${username} using Supabase...`
-          );
-          const result = await supabaseManager.clearUserData(username);
-          processedDeleted = result.processedDeleted;
-          cacheDeleted = result.cacheDeleted;
-        } catch (error) {
-          console.error(`❌ Supabase data clear failed: ${error.message}`);
-          console.log("🔄 Falling back to SQLite...");
-          // Continue to SQLite fallback
-        }
-      }
-
-      // Fallback to SQLite if Supabase failed or not connected
-      if (processedDeleted === 0 && cacheDeleted === 0 && db) {
-        const clearProcessed = new Promise(
-          (resolveProcessed, rejectProcessed) => {
-            db.run(
-              "DELETE FROM processed_posts WHERE username = ?",
-              [username],
-              function (err) {
-                if (err) rejectProcessed(err);
-                else resolveProcessed(this.changes);
-              }
-            );
-          }
-        );
-
-        const clearCache = clearUserCache(username);
-
-        [processedDeleted, cacheDeleted] = await Promise.all([
-          clearProcessed,
-          clearCache,
-        ]);
-      }
-
-      console.log(
-        `🧹 Cleared all data for @${username} (processed: ${processedDeleted}, cache: ${cacheDeleted})`
-      );
-      resolve({ processedDeleted, cacheDeleted });
-    } catch (error) {
-      reject(error);
+async function clearUserData(username) {
+  try {
+    if (!supabaseManager || !supabaseManager.isConnected) {
+      console.error(`❌ Supabase not connected - cannot clear user data`);
+      return { processedDeleted: 0, cacheDeleted: 0 };
     }
-  });
+
+    console.log(`🧹 Clearing all data for @${username} using Supabase...`);
+    const result = await supabaseManager.clearUserData(username);
+
+    // Clear in-memory cache
+    if (global.postCache && global.postCache[username]) {
+      delete global.postCache[username];
+      console.log(`🗑️ Cleared in-memory cache for @${username}`);
+    }
+
+    console.log(
+      `🧹 Cleared all data for @${username} (processed: ${result.processedDeleted}, cache: ${result.cacheDeleted})`
+    );
+    return result;
+  } catch (error) {
+    console.error(`❌ Data clear failed: ${error.message}`);
+    return { processedDeleted: 0, cacheDeleted: 0 };
+  }
 }
 
 // Scrape Instagram stories using FastDl.app (Grok-optimized implementation)
@@ -5755,11 +4927,63 @@ async function processInstagramURL(url, userAgent = null) {
       return { success: false, error: "URL parameter is missing" };
     }
 
-    // Use TARGET_USERNAMES from polling context or fallback to default
-    let username =
-      TARGET_USERNAMES.length > 0 ? TARGET_USERNAMES[0] : "User Not Found";
+    // Extract username from URL first (if present)
+    let username = null;
+    try {
+      // Try to extract username from URL using the same logic as parseInstagramTarget
+      const urlPatterns = [
+        /^https?:\/\/(www\.)?instagram\.com\/([^\/\?#]+)/i,
+        /^instagram\.com\/([^\/\?#]+)/i,
+        /^www\.instagram\.com\/([^\/\?#]+)/i,
+      ];
 
-    console.log(`📱 Using username from polling context: @${username}`);
+      for (const pattern of urlPatterns) {
+        const match = url.match(pattern);
+        if (match) {
+          const extracted = match[2] || match[1]; // match[2] for first pattern, match[1] for others
+          // Skip common non-username patterns
+          if (
+            ![
+              "p",
+              "reel",
+              "reels",
+              "tv",
+              "stories",
+              "explore",
+              "accounts",
+              "direct",
+              "tagged",
+            ].includes(extracted.toLowerCase())
+          ) {
+            // Validate it looks like a username (alphanumeric + underscores/periods, 1-30 chars)
+            if (/^[a-zA-Z0-9._]{1,30}$/.test(extracted)) {
+              username = extracted.toLowerCase();
+              break;
+            }
+          }
+        }
+      }
+    } catch (parseError) {
+      console.log(
+        `⚠️ Could not extract username from URL: ${parseError.message}`
+      );
+    }
+
+    // Fallback to TARGET_USERNAMES from polling context if URL doesn't contain username
+    if (!username && TARGET_USERNAMES.length > 0) {
+      username = TARGET_USERNAMES[0];
+    }
+
+    // Final fallback
+    if (!username) {
+      username = "User Not Found";
+    }
+
+    console.log(
+      `📱 Using username: @${username} (${
+        url.includes(username) ? "from URL" : "from polling context"
+      })`
+    );
 
     // Extract shortcode for cache checking
     const shortcodeMatch = url.match(/\/(p|reel|tv)\/([^\/]+)\//);
@@ -6086,6 +5310,49 @@ async function processInstagramURL(url, userAgent = null) {
     return { success: false, error: err.message };
   }
 }
+
+// Image proxy endpoint to bypass CORS restrictions
+app.get("/proxy-image", async (req, res) => {
+  try {
+    const imageUrl = req.query.url;
+    if (!imageUrl) {
+      return res.status(400).json({ error: "URL parameter is required" });
+    }
+
+    // Validate that it's an Instagram CDN URL for security
+    if (
+      !imageUrl.includes("cdninstagram.com") &&
+      !imageUrl.includes("scontent-") &&
+      !imageUrl.includes("instagram.com")
+    ) {
+      return res.status(400).json({ error: "Invalid image URL" });
+    }
+
+    console.log(`🖼️ Proxying image: ${imageUrl.substring(0, 100)}...`);
+
+    // Fetch the image from Instagram
+    const response = await axios.get(imageUrl, {
+      responseType: "stream",
+      headers: {
+        "User-Agent": getPollingUserAgent(),
+        Referer: "https://www.instagram.com/",
+      },
+      timeout: 30000,
+    });
+
+    // Set appropriate headers
+    const contentType = response.headers["content-type"] || "image/jpeg";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=86400"); // Cache for 24 hours
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
+    // Stream the image to the client
+    response.data.pipe(res);
+  } catch (err) {
+    console.error(`❌ Image proxy error: ${err.message}`);
+    res.status(500).json({ error: "Failed to proxy image" });
+  }
+});
 
 // The /igdl endpoint - direct access to processing function
 app.get("/igdl", async (req, res) => {
@@ -7032,23 +6299,9 @@ app.post("/reset-processed", async (req, res) => {
       return res.status(400).json({ error: "No target set" });
 
     // Clear both processed posts and cache
-    const clearProcessed = new Promise((resolve, reject) => {
-      db.run(
-        "DELETE FROM processed_posts WHERE username = ?",
-        [targetUsername],
-        function (err) {
-          if (err) reject(err);
-          else resolve(this.changes);
-        }
-      );
-    });
-
-    const clearCache = clearUserCache(targetUsername);
-
-    const [processedDeleted, cacheDeleted] = await Promise.all([
-      clearProcessed,
-      clearCache,
-    ]);
+    const result = await clearUserData(targetUsername);
+    const processedDeleted = result.processedDeleted;
+    const cacheDeleted = result.cacheDeleted;
 
     console.log(
       `🧹 Cleared processed posts for @${targetUsername} (deleted=${processedDeleted})`
@@ -7106,22 +6359,31 @@ app.post("/clear-all", async (req, res) => {
 });
 
 // Storage status monitoring endpoint
-app.get("/storage-status", (req, res) => {
+app.get("/storage-status", async (req, res) => {
   const fs = require("fs");
   const path = require("path");
 
   try {
-    const dbStats = fs.statSync(dbPath);
     const downloadsExists = fs.existsSync(DOWNLOADS_DIR);
     const downloadsFiles = downloadsExists
       ? fs.readdirSync(DOWNLOADS_DIR).length
       : 0;
 
+    // Get Supabase stats
+    let supabaseStats = null;
+    if (supabaseManager && supabaseManager.isConnected) {
+      try {
+        supabaseStats = await supabaseManager.getStats();
+      } catch (error) {
+        console.error("Failed to get Supabase stats:", error.message);
+      }
+    }
+
     res.json({
       database: {
-        path: dbPath,
-        size: dbStats.size,
-        exists: true,
+        type: "Supabase",
+        connected: supabaseManager?.isConnected || false,
+        collections: supabaseStats?.collections || {},
         environment: process.env.NODE_ENV,
       },
       downloads: {
@@ -7149,80 +6411,16 @@ app.post("/clear-stories-cache", async (req, res) => {
     let processedStoriesDeleted = 0;
     let storiesCacheDeleted = 0;
 
-    // Use Supabase if available, otherwise fallback to SQLite
-    if (supabaseManager && supabaseManager.isConnected) {
-      try {
-        console.log(
-          `🗑️ Clearing stories data for @${targetUsername} using Supabase...`
-        );
-        const result = await supabaseManager.clearUserStoriesData(
-          targetUsername
-        );
-        processedStoriesDeleted = result.processedStoriesDeleted;
-        storiesCacheDeleted = result.storiesCacheDeleted;
-      } catch (error) {
-        console.error(`❌ Supabase stories clear failed: ${error.message}`);
-        console.log("🔄 Falling back to SQLite...");
-        // Continue to SQLite fallback
-      }
+    if (!supabaseManager || !supabaseManager.isConnected) {
+      return res.status(500).json({ error: "Supabase not connected" });
     }
 
-    // Fallback to SQLite if Supabase failed or not connected
-    if (processedStoriesDeleted === 0 && storiesCacheDeleted === 0 && db) {
-      // Clear processed stories
-      const clearProcessedStories = new Promise((resolve) => {
-        db.run(
-          "DELETE FROM processed_stories WHERE username = ?",
-          [targetUsername],
-          function (err) {
-            if (err) {
-              console.error("Database error clearing processed stories:", err);
-              resolve(0);
-            } else {
-              console.log(
-                `🗑️ Cleared processed stories for @${targetUsername} (${this.changes} entries) (SQLite)`
-              );
-              resolve(this.changes);
-            }
-          }
-        );
-      });
-
-      // Clear stories cache (Supabase only - no SQLite fallback)
-      const clearStoriesCache = new Promise(async (resolve) => {
-        try {
-          if (supabase) {
-            const { error } = await supabase
-              .from("recent_stories_cache")
-              .delete()
-              .eq("username", targetUsername);
-
-            if (error) {
-              console.error("Supabase error clearing stories cache:", error);
-              resolve(0);
-            } else {
-              console.log(
-                `🗑️ Cleared stories cache for @${targetUsername} (Supabase)`
-              );
-              resolve(1); // Assume at least 1 was cleared
-            }
-          } else {
-            console.log(
-              `⚠️ Supabase not connected, skipping stories cache clear`
-            );
-            resolve(0);
-          }
-        } catch (error) {
-          console.error("Error clearing stories cache:", error);
-          resolve(0);
-        }
-      });
-
-      [processedStoriesDeleted, storiesCacheDeleted] = await Promise.all([
-        clearProcessedStories,
-        clearStoriesCache,
-      ]);
-    }
+    console.log(
+      `🗑️ Clearing stories data for @${targetUsername} using Supabase...`
+    );
+    const result = await supabaseManager.clearUserStoriesData(targetUsername);
+    processedStoriesDeleted = result.processedStoriesDeleted;
+    storiesCacheDeleted = result.storiesCacheDeleted;
 
     const totalDeleted = processedStoriesDeleted + storiesCacheDeleted;
     res.json({
@@ -7248,27 +6446,27 @@ app.get("/debug-stories", async (req, res) => {
     if (!username)
       return res.status(400).json({ error: "No username provided" });
 
-    // Check processed_stories table
-    const processedStories = new Promise((resolve) => {
-      db.all(
-        "SELECT COUNT(*) as count FROM processed_stories WHERE username = ?",
-        [username],
-        (err, rows) => {
-          if (err) {
-            console.error("Database error checking processed stories:", err);
-            resolve(0);
-          } else {
-            resolve(rows[0]?.count || 0);
-          }
+    // Check processed_stories table (Supabase only)
+    let processedStories = 0;
+    if (supabaseManager && supabaseManager.isConnected) {
+      try {
+        const { count, error } = await supabaseManager.client
+          .from("processed_stories")
+          .select("*", { count: "exact", head: true })
+          .eq("username", username);
+        if (!error) {
+          processedStories = count || 0;
         }
-      );
-    });
+      } catch (error) {
+        console.error("Supabase error checking processed stories:", error);
+      }
+    }
 
     // Check recent_stories_cache table (Supabase only)
     const storiesCache = new Promise(async (resolve) => {
       try {
-        if (supabase) {
-          const { data, error } = await supabase
+        if (supabaseManager && supabaseManager.isConnected) {
+          const { data, error } = await supabaseManager.client
             .from("recent_stories_cache")
             .select("*", { count: "exact" })
             .eq("username", username);
@@ -7545,7 +6743,9 @@ app.listen(port, async () => {
   // Print initial stats
   requestTracker.printStats();
 
-  // Auto-start polling if TARGET_USERNAMES environment variable is set
+  // DISABLED: Auto-start polling if TARGET_USERNAMES environment variable is set
+  // To re-enable: Uncomment the code below
+  /*
   const envTargets = process.env.TARGET_USERNAMES;
   if (envTargets) {
     try {
@@ -7570,6 +6770,10 @@ app.listen(port, async () => {
       "💡 Set TARGET_USERNAMES environment variable to auto-start polling"
     );
   }
+  */
+  console.log(
+    "ℹ️ Automatic polling on startup is currently disabled. Use /start-polling endpoint or frontend button to start polling manually."
+  );
 });
 
 // Smart Polling Frequency - Step 5
@@ -8335,14 +7539,46 @@ async function updateStoriesCache(username, stories) {
     const supabase = supabaseManager.client;
 
     // Clear old cache for this user
-    const { error: deleteError } = await supabase
-      .from("recent_stories_cache")
-      .delete()
-      .eq("username", username);
+    try {
+      const { error: deleteError } = await supabase
+        .from("recent_stories_cache")
+        .delete()
+        .eq("username", username);
 
-    if (deleteError) {
-      console.error("Supabase error clearing stories cache:", deleteError);
-      throw deleteError;
+      if (deleteError) {
+        // Check for network errors
+        const errorMsg = deleteError.message || String(deleteError);
+        if (
+          errorMsg.includes("fetch failed") ||
+          errorMsg.includes("getaddrinfo") ||
+          errorMsg.includes("ECONNREFUSED") ||
+          errorMsg.includes("ENOTFOUND")
+        ) {
+          console.error(
+            "❌ Supabase network error clearing stories cache - marking as disconnected"
+          );
+          supabaseManager.isConnected = false;
+          return; // Return early instead of throwing
+        }
+        console.error("Supabase error clearing stories cache:", deleteError);
+        throw deleteError;
+      }
+    } catch (error) {
+      // Handle network errors in catch block
+      const errorMsg = error.message || String(error);
+      if (
+        errorMsg.includes("fetch failed") ||
+        errorMsg.includes("getaddrinfo") ||
+        errorMsg.includes("ECONNREFUSED") ||
+        errorMsg.includes("ENOTFOUND")
+      ) {
+        console.error(
+          "❌ Supabase network error clearing stories cache - marking as disconnected"
+        );
+        supabaseManager.isConnected = false;
+        return; // Return early instead of throwing
+      }
+      throw error;
     }
 
     if (stories.length === 0) {
@@ -8379,13 +7615,45 @@ async function updateStoriesCache(username, stories) {
     }
 
     // Simple insert (no upsert) after delete
-    const { error: insertError } = await supabase
-      .from("recent_stories_cache")
-      .insert(cacheEntries);
+    try {
+      const { error: insertError } = await supabase
+        .from("recent_stories_cache")
+        .insert(cacheEntries);
 
-    if (insertError) {
-      console.error("Supabase error inserting stories cache:", insertError);
-      throw insertError;
+      if (insertError) {
+        // Check for network errors
+        const errorMsg = insertError.message || String(insertError);
+        if (
+          errorMsg.includes("fetch failed") ||
+          errorMsg.includes("getaddrinfo") ||
+          errorMsg.includes("ECONNREFUSED") ||
+          errorMsg.includes("ENOTFOUND")
+        ) {
+          console.error(
+            "❌ Supabase network error inserting stories cache - marking as disconnected"
+          );
+          supabaseManager.isConnected = false;
+          return; // Return early instead of throwing
+        }
+        console.error("Supabase error inserting stories cache:", insertError);
+        throw insertError;
+      }
+    } catch (error) {
+      // Handle network errors in catch block
+      const errorMsg = error.message || String(error);
+      if (
+        errorMsg.includes("fetch failed") ||
+        errorMsg.includes("getaddrinfo") ||
+        errorMsg.includes("ECONNREFUSED") ||
+        errorMsg.includes("ENOTFOUND")
+      ) {
+        console.error(
+          "❌ Supabase network error inserting stories cache - marking as disconnected"
+        );
+        supabaseManager.isConnected = false;
+        return; // Return early instead of throwing
+      }
+      throw error;
     }
 
     console.log(
@@ -8950,62 +8218,10 @@ const circuitBreaker = {
 
 // ===== BROWSER POOL MANAGEMENT =====
 
-// Add storage status endpoint for debugging persistent storage
-app.get("/storage-status", (req, res) => {
-  const fs = require("fs");
-  const path = require("path");
-
-  try {
-    const dbStats = fs.statSync(dbPath);
-    const downloadsExists = fs.existsSync(DOWNLOADS_DIR);
-    const downloadsFiles = downloadsExists
-      ? fs.readdirSync(DOWNLOADS_DIR).length
-      : 0;
-
-    // Check if we're in production and if persistent storage is working
-    const isProduction = process.env.NODE_ENV === "production";
-    const persistentStorageWorking = isProduction && dbStats.size > 0;
-
-    res.json({
-      environment: {
-        node_env: process.env.NODE_ENV,
-        is_production: isProduction,
-      },
-      database: {
-        path: dbPath,
-        size: dbStats.size,
-        size_mb: (dbStats.size / (1024 * 1024)).toFixed(2),
-        exists: true,
-        last_modified: dbStats.mtime,
-      },
-      downloads: {
-        path: DOWNLOADS_DIR,
-        exists: downloadsExists,
-        files: downloadsFiles,
-      },
-      persistent_storage: {
-        configured: isProduction,
-        working: persistentStorageWorking,
-        mount_path: "/opt/render/project/src/data",
-      },
-      recommendations: {
-        needs_persistent_disk: isProduction && !persistentStorageWorking,
-        disk_mount_path: "/opt/render/project/src/data",
-        disk_size: "10GB",
-      },
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: error.message,
-      environment: process.env.NODE_ENV,
-      database_path: dbPath,
-      downloads_path: DOWNLOADS_DIR,
-    });
-  }
-});
+// Add storage status endpoint for debugging persistent storage (duplicate removed - using earlier definition)
 
 // Add cache status endpoint for debugging cache issues
-app.get("/cache-status", (req, res) => {
+app.get("/cache-status", async (req, res) => {
   try {
     const memoryCacheUsers = global.postCache
       ? Object.keys(global.postCache)
@@ -9017,6 +8233,16 @@ app.get("/cache-status", (req, res) => {
         )
       : 0;
 
+    // Get Supabase stats
+    let supabaseStats = null;
+    if (supabaseManager && supabaseManager.isConnected) {
+      try {
+        supabaseStats = await supabaseManager.getStats();
+      } catch (error) {
+        console.error("Failed to get Supabase stats:", error.message);
+      }
+    }
+
     res.json({
       memory_cache: {
         users: memoryCacheUsers,
@@ -9024,12 +8250,9 @@ app.get("/cache-status", (req, res) => {
         exists: !!global.postCache,
       },
       database: {
-        path: dbPath,
-        exists: require("fs").existsSync(dbPath),
-      },
-      recommendations: {
-        check_persistent_disk: process.env.NODE_ENV === "production",
-        persistent_disk_url: "https://render.com/docs/persistent-disk-storage",
+        type: "Supabase",
+        connected: supabaseManager?.isConnected || false,
+        collections: supabaseStats?.collections || {},
       },
     });
   } catch (error) {

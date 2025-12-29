@@ -24,6 +24,35 @@ class SupabaseManager {
         throw new Error("Supabase client not initialized");
       }
 
+      // Actually test the connection with a timeout
+      try {
+        const testPromise = this.client
+          .from("_connection_test")
+          .select("*")
+          .limit(1)
+          .maybeSingle();
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Connection timeout")), 5000)
+        );
+
+        await Promise.race([testPromise, timeoutPromise]);
+      } catch (testError) {
+        // Network errors (fetch failed, DNS errors, etc.) mean we can't connect
+        const errorMsg = testError.message || String(testError);
+        if (
+          errorMsg.includes("fetch failed") ||
+          errorMsg.includes("getaddrinfo") ||
+          errorMsg.includes("ECONNREFUSED") ||
+          errorMsg.includes("ENOTFOUND") ||
+          errorMsg.includes("timeout")
+        ) {
+          console.error(`❌ Supabase network connection failed: ${errorMsg}`);
+          this.isConnected = false;
+          return false;
+        }
+        // Other errors (like table not found) are OK - connection works
+      }
+
       this.isConnected = true;
       console.log("✅ Supabase connected successfully");
 
@@ -58,6 +87,40 @@ class SupabaseManager {
     }
   }
 
+  // Helper method to wrap Supabase calls with error handling
+  async _safeSupabaseCall(operation, errorContext = "") {
+    try {
+      if (!this.isConnected) {
+        return { error: { message: "Not connected" }, data: null };
+      }
+      return await operation();
+    } catch (error) {
+      const errorMsg = error.message || String(error);
+      // Check for network errors
+      if (
+        errorMsg.includes("fetch failed") ||
+        errorMsg.includes("getaddrinfo") ||
+        errorMsg.includes("ECONNREFUSED") ||
+        errorMsg.includes("ENOTFOUND") ||
+        errorMsg.includes("timeout")
+      ) {
+        console.error(
+          `❌ Supabase network error${
+            errorContext ? ` in ${errorContext}` : ""
+          }: ${errorMsg}`
+        );
+        // Mark as disconnected on network errors
+        this.isConnected = false;
+        return {
+          error: { message: "Network error", networkError: true },
+          data: null,
+        };
+      }
+      // Re-throw other errors
+      throw error;
+    }
+  }
+
   // Cache functions for recent posts
   async getCachedRecentPosts(username) {
     try {
@@ -66,14 +129,24 @@ class SupabaseManager {
         return [];
       }
 
-      const { data, error } = await this.client
-        .from("recent_posts_cache")
-        .select("*")
-        .eq("username", username)
-        .order("is_pinned", { ascending: false })
-        .order("post_order", { ascending: true });
+      const result = await this._safeSupabaseCall(
+        () =>
+          this.client
+            .from("recent_posts_cache")
+            .select("*")
+            .eq("username", username)
+            .order("is_pinned", { ascending: false })
+            .order("post_order", { ascending: true }),
+        `getCachedRecentPosts(${username})`
+      );
+
+      const { data, error } = result;
 
       if (error) {
+        // Network errors - already logged, return empty
+        if (error.networkError) {
+          return [];
+        }
         // Check if it's a table not found error
         if (
           error.message.includes("Could not find the table") ||
@@ -273,11 +346,21 @@ class SupabaseManager {
         postData.pinned_at = new Date().toISOString();
       }
 
-      const { error } = await this.client
-        .from("processed_posts")
-        .upsert(postData, { onConflict: "id" });
+      const result = await this._safeSupabaseCall(
+        () =>
+          this.client
+            .from("processed_posts")
+            .upsert(postData, { onConflict: "id" }),
+        `markPostAsProcessed(${postId})`
+      );
+
+      const { error } = result;
 
       if (error) {
+        // Network errors - already logged, silently fail
+        if (error.networkError) {
+          return;
+        }
         // Check if it's a table not found error
         if (
           error.message.includes("Could not find the table") ||
@@ -369,20 +452,20 @@ class SupabaseManager {
 
       console.log("🧹 Starting Supabase cache cleanup...");
 
-      const fourWeeksAgo = new Date();
-      fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+      const twoWeeksAgo = new Date();
+      twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
 
       // Clean up old cache entries
       const { error: cacheError } = await this.client
         .from("recent_posts_cache")
         .delete()
-        .lt("cached_at", fourWeeksAgo.toISOString());
+        .lt("cached_at", twoWeeksAgo.toISOString());
 
       // Clean up old processed posts (keep pinned posts)
       const { error: postsError } = await this.client
         .from("processed_posts")
         .delete()
-        .lt("processed_at", fourWeeksAgo.toISOString())
+        .lt("processed_at", twoWeeksAgo.toISOString())
         .eq("is_pinned", false);
 
       if (cacheError) {
@@ -453,11 +536,21 @@ class SupabaseManager {
         processed_at: new Date().toISOString(),
       };
 
-      const { error } = await this.client
-        .from("processed_stories")
-        .upsert(storyData, { onConflict: "id" });
+      const result = await this._safeSupabaseCall(
+        () =>
+          this.client
+            .from("processed_stories")
+            .upsert(storyData, { onConflict: "id" }),
+        `markStoryProcessed(${storyId})`
+      );
+
+      const { error } = result;
 
       if (error) {
+        // Network errors - already logged, rethrow so caller knows it failed
+        if (error.networkError) {
+          throw new Error("Network error: Supabase connection failed");
+        }
         console.error(
           `❌ Failed to mark story ${storyId} as processed:`,
           error.message
@@ -473,6 +566,7 @@ class SupabaseManager {
         `❌ Failed to mark story ${storyId} as processed:`,
         error.message
       );
+      throw error; // Re-throw so caller can handle it
     }
   }
 
@@ -481,15 +575,23 @@ class SupabaseManager {
       if (!this.isConnected) return;
 
       // Remove old cache entries for this user
-      const { error: deleteError } = await this.client
-        .from("recent_stories_cache")
-        .delete()
-        .eq("username", username);
+      const deleteResult = await this._safeSupabaseCall(
+        () =>
+          this.client
+            .from("recent_stories_cache")
+            .delete()
+            .eq("username", username),
+        `updateStoriesCache delete(${username})`
+      );
 
-      if (deleteError) {
+      if (deleteResult.error) {
+        // Network errors - already logged, return early
+        if (deleteResult.error.networkError) {
+          return;
+        }
         console.error(
           `❌ Failed to delete old stories cache for @${username}:`,
-          deleteError.message
+          deleteResult.error.message
         );
         return;
       }
@@ -509,14 +611,19 @@ class SupabaseManager {
 
       // Insert new cache entries
       if (cacheEntries.length > 0) {
-        const { error: insertError } = await this.client
-          .from("recent_stories_cache")
-          .insert(cacheEntries);
+        const insertResult = await this._safeSupabaseCall(
+          () => this.client.from("recent_stories_cache").insert(cacheEntries),
+          `updateStoriesCache insert(${username})`
+        );
 
-        if (insertError) {
+        if (insertResult.error) {
+          // Network errors - already logged, return early
+          if (insertResult.error.networkError) {
+            return;
+          }
           console.error(
             `❌ Failed to insert stories cache for @${username}:`,
-            insertError.message
+            insertResult.error.message
           );
           return;
         }
@@ -574,6 +681,203 @@ class SupabaseManager {
         connected: false,
         error: error.message,
       };
+    }
+  }
+
+  // Get total row count for storage-based cleanup checking
+  async getTotalRowCount() {
+    try {
+      if (!this.isConnected) {
+        return 0;
+      }
+
+      const tables = [
+        "recent_posts_cache",
+        "processed_posts",
+        "processed_stories",
+        "recent_stories_cache",
+      ];
+
+      let totalCount = 0;
+      for (const tableName of tables) {
+        const result = await this._safeSupabaseCall(
+          () =>
+            this.client
+              .from(tableName)
+              .select("*", { count: "exact", head: true }),
+          `getTotalRowCount(${tableName})`
+        );
+
+        if (!result.error && result.data?.count !== undefined) {
+          totalCount += result.data.count;
+        } else if (result.count !== undefined) {
+          totalCount += result.count;
+        }
+      }
+
+      return totalCount;
+    } catch (error) {
+      console.error(`❌ Failed to get total row count: ${error.message}`);
+      return 0;
+    }
+  }
+
+  // Storage-based cleanup for Supabase (keeps last 8 posts per user)
+  async performStorageCleanup() {
+    try {
+      if (!this.isConnected) {
+        console.log("⚠️ Supabase not connected, skipping storage cleanup");
+        return { cacheRemoved: 0, processedRemoved: 0 };
+      }
+
+      console.log("🧹 Starting Supabase storage-based cleanup...");
+
+      // Get all unique usernames
+      const { data: users, error: usersError } = await this.client
+        .from("recent_posts_cache")
+        .select("username")
+        .then((result) => {
+          if (result.error) throw result.error;
+          const uniqueUsers = [...new Set(result.data.map((u) => u.username))];
+          return { data: uniqueUsers, error: null };
+        })
+        .catch((err) => ({ data: [], error: err }));
+
+      if (usersError || !users || users.length === 0) {
+        console.log("📊 No users found for storage cleanup");
+        return { cacheRemoved: 0, processedRemoved: 0 };
+      }
+
+      let totalCacheRemoved = 0;
+      let totalProcessedRemoved = 0;
+
+      // Clean up cache for each user (keep last 8)
+      for (const username of users) {
+        // Get last 8 cache entries to keep
+        const { data: keepCache, error: keepCacheError } = await this.client
+          .from("recent_posts_cache")
+          .select("shortcode")
+          .eq("username", username)
+          .order("cached_at", { ascending: false })
+          .limit(8);
+
+        if (!keepCacheError && keepCache && keepCache.length > 0) {
+          const keepShortcodes = keepCache.map((p) => p.shortcode);
+
+          // Get all cache entries for this user
+          const { data: allCache, error: allCacheError } = await this.client
+            .from("recent_posts_cache")
+            .select("shortcode")
+            .eq("username", username);
+
+          if (!allCacheError && allCache) {
+            // Delete entries not in the keep list
+            const toDelete = allCache.filter(
+              (p) => !keepShortcodes.includes(p.shortcode)
+            );
+
+            if (toDelete.length > 0) {
+              const deleteShortcodes = toDelete.map((p) => p.shortcode);
+              // Delete using .in() with the shortcodes to delete
+              const { data: deletedCache, error: deleteCacheError } =
+                await this.client
+                  .from("recent_posts_cache")
+                  .delete()
+                  .eq("username", username)
+                  .in("shortcode", deleteShortcodes)
+                  .select();
+
+              if (!deleteCacheError) {
+                totalCacheRemoved += deletedCache?.length || 0;
+                console.log(
+                  `   🗑️ @${username}: Kept last 8 cache entries, removed ${toDelete.length}`
+                );
+              }
+            } else {
+              console.log(
+                `   ✅ @${username}: Already at limit (${keepCache.length} entries)`
+              );
+            }
+          }
+        } else if (!keepCacheError) {
+          // No cache entries to keep, delete all
+          const { data: deletedAll, error: deleteAllError } = await this.client
+            .from("recent_posts_cache")
+            .delete()
+            .eq("username", username)
+            .select();
+
+          if (!deleteAllError) {
+            totalCacheRemoved += deletedAll?.length || 0;
+            console.log(`   🗑️ @${username}: Cleared all cache entries`);
+          }
+        }
+
+        // Get last 8 processed posts to keep (non-pinned)
+        const { data: keepProcessed, error: keepProcessedError } =
+          await this.client
+            .from("processed_posts")
+            .select("id")
+            .eq("username", username)
+            .eq("is_pinned", false)
+            .order("processed_at", { ascending: false })
+            .limit(8);
+
+        if (!keepProcessedError && keepProcessed && keepProcessed.length > 0) {
+          const keepIds = keepProcessed.map((p) => p.id);
+
+          // Get all processed posts for this user (non-pinned)
+          const { data: allProcessed, error: allProcessedError } =
+            await this.client
+              .from("processed_posts")
+              .select("id")
+              .eq("username", username)
+              .eq("is_pinned", false);
+
+          if (!allProcessedError && allProcessed) {
+            // Delete entries not in the keep list
+            const toDelete = allProcessed.filter(
+              (p) => !keepIds.includes(p.id)
+            );
+
+            if (toDelete.length > 0) {
+              const deleteIds = toDelete.map((p) => p.id);
+              // Delete using .in() with the IDs to delete
+              const { data: deletedProcessed, error: deleteProcessedError } =
+                await this.client
+                  .from("processed_posts")
+                  .delete()
+                  .eq("username", username)
+                  .eq("is_pinned", false)
+                  .in("id", deleteIds)
+                  .select();
+
+              if (!deleteProcessedError) {
+                totalProcessedRemoved += deletedProcessed?.length || 0;
+                console.log(
+                  `   🗑️ @${username}: Kept last 8 processed posts (pinned preserved), removed ${toDelete.length}`
+                );
+              }
+            } else {
+              console.log(
+                `   ✅ @${username}: Already at limit (${keepProcessed.length} processed posts)`
+              );
+            }
+          }
+        }
+      }
+
+      console.log(
+        `✅ Supabase storage cleanup completed: ${totalCacheRemoved} cache entries, ${totalProcessedRemoved} processed posts removed`
+      );
+
+      return {
+        cacheRemoved: totalCacheRemoved,
+        processedRemoved: totalProcessedRemoved,
+      };
+    } catch (error) {
+      console.error(`❌ Supabase storage cleanup failed: ${error.message}`);
+      return { cacheRemoved: 0, processedRemoved: 0 };
     }
   }
 

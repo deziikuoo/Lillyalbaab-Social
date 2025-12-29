@@ -125,14 +125,23 @@ class InstagramCarouselDownloader {
           const bestImage = imageCandidates.length
             ? imageCandidates[imageCandidates.length - 1]?.src
             : node.display_url;
+          // Ensure we always have a thumbnail - use display_url as final fallback
+          const displayUrlValue = isVideo
+            ? node.video_url
+            : bestImage || node.display_url;
+          const thumbnailValue =
+            node.thumbnail_src ||
+            bestImage ||
+            node.display_url ||
+            displayUrlValue ||
+            (isVideo ? node.video_url : null);
+
           const item = {
             carouselIndex: index + 1,
             isVideo: isVideo,
-            displayUrl: isVideo
-              ? node.video_url
-              : bestImage || node.display_url,
+            displayUrl: displayUrlValue,
             videoUrl: isVideo ? node.video_url : null,
-            thumbnailUrl: node.thumbnail_src || bestImage || node.display_url,
+            thumbnailUrl: thumbnailValue,
             quality: isVideo ? "Video" : "Image",
             dimensions: {
               width: node.dimensions?.width,
@@ -153,14 +162,22 @@ class InstagramCarouselDownloader {
           const isVideo = item.media_type === 2;
           const candidates = item.image_versions2?.candidates || [];
           const best = candidates.length ? candidates[0] : null; // IG often has highest-res first here
+          // Ensure we always have URLs - use displayUrl as fallback for thumbnail
+          const displayUrlValue = isVideo
+            ? item.video_versions?.[0]?.url
+            : best?.url || candidates[candidates.length - 1]?.url;
+          const thumbnailValue =
+            best?.url ||
+            candidates[candidates.length - 1]?.url ||
+            displayUrlValue ||
+            (isVideo ? item.video_versions?.[0]?.url : null);
+
           const carouselItem = {
             carouselIndex: index + 1,
             isVideo: isVideo,
-            displayUrl: isVideo
-              ? item.video_versions?.[0]?.url
-              : best?.url || candidates[candidates.length - 1]?.url,
+            displayUrl: displayUrlValue,
             videoUrl: isVideo ? item.video_versions?.[0]?.url : null,
-            thumbnailUrl: best?.url || candidates[candidates.length - 1]?.url,
+            thumbnailUrl: thumbnailValue,
             quality: isVideo ? "Video" : "Image",
             dimensions: {
               width:
@@ -175,12 +192,20 @@ class InstagramCarouselDownloader {
         // Single media item
         console.log("Processing single media item");
         const isVideo = media.is_video;
+        const displayUrlValue = isVideo ? media.video_url : media.display_url;
+        // Ensure we always have a thumbnail - use display_url as fallback
+        const thumbnailValue =
+          media.thumbnail_src ||
+          media.display_url ||
+          displayUrlValue ||
+          (isVideo ? media.video_url : null);
+
         const item = {
           carouselIndex: 1,
           isVideo: isVideo,
-          displayUrl: isVideo ? media.video_url : media.display_url,
+          displayUrl: displayUrlValue,
           videoUrl: isVideo ? media.video_url : null,
-          thumbnailUrl: media.thumbnail_src,
+          thumbnailUrl: thumbnailValue,
           quality: isVideo ? "Video" : "Image",
           dimensions: {
             width: media.dimensions?.width,
@@ -258,10 +283,11 @@ class InstagramCarouselDownloader {
       }
 
       // Format results for compatibility
+      // Ensure thumb always has a value - use displayUrl as final fallback
       const formattedItems = carouselItems.map((item) => ({
         quality: item.quality,
-        thumb: item.thumbnailUrl,
-        url: item.displayUrl,
+        thumb: item.thumbnailUrl || item.displayUrl || item.url,
+        url: item.displayUrl || item.url,
         isProgress: false,
         carouselIndex: item.carouselIndex,
         isVideo: item.isVideo,

@@ -282,8 +282,9 @@ class SnapchatDL:
             os.makedirs(dir_name, exist_ok=True)
             logger.info(f"[Download] Output directory: {dir_name}")
 
-            # Initialize empty metadata
-            self._save_media_metadata(username, "stories", [])
+            # Load existing metadata (don't clear it - preserve previous downloads)
+            existing_metadata = self._load_media_metadata(username, "stories")
+            existing_filenames = {item.get("filename") for item in existing_metadata}
             
             # Send initial state
             if progress_callback:
@@ -337,16 +338,23 @@ class SnapchatDL:
                     )
                     thumbnail_url = story["snapUrls"].get("mediaPreviewUrl") or media_url
                     
+                    # Skip if already exists in metadata (avoid duplicates)
+                    if filename in existing_filenames:
+                        logger.info(f"[Download] Skipping duplicate: {filename}")
+                        continue
+                    
                     # Add to metadata immediately
                     metadata = self._load_media_metadata(username, "stories")
-                    metadata.append({
+                    new_item = {
                         "filename": filename,
                         "type": "video" if MEDIA_TYPE[media_type] == "mp4" else "image",
                         "thumbnail_url": thumbnail_url,
                         "download_status": "not_started",
                         "progress": 0,
                         "download_url": f"/downloads/{username}/stories/{filename}"
-                    })
+                    }
+                    metadata.append(new_item)
+                    existing_filenames.add(filename)  # Track to avoid duplicates in same session
                     self._save_media_metadata(username, "stories", metadata)
                     
                     # Send metadata update
@@ -472,8 +480,9 @@ class SnapchatDL:
             os.makedirs(dir_name, exist_ok=True)
             logger.info(f"[Download] Output directory: {dir_name}")
 
-            # Initialize metadata with empty list
-            self._save_media_metadata(username, "highlights", [])
+            # Load existing metadata (don't clear it - preserve previous downloads)
+            existing_metadata = self._load_media_metadata(username, "highlights")
+            existing_filenames = {item.get("filename") for item in existing_metadata}
             
             # Send initial state
             if progress_callback:
@@ -503,18 +512,26 @@ class SnapchatDL:
                     filename = strf_time(timestamp, "%Y-%m-%d_%H-%M-%S_{}_{}.{}").format(
                         snap_id, username, extension
                     )
+                    
+                    # Skip if already exists in metadata (avoid duplicates)
+                    if filename in existing_filenames:
+                        logger.info(f"[Download] Skipping duplicate: {filename}")
+                        continue
+                    
                     thumbnail_url = media.get("snapUrls", {}).get("mediaPreviewUrl") or media_url
                     
                     # Add to metadata immediately
                     metadata = self._load_media_metadata(username, "highlights")
-                    metadata.append({
+                    new_item = {
                         "filename": filename,
                         "type": "video" if extension == "mp4" else "image",
                         "thumbnail_url": thumbnail_url,
                         "download_status": "not_started",
                         "progress": 0,
                         "download_url": f"/downloads/{username}/highlights/{filename}"
-                    })
+                    }
+                    metadata.append(new_item)
+                    existing_filenames.add(filename)  # Track to avoid duplicates in same session
                     self._save_media_metadata(username, "highlights", metadata)
                     
                     # Send metadata update
@@ -626,8 +643,9 @@ class SnapchatDL:
             os.makedirs(dir_name, exist_ok=True)
             logger.info(f"[Download] Output directory: {dir_name}")
 
-            # Initialize metadata with empty list
-            self._save_media_metadata(username, "spotlights", [])
+            # Load existing metadata (don't clear it - preserve previous downloads)
+            existing_metadata = self._load_media_metadata(username, "spotlights")
+            existing_filenames = {item.get("filename") for item in existing_metadata}
             
             # Send initial state
             if progress_callback:
@@ -657,18 +675,26 @@ class SnapchatDL:
                     filename = strf_time(timestamp, "%Y-%m-%d_%H-%M-%S_{}_{}.{}").format(
                         snap_id, username, extension
                     )
+                    
+                    # Skip if already exists in metadata (avoid duplicates)
+                    if filename in existing_filenames:
+                        logger.info(f"[Download] Skipping duplicate: {filename}")
+                        continue
+                    
                     thumbnail_url = media.get("snapUrls", {}).get("mediaPreviewUrl") or media_url
                     
                     # Add to metadata immediately
                     metadata = self._load_media_metadata(username, "spotlights")
-                    metadata.append({
+                    new_item = {
                         "filename": filename,
                         "type": "video" if extension == "mp4" else "image",
                         "thumbnail_url": thumbnail_url,
                         "download_status": "not_started",
                         "progress": 0,
                         "download_url": f"/downloads/{username}/spotlights/{filename}"
-                    })
+                    }
+                    metadata.append(new_item)
+                    existing_filenames.add(filename)  # Track to avoid duplicates in same session
                     self._save_media_metadata(username, "spotlights", metadata)
                     
                     # Send metadata update
