@@ -11,6 +11,10 @@ class SupabaseManager {
     this.supabaseKey =
       process.env.SUPABASE_KEY ||
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR1dnlja3pmd2R0YWllYWpsc3piIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU4MTk3MjIsImV4cCI6MjA3MTM5NTcyMn0.-BNhNk3iO8WguyU6liZfJ4Vxuat5YG7wTHuDRumkbG8";
+    
+    // Project namespace for data separation (default: 'tyla' for backward compatibility)
+    this.projectNamespace = process.env.PROJECT_NAMESPACE || 'tyla';
+    console.log(`📁 Using project namespace: ${this.projectNamespace}`);
   }
 
   async connect() {
@@ -134,6 +138,7 @@ class SupabaseManager {
           this.client
             .from("recent_posts_cache")
             .select("*")
+            .eq("project_namespace", this.projectNamespace)
             .eq("username", username)
             .order("is_pinned", { ascending: false })
             .order("post_order", { ascending: true }),
@@ -188,10 +193,11 @@ class SupabaseManager {
         return;
       }
 
-      // Remove old cache entries for this user
+      // Remove old cache entries for this user and namespace
       const { error: deleteError } = await this.client
         .from("recent_posts_cache")
         .delete()
+        .eq("project_namespace", this.projectNamespace)
         .eq("username", username);
 
       if (deleteError) {
@@ -223,6 +229,7 @@ class SupabaseManager {
         const shortcode =
           post.shortcode || post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2];
         return {
+          project_namespace: this.projectNamespace,
           username,
           post_url: post.url,
           shortcode,
@@ -276,6 +283,7 @@ class SupabaseManager {
       const { data, error } = await this.client
         .from("processed_posts")
         .select("*")
+        .eq("project_namespace", this.projectNamespace)
         .eq("id", postId)
         .eq("username", username)
         .single();
@@ -335,6 +343,7 @@ class SupabaseManager {
 
       const postData = {
         id: postId,
+        project_namespace: this.projectNamespace,
         username,
         post_url: postUrl,
         post_type: postType,
@@ -401,6 +410,7 @@ class SupabaseManager {
       const { data, error } = await this.client
         .from("cache_cleanup_log")
         .select("cleaned_at")
+        .eq("project_namespace", this.projectNamespace)
         .order("cleaned_at", { ascending: false })
         .limit(1)
         .single();
@@ -426,6 +436,7 @@ class SupabaseManager {
       if (!this.isConnected) return;
 
       const { error } = await this.client.from("cache_cleanup_log").insert({
+        project_namespace: this.projectNamespace,
         cleaned_at: new Date().toISOString(),
         posts_removed: postsRemoved,
         username: username,
@@ -455,16 +466,18 @@ class SupabaseManager {
       const twoWeeksAgo = new Date();
       twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
 
-      // Clean up old cache entries
+      // Clean up old cache entries for this namespace
       const { error: cacheError } = await this.client
         .from("recent_posts_cache")
         .delete()
+        .eq("project_namespace", this.projectNamespace)
         .lt("cached_at", twoWeeksAgo.toISOString());
 
-      // Clean up old processed posts (keep pinned posts)
+      // Clean up old processed posts (keep pinned posts) for this namespace
       const { error: postsError } = await this.client
         .from("processed_posts")
         .delete()
+        .eq("project_namespace", this.projectNamespace)
         .lt("processed_at", twoWeeksAgo.toISOString())
         .eq("is_pinned", false);
 
@@ -508,6 +521,7 @@ class SupabaseManager {
       const { data, error } = await this.client
         .from("processed_stories")
         .select("*")
+        .eq("project_namespace", this.projectNamespace)
         .eq("username", username)
         .eq("story_id", storyId)
         .single();
@@ -529,6 +543,7 @@ class SupabaseManager {
       const id = `${username}_${storyId}`;
       const storyData = {
         id,
+        project_namespace: this.projectNamespace,
         username,
         story_url: storyUrl,
         story_type: storyType,
@@ -574,12 +589,13 @@ class SupabaseManager {
     try {
       if (!this.isConnected) return;
 
-      // Remove old cache entries for this user
+      // Remove old cache entries for this user and namespace
       const deleteResult = await this._safeSupabaseCall(
         () =>
           this.client
             .from("recent_stories_cache")
             .delete()
+            .eq("project_namespace", this.projectNamespace)
             .eq("username", username),
         `updateStoriesCache delete(${username})`
       );
@@ -603,6 +619,7 @@ class SupabaseManager {
 
       // Prepare new cache entries
       const cacheEntries = stories.map((story) => ({
+        project_namespace: this.projectNamespace,
         username,
         story_url: story.url,
         story_id: story.storyId,
@@ -732,10 +749,11 @@ class SupabaseManager {
 
       console.log("🧹 Starting Supabase storage-based cleanup...");
 
-      // Get all unique usernames
+      // Get all unique usernames for this namespace
       const { data: users, error: usersError } = await this.client
         .from("recent_posts_cache")
         .select("username")
+        .eq("project_namespace", this.projectNamespace)
         .then((result) => {
           if (result.error) throw result.error;
           const uniqueUsers = [...new Set(result.data.map((u) => u.username))];
@@ -757,6 +775,7 @@ class SupabaseManager {
         const { data: keepCache, error: keepCacheError } = await this.client
           .from("recent_posts_cache")
           .select("shortcode")
+          .eq("project_namespace", this.projectNamespace)
           .eq("username", username)
           .order("cached_at", { ascending: false })
           .limit(8);
@@ -764,10 +783,11 @@ class SupabaseManager {
         if (!keepCacheError && keepCache && keepCache.length > 0) {
           const keepShortcodes = keepCache.map((p) => p.shortcode);
 
-          // Get all cache entries for this user
+          // Get all cache entries for this user and namespace
           const { data: allCache, error: allCacheError } = await this.client
             .from("recent_posts_cache")
             .select("shortcode")
+            .eq("project_namespace", this.projectNamespace)
             .eq("username", username);
 
           if (!allCacheError && allCache) {
@@ -783,6 +803,7 @@ class SupabaseManager {
                 await this.client
                   .from("recent_posts_cache")
                   .delete()
+                  .eq("project_namespace", this.projectNamespace)
                   .eq("username", username)
                   .in("shortcode", deleteShortcodes)
                   .select();
@@ -800,10 +821,11 @@ class SupabaseManager {
             }
           }
         } else if (!keepCacheError) {
-          // No cache entries to keep, delete all
+          // No cache entries to keep, delete all for this namespace
           const { data: deletedAll, error: deleteAllError } = await this.client
             .from("recent_posts_cache")
             .delete()
+            .eq("project_namespace", this.projectNamespace)
             .eq("username", username)
             .select();
 
@@ -813,11 +835,12 @@ class SupabaseManager {
           }
         }
 
-        // Get last 8 processed posts to keep (non-pinned)
+        // Get last 8 processed posts to keep (non-pinned) for this namespace
         const { data: keepProcessed, error: keepProcessedError } =
           await this.client
             .from("processed_posts")
             .select("id")
+            .eq("project_namespace", this.projectNamespace)
             .eq("username", username)
             .eq("is_pinned", false)
             .order("processed_at", { ascending: false })
@@ -826,11 +849,12 @@ class SupabaseManager {
         if (!keepProcessedError && keepProcessed && keepProcessed.length > 0) {
           const keepIds = keepProcessed.map((p) => p.id);
 
-          // Get all processed posts for this user (non-pinned)
+          // Get all processed posts for this user and namespace (non-pinned)
           const { data: allProcessed, error: allProcessedError } =
             await this.client
               .from("processed_posts")
               .select("id")
+              .eq("project_namespace", this.projectNamespace)
               .eq("username", username)
               .eq("is_pinned", false);
 
@@ -847,6 +871,7 @@ class SupabaseManager {
                 await this.client
                   .from("processed_posts")
                   .delete()
+                  .eq("project_namespace", this.projectNamespace)
                   .eq("username", username)
                   .eq("is_pinned", false)
                   .in("id", deleteIds)
@@ -892,6 +917,7 @@ class SupabaseManager {
       const { data, error } = await this.client
         .from("recent_posts_cache")
         .delete()
+        .eq("project_namespace", this.projectNamespace)
         .eq("username", username)
         .select();
 
@@ -925,6 +951,7 @@ class SupabaseManager {
       const { data, error } = await this.client
         .from("processed_posts")
         .delete()
+        .eq("project_namespace", this.projectNamespace)
         .eq("username", username)
         .select();
 
@@ -984,10 +1011,11 @@ class SupabaseManager {
         return { processedStoriesDeleted: 0, storiesCacheDeleted: 0 };
       }
 
-      // Clear processed stories
+      // Clear processed stories for this namespace
       const { data: processedData, error: processedError } = await this.client
         .from("processed_stories")
         .delete()
+        .eq("project_namespace", this.projectNamespace)
         .eq("username", username)
         .select();
 
@@ -998,10 +1026,11 @@ class SupabaseManager {
         );
       }
 
-      // Clear stories cache
+      // Clear stories cache for this namespace
       const { data: cacheData, error: cacheError } = await this.client
         .from("recent_stories_cache")
         .delete()
+        .eq("project_namespace", this.projectNamespace)
         .eq("username", username)
         .select();
 

@@ -1,7 +1,7 @@
 {
-  "name": "tyla-social",
+  "name": "lillyalbaab-social",
   "version": "1.0.0",
-  "description": "Tyla Social Media Downloader - Instagram and Snapchat content management system",
+  "description": "Lillyalbaab Social Media Downloader - Instagram content management system",
   "main": "Instagram/index.js",
   "scripts": {
     "start": "cd Instagram && npm start",

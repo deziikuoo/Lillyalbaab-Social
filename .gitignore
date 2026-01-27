@@ -137,3 +137,11 @@ ENV/
 # keep-alive.js
 # keep-alive.ps1
 # keep-alive.sh
+
+# API credentials and secrets
+Gmail_API/
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.*.json

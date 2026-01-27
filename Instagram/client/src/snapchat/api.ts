@@ -2,15 +2,15 @@
 export const SNAP_BASE: string =
   import.meta.env.VITE_SNAPCHAT_API_BASE ||
   (import.meta.env.PROD
-    ? "https://tyla-social.onrender.com" // Production: Render (Node.js proxies to Python)
+    ? "https://lillyalbaab-social.onrender.com" // Production: Render (Node.js proxies to Python)
     : "/snapchat-api"); // Development: Use Vite proxy to avoid CORS
 
 // Fallback URLs for graceful degradation
 const FALLBACK_URLS = {
   development: ["/snapchat-api", "http://localhost:3000"],
   production: [
-    "https://tyla-social.onrender.com",
-    "https://tyla-social.vercel.app",
+    "https://lillyalbaab-social.onrender.com",
+    "https://lillyalbaab-social.vercel.app",
   ],
 };
 
@@ -206,7 +206,7 @@ export async function getGallery(
     // Normalize URLs to be absolute (use appropriate service origin)
     if (data.media) {
       const baseUrl = import.meta.env.PROD
-        ? "https://tyla-social.onrender.com"
+        ? "https://lillyalbaab-social.onrender.com"
         : "/snapchat-api";
 
     data.media = data.media.map((item: any) => ({

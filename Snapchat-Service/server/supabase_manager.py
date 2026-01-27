@@ -13,6 +13,10 @@ class SnapchatSupabaseManager:
         # Supabase configuration (same as Instagram)
         self.supabase_url = os.getenv("SUPABASE_URL", "https://tuvyckzfwdtaieajlszb.supabase.co")
         self.supabase_key = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR1dnlja3pmd2R0YWllYWpsc3piIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU4MTk3MjIsImV4cCI6MjA3MTM5NTcyMn0.-BNhNk3iO8WguyU6liZfJ4Vxuat5YG7wTHuDRumkbG8")
+        
+        # Project namespace for data separation (default: 'tyla' for backward compatibility)
+        self.project_namespace = os.getenv("PROJECT_NAMESPACE", "tyla")
+        logger.info(f"📁 Using project namespace: {self.project_namespace}")
     
     async def connect(self) -> bool:
         """Connect to Supabase"""
@@ -116,6 +120,7 @@ class SnapchatSupabaseManager:
             response = await asyncio.to_thread(
                 lambda: self.client.table("snapchat_recent_stories_cache")
                     .select("*")
+                    .eq("project_namespace", self.project_namespace)
                     .eq("username", username)
                     .order("story_order")
                     .execute()
@@ -155,6 +160,7 @@ class SnapchatSupabaseManager:
                 await asyncio.to_thread(
                     lambda: self.client.table("snapchat_recent_stories_cache")
                         .delete()
+                        .eq("project_namespace", self.project_namespace)
                         .eq("username", username)
                         .execute()
                 )
@@ -174,6 +180,7 @@ class SnapchatSupabaseManager:
             cache_entries = []
             for i, story in enumerate(stories):
                 cache_entries.append({
+                    "project_namespace": self.project_namespace,
                     "username": username,
                     "story_url": story["url"],
                     "snap_id": story.get("snap_id"),
@@ -218,6 +225,7 @@ class SnapchatSupabaseManager:
             response = await asyncio.to_thread(
                 lambda: self.client.table("snapchat_processed_stories")
                     .select("*")
+                    .eq("project_namespace", self.project_namespace)
                     .eq("snap_id", snap_id)
                     .eq("username", username)
                     .execute()
@@ -243,6 +251,7 @@ class SnapchatSupabaseManager:
             
             story_data = {
                 "id": f"{username}_{snap_id}",
+                "project_namespace": self.project_namespace,
                 "username": username,
                 "story_url": story_url,
                 "story_type": story_type,
@@ -279,11 +288,11 @@ class SnapchatSupabaseManager:
             
             two_weeks_ago = datetime.now() - timedelta(days=14)
             
-            # Complete wipe of stories cache (not selective like Instagram)
-            cache_response = self.client.table("snapchat_recent_stories_cache").delete().lt("cached_at", two_weeks_ago.isoformat()).execute()
+            # Complete wipe of stories cache for this namespace (not selective like Instagram)
+            cache_response = self.client.table("snapchat_recent_stories_cache").delete().eq("project_namespace", self.project_namespace).lt("cached_at", two_weeks_ago.isoformat()).execute()
             
-            # Complete wipe of processed stories (not selective like Instagram)
-            processed_response = self.client.table("snapchat_processed_stories").delete().lt("processed_at", two_weeks_ago.isoformat()).execute()
+            # Complete wipe of processed stories for this namespace (not selective like Instagram)
+            processed_response = self.client.table("snapchat_processed_stories").delete().eq("project_namespace", self.project_namespace).lt("processed_at", two_weeks_ago.isoformat()).execute()
             
             stories_removed = len(cache_response.data) if cache_response.data else 0
             processed_removed = len(processed_response.data) if processed_response.data else 0
@@ -302,6 +311,7 @@ class SnapchatSupabaseManager:
         """Update cleanup log for Snapchat"""
         try:
             self.client.table("snapchat_cache_cleanup_log").insert({
+                "project_namespace": self.project_namespace,
                 "stories_removed": stories_removed,
                 "cleaned_at": datetime.now().isoformat()
             }).execute()
@@ -342,7 +352,7 @@ class SnapchatSupabaseManager:
             # Get last cleanup date
             if cleanup_count > 0:
                 try:
-                    last_cleanup_response = self.client.table("snapchat_cache_cleanup_log").select("cleaned_at").order("cleaned_at", desc=True).limit(1).execute()
+                    last_cleanup_response = self.client.table("snapchat_cache_cleanup_log").select("cleaned_at").eq("project_namespace", self.project_namespace).order("cleaned_at", desc=True).limit(1).execute()
                     if last_cleanup_response.data:
                         stats["last_cleanup"] = last_cleanup_response.data[0]["cleaned_at"]
                 except Exception as e:
@@ -361,7 +371,7 @@ class SnapchatSupabaseManager:
             if not self.is_connected:
                 return None
             
-            response = self.client.table("snapchat_cache_cleanup_log").select("cleaned_at").order("cleaned_at", desc=True).limit(1).execute()
+            response = self.client.table("snapchat_cache_cleanup_log").select("cleaned_at").eq("project_namespace", self.project_namespace).order("cleaned_at", desc=True).limit(1).execute()
             
             if response.data:
                 return response.data[0]["cleaned_at"]
@@ -379,7 +389,7 @@ class SnapchatSupabaseManager:
                 logger.warning("⚠️ Supabase not connected, cannot clear cache")
                 return 0
             
-            response = self.client.table("snapchat_recent_stories_cache").delete().eq("username", username).execute()
+            response = self.client.table("snapchat_recent_stories_cache").delete().eq("project_namespace", self.project_namespace).eq("username", username).execute()
             
             deleted_count = len(response.data) if response.data else 0
             logger.info(f"🗑️ Cleared cache for @{username} ({deleted_count} entries) (Supabase)")
@@ -397,7 +407,7 @@ class SnapchatSupabaseManager:
                 logger.warning("⚠️ Supabase not connected, cannot clear processed stories")
                 return 0
             
-            response = self.client.table("snapchat_processed_stories").delete().eq("username", username).execute()
+            response = self.client.table("snapchat_processed_stories").delete().eq("project_namespace", self.project_namespace).eq("username", username).execute()
             
             deleted_count = len(response.data) if response.data else 0
             logger.info(f"🗑️ Cleared processed stories for @{username} ({deleted_count} entries) (Supabase)")

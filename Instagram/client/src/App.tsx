@@ -7,7 +7,7 @@ import "./style.css";
 const INSTAGRAM_API_BASE =
   import.meta.env.VITE_INSTAGRAM_API_BASE ||
   (import.meta.env.PROD
-    ? "https://tyla-social.onrender.com" // Render backend for production
+    ? "https://lillyalbaab-social.onrender.com" // Render backend for production
     : "http://localhost:3000"); // Local backend for development
 
 // Snapchat API base URL - use environment variable or fallback to defaults
@@ -232,10 +232,10 @@ const App: React.FC = () => {
       const response = await fetch(
         `${INSTAGRAM_API_BASE}/target/${targetToRemove}`,
         {
-          method: "DELETE",
-          headers: {
-            "Content-Type": "application/json",
-          },
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
         }
       );
 
@@ -277,7 +277,7 @@ const App: React.FC = () => {
         .split(/[,\n]/)
         .map((u) => u.trim())
         .filter((u) => u.length > 0);
-
+      
       const requestBody =
         usernames.length > 1 ? { usernames } : { username: usernames[0] };
 
@@ -1434,7 +1434,7 @@ const App: React.FC = () => {
                   <div className="card-thumbnail placeholder">
                     <span>📷</span>
                   </div>
-                )}
+              )}
               </div>
               <div className="card-content">
                 {item.quality && (

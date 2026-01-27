@@ -1,4 +1,4 @@
-﻿# Snapchat Backend Service - Health check test v3 (with fallback)
+# Snapchat Backend Service - Health check test v3 (with fallback)
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -1044,12 +1044,12 @@ resource_manager = ResourceManager()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://tyla-social.vercel.app",  # Production Vercel domain
+        "https://lillyalbaab-social.vercel.app",  # Production Vercel domain
         "http://localhost:5173",  # Local development (Vite)
         "http://localhost:3000",  # Local development (Node.js proxy)
         "http://127.0.0.1:5173",  # Local development (alternative)
     ],
-    allow_origin_regex=r"^https://tyla-social-.*\.vercel\.app$",  # Preview deployments
+    allow_origin_regex=r"^https://lillyalbaab-social-.*\.vercel\.app$",  # Preview deployments
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*", "Content-Type", "Accept", "Authorization", "Access-Control-Request-Headers", "Access-Control-Request-Method"],
@@ -1752,10 +1752,10 @@ async def send_downloaded_content_to_telegram(username: str, media_type: str, cu
             logger.info(f"📤 [AUTO] Sending {len(media_files)} NEW files to Telegram for {username}/{media_type}")
         else:
             # Backward compatibility: send all files if no specific list provided
-            media_files = []
-            for filename in os.listdir(media_dir):
-                if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.mp4', '.mov', '.avi')):
-                    media_files.append(filename)
+        media_files = []
+        for filename in os.listdir(media_dir):
+            if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.mp4', '.mov', '.avi')):
+                media_files.append(filename)
             logger.info(f"📤 [AUTO] Sending {len(media_files)} files to Telegram for {username}/{media_type} (all files mode)")
         
         if not media_files:
@@ -1879,7 +1879,7 @@ def sync_metadata_with_files(username, media_type):
     Returns number of entries removed.
     """
     try:
-        metadata = load_media_metadata(username, media_type)
+    metadata = load_media_metadata(username, media_type)
         if not metadata:
             return 0
         
@@ -1892,8 +1892,8 @@ def sync_metadata_with_files(username, media_type):
         # Filter metadata to only include files that actually exist
         synced_metadata = []
         removed_count = 0
-        
-        for item in metadata:
+    
+    for item in metadata:
             filename = item.get("filename")
             if filename:
                 file_path = os.path.join(media_dir, filename)
@@ -4166,27 +4166,27 @@ async def get_gallery(username: str, media_type: str):
         logger.info(f"Creating directory for new user: {dir_name}")
         os.makedirs(dir_name, exist_ok=True)
     
-    metadata = load_media_metadata(username, media_type)
+            metadata = load_media_metadata(username, media_type)
     media_files = []
-    key = f"{username}:{media_type}"
-    
-    with progress_lock:
-        file_progress_data = file_progress.get(key, {})
-    
-    for item in metadata:
+            key = f"{username}:{media_type}"
+            
+            with progress_lock:
+                file_progress_data = file_progress.get(key, {})
+            
+            for item in metadata:
         file_path = os.path.join(dir_name, item["filename"])
-        if os.path.isfile(file_path):
-            file_type = item["type"]
-            download_status = item["download_status"]
-            progress = item["progress"]
-            
-            if item["filename"] in file_progress_data:
-                file_status = file_progress_data[item["filename"]]
-                download_status = file_status["status"]
-                progress = file_status["progress"]
-            
+                if os.path.isfile(file_path):
+                    file_type = item["type"]
+                    download_status = item["download_status"]
+                    progress = item["progress"]
+                    
+                    if item["filename"] in file_progress_data:
+                        file_status = file_progress_data[item["filename"]]
+                        download_status = file_status["status"]
+                        progress = file_status["progress"]
+                    
             # Use the actual file as download URL
-            file_url = f"/downloads/{username}/{media_type}/{item['filename']}"
+                    file_url = f"/downloads/{username}/{media_type}/{item['filename']}"
             
             # For thumbnails: use original thumbnail_url from metadata if available
             # For videos, if thumbnail_url points to video file, use thumbnail endpoint
@@ -4207,15 +4207,15 @@ async def get_gallery(username: str, media_type: str):
                 thumbnail_url = file_url
             
             media_files.append(
-                GalleryMediaItem(
-                    filename=item["filename"],
-                    type=file_type,
+                        GalleryMediaItem(
+                            filename=item["filename"],
+                            type=file_type,
                     thumbnail_url=thumbnail_url or file_url,
-                    download_status=download_status,
-                    progress=progress,
-                    download_url=file_url
-                )
-            )
+                            download_status=download_status,
+                            progress=progress,
+                            download_url=file_url
+                        )
+                    )
     
     return GalleryResponse(status="success", media=media_files)
 

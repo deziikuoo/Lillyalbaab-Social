@@ -19,7 +19,7 @@
     "pm2:logs": "pm2 logs",
     "pm2:status": "pm2 status",
     "keep-alive": "node keep-alive.js",
-    "keep-alive:render": "HEALTH_URL=https://tyla-social.onrender.com/health node keep-alive.js",
+    "keep-alive:render": "HEALTH_URL=https://lillyalbaab-social.onrender.com/health node keep-alive.js",
     "monitor-health": "node monitor-health.js",
     "test-cache": "node test-cache.js",
     "postinstall": "mkdir -p /opt/render/project/src/data/chrome && PUPPETEER_CACHE_DIR=/opt/render/project/src/data/chrome npx puppeteer browsers install chrome",

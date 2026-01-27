@@ -934,8 +934,8 @@ app.use(express.json());
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   const allowedOrigins = [
-    "https://tyla-social.vercel.app", // Production Vercel domain
-    "https://tyla-social.onrender.com", // Backend domain
+    "https://lillyalbaab-social.vercel.app", // Production Vercel domain
+    "https://lillyalbaab-social.onrender.com", // Backend domain
     "http://localhost:5173", // Local development (Vite)
     "http://localhost:3000", // Local development (Node.js)
   ];
@@ -943,7 +943,7 @@ app.use((req, res, next) => {
   // Check if origin matches allowed origins or preview deployments
   const isAllowedOrigin =
     allowedOrigins.includes(origin) ||
-    (origin && origin.match(/^https:\/\/tyla-social-.*\.vercel\.app$/));
+    (origin && origin.match(/^https:\/\/lillyalbaab-social-.*\.vercel\.app$/));
 
   if (isAllowedOrigin) {
     res.header("Access-Control-Allow-Origin", origin);
@@ -1214,7 +1214,7 @@ async function cleanupAndExit(code) {
 
   // Database connections (Supabase) don't need explicit closing
   // Supabase client manages its own connections
-  process.exit(code);
+    process.exit(code);
 }
 
 // Parse and validate Instagram username/URL
@@ -1686,7 +1686,7 @@ async function sendVideoToTelegram(videoUrl, caption = "") {
           chat_id: TELEGRAM_CHANNEL_ID,
           video: videoUrl,
           caption:
-            caption || `🎬 Instagram Video\n\nDownloaded via Tyla IG Kapturez`,
+            caption || `🎬 Instagram Video\n\nDownloaded via Lillyalbaab Social`,
           parse_mode: "HTML",
           supports_streaming: true,
         },
@@ -1782,7 +1782,7 @@ async function sendVideoToTelegram(videoUrl, caption = "") {
     });
     form.append(
       "caption",
-      caption || `🎬 New Instagram Video\n\nDownloaded via Tyla IG Kapturez`
+      caption || `🎬 New Instagram Video\n\nDownloaded via Lillyalbaab Social`
     );
     form.append("parse_mode", "HTML");
     form.append("supports_streaming", "true");
@@ -3375,7 +3375,7 @@ async function processPostsWithPinnedDetection(allPosts, userAgent) {
 // Check if post was already processed (excluding pinned posts from recent checks)
 async function isPostProcessed(postId, username) {
   if (!supabaseManager || !supabaseManager.isConnected) {
-    console.error(
+      console.error(
       `❌ Supabase not connected - cannot check if post is processed`
     );
     return false; // Default to not processed if Supabase unavailable
@@ -3402,17 +3402,17 @@ async function markPostAsProcessed(
     return false;
   }
 
-  try {
-    await supabaseManager.markPostAsProcessed(
-      postId,
-      username,
-      postUrl,
-      postType,
-      isPinned
-    );
-    return true;
-  } catch (error) {
-    console.error(`❌ Supabase post marking failed: ${error.message}`);
+    try {
+      await supabaseManager.markPostAsProcessed(
+        postId,
+        username,
+        postUrl,
+        postType,
+        isPinned
+      );
+      return true;
+    } catch (error) {
+      console.error(`❌ Supabase post marking failed: ${error.message}`);
     return false;
   }
 }
@@ -3433,18 +3433,18 @@ async function getCachedRecentPosts(username) {
     return [];
   }
 
-  try {
-    const cachedPosts = await supabaseManager.getCachedRecentPosts(username);
+    try {
+      const cachedPosts = await supabaseManager.getCachedRecentPosts(username);
 
-    // Update in-memory cache
-    if (!global.postCache) {
-      global.postCache = {};
-    }
-    global.postCache[username] = cachedPosts;
+      // Update in-memory cache
+      if (!global.postCache) {
+        global.postCache = {};
+      }
+      global.postCache[username] = cachedPosts;
 
-    return cachedPosts;
-  } catch (error) {
-    console.error(`❌ Supabase cache retrieval failed: ${error.message}`);
+      return cachedPosts;
+    } catch (error) {
+      console.error(`❌ Supabase cache retrieval failed: ${error.message}`);
     return [];
   }
 }
@@ -3456,27 +3456,27 @@ async function updateRecentPostsCache(username, posts) {
     return;
   }
 
-  try {
-    await supabaseManager.updateRecentPostsCache(username, posts);
+    try {
+      await supabaseManager.updateRecentPostsCache(username, posts);
 
-    // Update in-memory cache
-    if (!global.postCache) {
-      global.postCache = {};
-    }
-    global.postCache[username] = posts.map((post, idx) => ({
-      post_url: post.url,
-      shortcode:
-        post.shortcode || post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2],
-      is_pinned: post.is_pinned || false,
-      post_order: idx + 1,
-      cached_at: new Date().toISOString(),
-    }));
+      // Update in-memory cache
+      if (!global.postCache) {
+        global.postCache = {};
+      }
+      global.postCache[username] = posts.map((post, idx) => ({
+        post_url: post.url,
+        shortcode:
+          post.shortcode || post.url.match(/\/(p|reel|tv)\/([^\/]+)\//)?.[2],
+        is_pinned: post.is_pinned || false,
+        post_order: idx + 1,
+        cached_at: new Date().toISOString(),
+      }));
 
-    console.log(
-      `✅ Updated Supabase cache with ${posts.length} posts for @${username} (memory + database)`
-    );
-  } catch (error) {
-    console.error(`❌ Supabase cache update failed: ${error.message}`);
+      console.log(
+        `✅ Updated Supabase cache with ${posts.length} posts for @${username} (memory + database)`
+      );
+    } catch (error) {
+      console.error(`❌ Supabase cache update failed: ${error.message}`);
   }
 }
 
@@ -3587,20 +3587,20 @@ async function cleanExpiredCache() {
       return { cacheRemoved: 0, processedRemoved: 0 };
     }
 
-    try {
-      console.log("🧹 Using Supabase for cache cleanup...");
-      await supabaseManager.cleanExpiredCache();
+      try {
+        console.log("🧹 Using Supabase for cache cleanup...");
+        await supabaseManager.cleanExpiredCache();
 
-      // Update memory cache atomically
-      await updateMemoryCacheAfterCleanup();
+        // Update memory cache atomically
+        await updateMemoryCacheAfterCleanup();
 
-      // Run cache integrity check
-      console.log("🔍 Running post-cleanup cache integrity check...");
-      await validateCacheIntegrity();
+        // Run cache integrity check
+        console.log("🔍 Running post-cleanup cache integrity check...");
+        await validateCacheIntegrity();
 
-      return { cacheRemoved: 0, processedRemoved: 0 }; // Supabase manager handles the counts
-    } catch (error) {
-      console.error(`❌ Supabase cache cleanup failed: ${error.message}`);
+        return { cacheRemoved: 0, processedRemoved: 0 }; // Supabase manager handles the counts
+      } catch (error) {
+        console.error(`❌ Supabase cache cleanup failed: ${error.message}`);
       return { cacheRemoved: 0, processedRemoved: 0 };
     }
   } catch (error) {
@@ -3623,10 +3623,10 @@ async function updateMemoryCacheAfterCleanup() {
     await loadExistingCache();
 
     console.log("✅ Memory cache updated after cleanup");
-  } catch (error) {
-    console.error(
+        } catch (error) {
+          console.error(
       `❌ Failed to update memory cache after cleanup: ${error.message}`
-    );
+          );
   }
 }
 
@@ -3696,18 +3696,18 @@ async function performStorageCleanup() {
 
     const result = await supabaseManager.performStorageCleanup();
 
-    // Update memory cache atomically
-    await updateMemoryCacheAfterCleanup();
+      // Update memory cache atomically
+      await updateMemoryCacheAfterCleanup();
 
-    // Run cache integrity check
-    console.log("🔍 Running post-storage-cleanup cache integrity check...");
-    await validateCacheIntegrity();
+      // Run cache integrity check
+      console.log("🔍 Running post-storage-cleanup cache integrity check...");
+      await validateCacheIntegrity();
 
     return result;
-  } catch (error) {
-    console.error(`❌ Storage-based cleanup failed: ${error.message}`);
+    } catch (error) {
+      console.error(`❌ Storage-based cleanup failed: ${error.message}`);
     return { cacheRemoved: 0, processedRemoved: 0 };
-  }
+    }
 }
 
 // Get last cleanup date
@@ -3720,14 +3720,14 @@ async function getLastCleanupDate() {
     return defaultDate;
   }
 
-  try {
-    return await supabaseManager.getLastCleanupDate();
-  } catch (error) {
-    console.error(`❌ Supabase cleanup date check failed: ${error.message}`);
+    try {
+      return await supabaseManager.getLastCleanupDate();
+    } catch (error) {
+      console.error(`❌ Supabase cleanup date check failed: ${error.message}`);
     // Return date 8 days ago to trigger cleanup
-    const defaultDate = new Date();
+            const defaultDate = new Date();
     defaultDate.setDate(defaultDate.getDate() - 8);
-    return defaultDate;
+  return defaultDate;
   }
 }
 
@@ -3738,12 +3738,12 @@ async function updateLastCleanupDate(postsRemoved = 0, username = null) {
     return false;
   }
 
-  try {
-    await supabaseManager.updateLastCleanupDate(postsRemoved, username);
-    return true;
-  } catch (error) {
-    console.error(`❌ Supabase cleanup date update failed: ${error.message}`);
-    return false;
+    try {
+      await supabaseManager.updateLastCleanupDate(postsRemoved, username);
+      return true;
+    } catch (error) {
+      console.error(`❌ Supabase cleanup date update failed: ${error.message}`);
+  return false;
   }
 }
 
@@ -3783,19 +3783,19 @@ async function loadExistingCache() {
       return;
     }
 
-    console.log("📊 Loading cache from Supabase...");
+      console.log("📊 Loading cache from Supabase...");
 
-    // Get Supabase stats to check cache status
-    const stats = await supabaseManager.getStats();
-    console.log(`📊 Supabase collections:`, stats.collections);
+        // Get Supabase stats to check cache status
+        const stats = await supabaseManager.getStats();
+        console.log(`📊 Supabase collections:`, stats.collections);
 
-    // Get all cached usernames from Supabase
+        // Get all cached usernames from Supabase
     let cachedUsers;
     try {
       const result = await supabaseManager.client
-        .from("recent_posts_cache")
-        .select("username")
-        .order("username");
+          .from("recent_posts_cache")
+          .select("username")
+          .order("username");
 
       if (result.error) {
         // Check for network errors
@@ -3839,48 +3839,48 @@ async function loadExistingCache() {
     const uniqueUsernames = [...new Set(cachedUsers.map((u) => u.username))];
     console.log(`📊 Found ${uniqueUsernames.length} cached users in Supabase`);
 
-    if (uniqueUsernames.length === 0) {
-      console.log("📊 No existing cache data found in Supabase");
-      return;
-    }
+        if (uniqueUsernames.length === 0) {
+          console.log("📊 No existing cache data found in Supabase");
+          return;
+        }
 
-    console.log(
-      `📊 Loading cache for ${uniqueUsernames.length} users from Supabase...`
-    );
-
-    let loadedUsers = 0;
-    let totalPosts = 0;
-
-    // Load cache for each user
-    for (const username of uniqueUsernames) {
-      const cachedPosts = await getCachedRecentPosts(username);
-      if (cachedPosts.length > 0) {
         console.log(
-          `   📱 @${username}: ${cachedPosts.length} posts cached (Supabase)`
+          `📊 Loading cache for ${uniqueUsernames.length} users from Supabase...`
         );
 
-        // Store in global cache for faster access
-        if (!global.postCache) {
-          global.postCache = {};
+        let loadedUsers = 0;
+        let totalPosts = 0;
+
+        // Load cache for each user
+        for (const username of uniqueUsernames) {
+          const cachedPosts = await getCachedRecentPosts(username);
+          if (cachedPosts.length > 0) {
+            console.log(
+              `   📱 @${username}: ${cachedPosts.length} posts cached (Supabase)`
+            );
+
+            // Store in global cache for faster access
+            if (!global.postCache) {
+              global.postCache = {};
+            }
+            global.postCache[username] = cachedPosts;
+            loadedUsers++;
+            totalPosts += cachedPosts.length;
+          } else {
+            console.log(`   ⚠️ @${username}: 0 posts cached (empty cache)`);
+          }
         }
-        global.postCache[username] = cachedPosts;
-        loadedUsers++;
-        totalPosts += cachedPosts.length;
-      } else {
-        console.log(`   ⚠️ @${username}: 0 posts cached (empty cache)`);
-      }
-    }
 
-    console.log(
-      `✅ Supabase cache loaded successfully (${loadedUsers} users, ${totalPosts} total posts)`
-    );
+        console.log(
+          `✅ Supabase cache loaded successfully (${loadedUsers} users, ${totalPosts} total posts)`
+        );
 
-    // Check if cache loading was successful
-    if (loadedUsers === 0 && uniqueUsernames.length > 0) {
-      console.log(
-        "⚠️ Supabase cache loading resulted in 0 posts - attempting automatic reload..."
-      );
-      await retryCacheLoad();
+        // Check if cache loading was successful
+        if (loadedUsers === 0 && uniqueUsernames.length > 0) {
+          console.log(
+            "⚠️ Supabase cache loading resulted in 0 posts - attempting automatic reload..."
+          );
+          await retryCacheLoad();
     }
   } catch (error) {
     console.error(`❌ Failed to load existing cache: ${error.message}`);
@@ -3907,13 +3907,13 @@ async function retryCacheLoad() {
     // Wait a moment for database to stabilize
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    console.log("🔄 Attempting Supabase cache reload...");
+        console.log("🔄 Attempting Supabase cache reload...");
 
-    // Force reload from Supabase
-    const { data: cachedUsers, error } = await supabaseManager.client
-      .from("recent_posts_cache")
-      .select("username")
-      .order("username");
+        // Force reload from Supabase
+        const { data: cachedUsers, error } = await supabaseManager.client
+          .from("recent_posts_cache")
+          .select("username")
+          .order("username");
 
     if (error) {
       console.error(`❌ Failed to get cached users: ${error.message}`);
@@ -3923,56 +3923,56 @@ async function retryCacheLoad() {
     const uniqueUsernames = [...new Set(cachedUsers.map((u) => u.username))];
 
     if (uniqueUsernames.length === 0) {
-      console.log("📊 No cached users found in Supabase during reload");
-      return;
-    }
+          console.log("📊 No cached users found in Supabase during reload");
+          return;
+        }
 
-    console.log(
+        console.log(
       `🔄 Reloading cache for ${uniqueUsernames.length} users from Supabase...`
-    );
+        );
 
-    let loadedUsers = 0;
-    let totalPosts = 0;
+        let loadedUsers = 0;
+        let totalPosts = 0;
 
     for (const username of uniqueUsernames) {
-      try {
-        // Force Supabase query (bypass memory cache)
+          try {
+            // Force Supabase query (bypass memory cache)
         const cachedPosts = await getCachedRecentPosts(username);
 
-        if (cachedPosts.length > 0) {
-          console.log(
-            `   ✅ @${username}: ${cachedPosts.length} posts reloaded (Supabase)`
-          );
+            if (cachedPosts.length > 0) {
+              console.log(
+                `   ✅ @${username}: ${cachedPosts.length} posts reloaded (Supabase)`
+              );
 
-          if (!global.postCache) {
-            global.postCache = {};
-          }
+              if (!global.postCache) {
+                global.postCache = {};
+              }
           global.postCache[username] = cachedPosts;
-          loadedUsers++;
-          totalPosts += cachedPosts.length;
-        } else {
-          console.log(`   ⚠️ @${username}: Still 0 posts after reload`);
+              loadedUsers++;
+              totalPosts += cachedPosts.length;
+            } else {
+              console.log(`   ⚠️ @${username}: Still 0 posts after reload`);
+            }
+          } catch (userError) {
+            console.error(
+              `   ❌ Failed to reload cache for @${username}: ${userError.message}`
+            );
+          }
         }
-      } catch (userError) {
-        console.error(
-          `   ❌ Failed to reload cache for @${username}: ${userError.message}`
-        );
+
+        if (loadedUsers > 0) {
+          console.log(
+            `✅ Automatic Supabase cache reload successful (${loadedUsers} users, ${totalPosts} posts)`
+          );
+        } else {
+          console.log(
+            "❌ Automatic Supabase cache reload failed - no posts loaded"
+          );
+        }
+      } catch (error) {
+    console.error(`❌ Automatic cache reload failed: ${error.message}`);
       }
     }
-
-    if (loadedUsers > 0) {
-      console.log(
-        `✅ Automatic Supabase cache reload successful (${loadedUsers} users, ${totalPosts} posts)`
-      );
-    } else {
-      console.log(
-        "❌ Automatic Supabase cache reload failed - no posts loaded"
-      );
-    }
-  } catch (error) {
-    console.error(`❌ Automatic cache reload failed: ${error.message}`);
-  }
-}
 
 // Validate cache integrity and fix inconsistencies
 async function validateCacheIntegrity() {
@@ -3980,9 +3980,9 @@ async function validateCacheIntegrity() {
     console.log("🔍 Validating cache integrity...");
 
     if (!supabaseManager || !supabaseManager.isConnected) {
-      console.error(
+          console.error(
         `❌ Supabase not connected - cannot validate cache integrity`
-      );
+          );
       return;
     }
 
@@ -4044,29 +4044,29 @@ async function validateCacheIntegrity() {
 
 // Clear cache for specific user (manual reset)
 async function clearUserCache(username) {
-  try {
+    try {
     if (!supabaseManager || !supabaseManager.isConnected) {
       console.error(`❌ Supabase not connected - cannot clear cache`);
       return 0;
     }
 
-    console.log(`🗑️ Clearing cache for @${username} using Supabase...`);
+          console.log(`🗑️ Clearing cache for @${username} using Supabase...`);
     const result = await supabaseManager.clearUserCache(username);
 
-    // Clear in-memory cache
-    if (global.postCache && global.postCache[username]) {
-      delete global.postCache[username];
-      console.log(`🗑️ Cleared in-memory cache for @${username}`);
-    }
+      // Clear in-memory cache
+      if (global.postCache && global.postCache[username]) {
+        delete global.postCache[username];
+        console.log(`🗑️ Cleared in-memory cache for @${username}`);
+      }
 
-    // Update cleanup log to prevent immediate re-cleanup
-    await updateLastCleanupDate(result, username);
+      // Update cleanup log to prevent immediate re-cleanup
+      await updateLastCleanupDate(result, username);
 
     return result;
-  } catch (error) {
+    } catch (error) {
     console.error(`❌ Cache clear failed: ${error.message}`);
     return 0;
-  }
+    }
 }
 
 // Clear both processed posts and cache for a user
@@ -4078,22 +4078,22 @@ async function clearUserData(username) {
     }
 
     console.log(`🧹 Clearing all data for @${username} using Supabase...`);
-    const result = await supabaseManager.clearUserData(username);
+          const result = await supabaseManager.clearUserData(username);
 
     // Clear in-memory cache
     if (global.postCache && global.postCache[username]) {
       delete global.postCache[username];
       console.log(`🗑️ Cleared in-memory cache for @${username}`);
-    }
+      }
 
-    console.log(
+      console.log(
       `🧹 Cleared all data for @${username} (processed: ${result.processedDeleted}, cache: ${result.cacheDeleted})`
-    );
+      );
     return result;
-  } catch (error) {
+    } catch (error) {
     console.error(`❌ Data clear failed: ${error.message}`);
     return { processedDeleted: 0, cacheDeleted: 0 };
-  }
+    }
 }
 
 // Scrape Instagram stories using FastDl.app (Grok-optimized implementation)
@@ -4909,10 +4909,10 @@ async function tryWebProfileInfoFallback(post, userAgent) {
 
 app.get("/", (req, res) => {
   res.json({
-    message: "Tyla Social API Server",
+    message: "Lillyalbaab Social API Server",
     status: "running",
     endpoints: {
-      frontend: "https://tyla-social-frontend.vercel.app",
+      frontend: "https://lillyalbaab-social.vercel.app",
       health: "/health",
       instagram: "/igdl",
       snapchat: "/snapchat-status",
@@ -5404,7 +5404,7 @@ app.post("/send-to-telegram", async (req, res) => {
       fullCaption += `\n\n📱 Original: ${originalInstagramUrl}`;
     }
     if (!fullCaption) {
-      fullCaption = `New media\n\nDownloaded via Tyla IG Kapturez`;
+      fullCaption = `New media\n\nDownloaded via Lillyalbaab Social`;
     }
     const emoji = "📷";
     if (!fullCaption.trim().startsWith(emoji)) {
@@ -6415,12 +6415,12 @@ app.post("/clear-stories-cache", async (req, res) => {
       return res.status(500).json({ error: "Supabase not connected" });
     }
 
-    console.log(
-      `🗑️ Clearing stories data for @${targetUsername} using Supabase...`
-    );
+        console.log(
+          `🗑️ Clearing stories data for @${targetUsername} using Supabase...`
+        );
     const result = await supabaseManager.clearUserStoriesData(targetUsername);
-    processedStoriesDeleted = result.processedStoriesDeleted;
-    storiesCacheDeleted = result.storiesCacheDeleted;
+        processedStoriesDeleted = result.processedStoriesDeleted;
+        storiesCacheDeleted = result.storiesCacheDeleted;
 
     const totalDeleted = processedStoriesDeleted + storiesCacheDeleted;
     res.json({
@@ -6453,14 +6453,15 @@ app.get("/debug-stories", async (req, res) => {
         const { count, error } = await supabaseManager.client
           .from("processed_stories")
           .select("*", { count: "exact", head: true })
+          .eq("project_namespace", supabaseManager.projectNamespace)
           .eq("username", username);
         if (!error) {
           processedStories = count || 0;
         }
       } catch (error) {
         console.error("Supabase error checking processed stories:", error);
-      }
-    }
+          }
+        }
 
     // Check recent_stories_cache table (Supabase only)
     const storiesCache = new Promise(async (resolve) => {
@@ -6469,6 +6470,7 @@ app.get("/debug-stories", async (req, res) => {
           const { data, error } = await supabaseManager.client
             .from("recent_stories_cache")
             .select("*", { count: "exact" })
+            .eq("project_namespace", supabaseManager.projectNamespace)
             .eq("username", username);
 
           if (error) {
@@ -7534,12 +7536,13 @@ async function updateStoriesCache(username, stories) {
 
     // Clear old cache for this user
     try {
-      const { error: deleteError } = await supabase
-        .from("recent_stories_cache")
-        .delete()
-        .eq("username", username);
+    const { error: deleteError } = await supabase
+      .from("recent_stories_cache")
+      .delete()
+      .eq("project_namespace", supabaseManager.projectNamespace)
+      .eq("username", username);
 
-      if (deleteError) {
+    if (deleteError) {
         // Check for network errors
         const errorMsg = deleteError.message || String(deleteError);
         if (
@@ -7554,8 +7557,8 @@ async function updateStoriesCache(username, stories) {
           supabaseManager.isConnected = false;
           return; // Return early instead of throwing
         }
-        console.error("Supabase error clearing stories cache:", deleteError);
-        throw deleteError;
+      console.error("Supabase error clearing stories cache:", deleteError);
+      throw deleteError;
       }
     } catch (error) {
       // Handle network errors in catch block
@@ -7591,6 +7594,7 @@ async function updateStoriesCache(username, stories) {
       const key = `${username}:${storyId}`;
       if (!cacheEntriesMap.has(key)) {
         cacheEntriesMap.set(key, {
+          project_namespace: supabaseManager.projectNamespace,
           username,
           story_url: story.url,
           story_id: storyId,
@@ -7610,11 +7614,11 @@ async function updateStoriesCache(username, stories) {
 
     // Simple insert (no upsert) after delete
     try {
-      const { error: insertError } = await supabase
-        .from("recent_stories_cache")
-        .insert(cacheEntries);
+    const { error: insertError } = await supabase
+      .from("recent_stories_cache")
+      .insert(cacheEntries);
 
-      if (insertError) {
+    if (insertError) {
         // Check for network errors
         const errorMsg = insertError.message || String(insertError);
         if (
@@ -7629,8 +7633,8 @@ async function updateStoriesCache(username, stories) {
           supabaseManager.isConnected = false;
           return; // Return early instead of throwing
         }
-        console.error("Supabase error inserting stories cache:", insertError);
-        throw insertError;
+      console.error("Supabase error inserting stories cache:", insertError);
+      throw insertError;
       }
     } catch (error) {
       // Handle network errors in catch block

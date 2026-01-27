@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: tyla-social
+    name: lillyalbaab-social
     env: node
     region: oregon
     plan: starter
@@ -28,10 +28,14 @@ services:
       - key: TELEGRAM_AUTH
         value: true
       - key: SNAPCHAT_SERVICE_URL
-        value: https://tyla-social-snapchat
+        value: https://lillyalbaab-social-snapchat
+      - key: TARGET_USERNAMES
+        value: lillyalbaab
+      - key: PROJECT_NAMESPACE
+        value: lillyalbaab
       - key: USER_AGENT
         value: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
       - key: X_IG_APP_ID
         value: 936619743392459
       - key: TZ
-        value: America/New_York
+        value: America/Chicago

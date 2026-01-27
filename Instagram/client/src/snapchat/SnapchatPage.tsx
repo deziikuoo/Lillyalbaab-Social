@@ -144,7 +144,7 @@ const SnapchatPage: React.FC = () => {
 
       const queryString = params.toString();
       const SNAP_BASE = import.meta.env.PROD
-        ? "https://tyla-social.onrender.com"
+        ? "https://lillyalbaab-social.onrender.com"
         : "/snapchat-api";
       const url = `${SNAP_BASE}/gallery/${mediaType}?${queryString}`;
 
@@ -194,7 +194,7 @@ const SnapchatPage: React.FC = () => {
       }
 
       const SNAP_BASE = import.meta.env.PROD
-        ? "https://tyla-social.onrender.com"
+        ? "https://lillyalbaab-social.onrender.com"
         : "/snapchat-api";
 
       const response = await fetch(`${SNAP_BASE}/send-to-telegram`, {
@@ -281,7 +281,7 @@ const SnapchatPage: React.FC = () => {
       if (sortBy) params.append("sort_by", sortBy);
       
       const SNAP_BASE = import.meta.env.PROD 
-        ? "https://tyla-social.onrender.com" 
+        ? "https://lillyalbaab-social.onrender.com" 
         : "/snapchat-api";
       const url = `${SNAP_BASE}/gallery/${mediaType}/filenames?${params.toString()}`;
       
@@ -341,7 +341,7 @@ const SnapchatPage: React.FC = () => {
         if (sortBy) params.append("sort_by", sortBy);
         
         const SNAP_BASE = import.meta.env.PROD 
-          ? "https://tyla-social.onrender.com" 
+          ? "https://lillyalbaab-social.onrender.com" 
           : "/snapchat-api";
         const url = `${SNAP_BASE}/gallery/${mediaType}/filenames?${params.toString()}`;
         
@@ -396,7 +396,7 @@ const SnapchatPage: React.FC = () => {
 
     try {
       const SNAP_BASE = import.meta.env.PROD
-        ? "https://tyla-social.onrender.com"
+        ? "https://lillyalbaab-social.onrender.com"
         : "/snapchat-api";
 
       // Make separate download requests for each username
@@ -468,7 +468,7 @@ const SnapchatPage: React.FC = () => {
 
     try {
       const SNAP_BASE = import.meta.env.PROD
-        ? "https://tyla-social.onrender.com"
+        ? "https://lillyalbaab-social.onrender.com"
         : "/snapchat-api";
 
       // Make separate delete requests for each username
@@ -530,7 +530,7 @@ const SnapchatPage: React.FC = () => {
 
     try {
       const SNAP_BASE = import.meta.env.PROD
-        ? "https://tyla-social.onrender.com"
+        ? "https://lillyalbaab-social.onrender.com"
         : "/snapchat-api";
 
       // Make separate telegram requests for each username
@@ -639,7 +639,7 @@ const SnapchatPage: React.FC = () => {
       const filename = previewItem.download_url.split("/").pop() || "";
 
       const SNAP_BASE = import.meta.env.PROD
-        ? "https://tyla-social.onrender.com"
+        ? "https://lillyalbaab-social.onrender.com"
         : "/snapchat-api";
 
       const response = await fetch(`${SNAP_BASE}/send-to-telegram`, {
@@ -668,7 +668,7 @@ const SnapchatPage: React.FC = () => {
   const fetchStorageStats = async () => {
     try {
       const SNAP_BASE = import.meta.env.PROD
-        ? "https://tyla-social.onrender.com"
+        ? "https://lillyalbaab-social.onrender.com"
         : "/snapchat-api";
 
       const response = await fetch(`${SNAP_BASE}/gallery/stats`);
@@ -736,7 +736,7 @@ const SnapchatPage: React.FC = () => {
   useEffect(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = import.meta.env.PROD
-      ? `${protocol}//tyla-social.onrender.com/ws/gallery/${mediaType}`
+      ? `${protocol}//lillyalbaab-social.onrender.com/ws/gallery/${mediaType}`
       : `${protocol}//${window.location.host}/snapchat-api/ws/gallery/${mediaType}`;
 
     console.log(`🔌 [GALLERY WS] Connecting to: ${wsUrl}`);
