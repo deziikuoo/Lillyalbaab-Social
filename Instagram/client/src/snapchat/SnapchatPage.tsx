@@ -13,6 +13,7 @@ interface DownloadItem {
   isVideo?: boolean;
   type?: string; // "video" | "photo"
   username?: string; // Username for grouped results
+  download_status?: "downloading" | "complete" | "error" | "queued"; // Download status
 }
 
 const SnapchatPage: React.FC = () => {
